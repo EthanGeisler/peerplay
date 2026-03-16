@@ -14,7 +14,8 @@
 ## Development
 - **Server:** `npm run dev:server` from root (uses tsx watch)
 - **Client (Electron):** `npm run dev:client` from root (starts both Vite dev server on port 5173 and Electron main process)
-- **Client build:** `cd client && npm run build:electron` (compiles main process TypeScript), then `npm run dist` (electron-builder package)
+- **Client build:** `cd client && npm run build:electron` (Vite + tsc), then `../node_modules/.bin/electron-builder` (NSIS + portable → `client/release/`). Do NOT use `npx electron-builder` (resolves wrong version). See CONTEXT.md "Electron Build & Release Pipeline" for full details.
+- **Client release:** `gh release create v0.x.x <files>` or push a `v*` tag to trigger CI (`.github/workflows/build-client.yml`)
 - **Dev Portal:** `npm run dev:portal` from root (Vite on port 5174, proxies /api to localhost:3001)
 - **Web Storefront:** `npm run dev:web` from root (Vite on port 5173, proxies /api to localhost:3001)
 - **Database:** `npm run db:migrate` (Prisma migrate), `npm run db:seed` (seed data)

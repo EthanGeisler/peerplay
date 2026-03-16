@@ -337,6 +337,68 @@ magnet:?xt=urn:btih:bf69c35df8f0d24cdacfdf3f10c7afdc4513b09e&dn=player-character
 24. **`downloadMeta` Map is module-level, not in Zustand** — The metadata needed to register an installed game (slug, exePath, drmTier, version, coverImageUrl) is stored in a plain `Map<string, DownloadMeta>` outside the Zustand store in `downloadStore.ts`. This is intentional — it doesn't need to be reactive, and putting it in Zustand would cause unnecessary re-renders.
 25. **`tsconfig.main.json` needs `composite: true`** — Because `tsconfig.json` references it. Without this, you get `TS6306: Referenced project must have setting "composite": true`.
 26. **Electron client renderer types** — `window.boilerdeck` types are declared in two places: `client/src/main/preload.ts` (the runtime `declare global`) and `client/src/renderer/env.d.ts` (for the renderer's tsconfig). Both must stay in sync. The renderer file also needs `/// <reference types="vite/client" />` for `import.meta.env`.
+27. **electron-builder workspace hoisting** — npm workspaces hoist `electron` to root `node_modules/`, but electron-builder expects it in `client/node_modules/`. Fix: `electronVersion` is pinned to `"35.7.5"` in `client/package.json` build config so electron-builder downloads its own copy. If you upgrade Electron, update both `devDependencies.electron` and `build.electronVersion`.
+28. **electron-builder native module rebuild fails (Python 3.12)** — `node-gyp` v9.x uses `distutils.version.StrictVersion` which was removed in Python 3.12. `npmRebuild: false` in the build config skips this. Native modules (`bufferutil`, `utf-8-validate`, `utp-native`) use prebuilt binaries via `prebuild-install` so compilation is unnecessary.
+29. **electron-builder winCodeSign symlink error** — The winCodeSign tool archive contains macOS symlinks that can't be created on Windows without Developer Mode or admin privileges. `signAndEditExecutable: false` in the win config skips the winCodeSign download entirely. Without a code signing certificate this is the correct setting. Side effect: the raw `BoilerDeck.exe` won't show the custom icon in Explorer (but the NSIS installer itself works fine).
+30. **Electron icon must be 256x256+** — electron-builder rejects icons smaller than 256x256. The placeholder icon is at `client/resources/icon.ico` (256x256 BMP-in-ICO). Replace with real branding when available.
+31. **Windows SmartScreen warning** — The installer is not code-signed, so Windows SmartScreen will show "Windows protected your PC." Users click "More info" → "Run anyway." This is expected until an EV code signing certificate is purchased.
+32. **`release/` directory** — electron-builder outputs to `client/release/`. This is gitignored. Never commit build artifacts.
+
+---
+
+## Electron Build & Release Pipeline
+
+### Local Build
+```bash
+cd /c/Users/eface/peerplay/client
+npm run build:electron          # Vite build (renderer) + tsc (main process)
+../node_modules/.bin/electron-builder          # NSIS installer + portable exe → client/release/
+../node_modules/.bin/electron-builder --dir    # Unpacked build only (fast, for testing)
+```
+
+**Output files** (in `client/release/`):
+- `BoilerDeck Setup 0.1.0.exe` — NSIS installer (GUI wizard, directory picker)
+- `BoilerDeck 0.1.0.exe` — Portable exe (no install needed)
+- `latest.yml` — electron-updater auto-update manifest
+- `win-unpacked/` — Unpacked app (for quick testing: `release/win-unpacked/BoilerDeck.exe`)
+
+**Important:** Run electron-builder via `../node_modules/.bin/electron-builder`, NOT `npx electron-builder` — npx may resolve a different (incompatible) version from the npm cache.
+
+### Publishing a Release
+```bash
+# Option A: Manual (local build + gh CLI)
+cd /c/Users/eface/peerplay/client
+npm run dist                    # builds everything
+gh release create v0.x.x \
+  "release/BoilerDeck Setup 0.x.x.exe#BoilerDeck-Setup-0.x.x.exe" \
+  "release/BoilerDeck 0.x.x.exe#BoilerDeck-Portable-0.x.x.exe" \
+  "release/latest.yml" \
+  --title "BoilerDeck v0.x.x" --notes "Release notes here"
+
+# Option B: Automated (CI)
+git tag v0.x.x && git push origin v0.x.x
+# GitHub Actions (.github/workflows/build-client.yml) builds + publishes automatically
+```
+
+### CI Workflow (`.github/workflows/build-client.yml`)
+- **Triggers:** tag push matching `v*`, or manual `workflow_dispatch`
+- **Runs on:** `windows-latest`
+- **Publishes:** `--publish onTagOrDraft` — only creates GitHub Release when triggered by a tag (not on manual dispatch)
+- **Auth:** Uses built-in `GITHUB_TOKEN` (no custom secrets needed)
+
+### Version Bumping
+The version in `client/package.json` (`"version": "0.1.0"`) controls the installer filename and auto-update version comparison. The git tag should match (e.g., `v0.1.0`). Bump both together.
+
+### Current Release
+- **v0.1.0** — https://github.com/EthanGeisler/peerplay/releases/tag/v0.1.0
+- Published 2026-03-16, built locally and uploaded via `gh release create`
+- NSIS installer (91MB) + portable exe (90MB)
+- Not code-signed (SmartScreen warning expected)
+
+### Download Buttons (Web Storefront)
+- **Header button** (`web/src/App.tsx`): Green "Download for Windows" button, text hidden below 768px via CSS `.download-label` class
+- **Store page banner** (`web/src/pages/Store.tsx`): Full-width CTA banner below search bar, hidden during search, wraps on mobile via `flexWrap`
+- Both link to `https://github.com/EthanGeisler/peerplay/releases/latest` — auto-resolves to newest release
 
 ---
 
@@ -344,28 +406,33 @@ magnet:?xt=urn:btih:bf69c35df8f0d24cdacfdf3f10c7afdc4513b09e&dn=player-character
 
 - **Repo:** https://github.com/EthanGeisler/peerplay (rename pending — GitHub repo still named `peerplay`)
 - **Branch:** `main` (only branch)
-- **20 commits** as of 2026-03-16 (latest first):
-  1. `ac3ae87` `Update CONTEXT.md and CLAUDE.md with Stripe Connect details`
-  2. `dd4f235` `Build full Electron client: BitTorrent downloads, DRM, game launch, store/library/settings` — 32 files, +2585/-241. WebTorrent in main process, IPC bridge, all renderer stores, download→decrypt→install pipeline, CORS null-origin fix.
-  3. `dfd977a` `Fix review issues: Stripe security, webhook idempotency, frontend cleanup`
-  4. `3e6f71d` `Fix Stripe Connect return endpoint and Dashboard error logging`
-  5. `cd78e5c` `Rebrand Peerplay to BoilerDeck and set up boilerdeck.com domain`
-  6. `5550a92` `Update CONTEXT.md and CLAUDE.md for storefront API integration`
-  7. `148e5ec` `Fix review issues: logout token revocation, 204 handling, accessibility, dedup`
-  8. `6f6caac` `Connect web storefront to real API, replacing all mock data`
-  9. `695459d` `Update CONTEXT.md and CLAUDE.md with upload pipeline and VPS consolidation`
-  10. `47a4b29` `Move web storefront to VPS and add Developer Portal link`
-  11. `f1a267c` `Auto-create upload temp directory if missing`
-  12. `7122663` `Require game build upload when creating a new game`
-  13. `7164553` `Set base path for dev portal served under /dev/`
-  14. `aee5333` `Add game file upload pipeline with automatic torrent creation`
-  15. `b147608` `Deploy to Hetzner VPS with standard BitTorrent seeding`
-  16. `bbc01e1` `Implement LIGHT and ENCRYPTED DRM tiers across server and storefront`
-  17. `a1b1673` `Add CONTEXT.md for session continuity between Claude instances`
-  18. `87ffa4f` `Update Player Character 01 magnet URI to match active WebTorrent seeder`
-  19. `d01f51f` `Add Player Character 01 as first game on the platform`
-  20. `f71401e` `Initial commit: Peerplay MVP`
+- **24 commits** as of 2026-03-16 (latest first):
+  1. `459ec60` `Fix review issues: CI workflow, accessibility, and responsive layout`
+  2. `51503c6` `Add Windows download button and Electron build pipeline`
+  3. `bd09ef5` `Add storefront search, cover image uploads, Electron improvements, and e2e tests`
+  4. `015ebfd` `Update CONTEXT.md and CLAUDE.md with full Electron client architecture documentation`
+  5. `ac3ae87` `Update CLAUDE.md and CONTEXT.md with Stripe Connect integration details`
+  6. `dd4f235` `Build functional Electron desktop client with BitTorrent downloads, DRM, and game launching`
+  7. `dfd977a` `Fix review issues: Stripe security, webhook idempotency, frontend cleanup`
+  8. `3e6f71d` `Fix Stripe Connect return endpoint and Dashboard error logging`
+  9. `cd78e5c` `Rebrand Peerplay to BoilerDeck and set up boilerdeck.com domain`
+  10. `5550a92` `Update CONTEXT.md and CLAUDE.md for storefront API integration`
+  11. `148e5ec` `Fix review issues: logout token revocation, 204 handling, accessibility, dedup`
+  12. `6f6caac` `Connect web storefront to real API, replacing all mock data`
+  13. `695459d` `Update CONTEXT.md and CLAUDE.md with upload pipeline and VPS consolidation`
+  14. `47a4b29` `Move web storefront to VPS and add Developer Portal link`
+  15. `f1a267c` `Auto-create upload temp directory if missing`
+  16. `7122663` `Require game build upload when creating a new game`
+  17. `7164553` `Set base path for dev portal served under /dev/`
+  18. `aee5333` `Add game file upload pipeline with automatic torrent creation`
+  19. `b147608` `Deploy to Hetzner VPS with standard BitTorrent seeding`
+  20. `bbc01e1` `Implement LIGHT and ENCRYPTED DRM tiers across server and storefront`
+  21. `a1b1673` `Add CONTEXT.md for session continuity between Claude instances`
+  22. `87ffa4f` `Update Player Character 01 magnet URI to match active WebTorrent seeder`
+  23. `d01f51f` `Add Player Character 01 as first game on the platform`
+  24. `f71401e` `Initial commit: Peerplay MVP`
 - **Git identity:** `EthanGeisler` / `25466222+EthanGeisler@users.noreply.github.com`
+- **Tags:** `v0.1.0` (first Electron client release)
 
 ---
 
@@ -382,7 +449,10 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 - [x] DRM storefront UI — DRM badges on game cards, DRM info card on detail page, 3-column comparison on About page
 - [x] Developer portal SPA (`dev-portal/`) — manage games, file upload pipeline, version management
 - [x] Consolidated hosting — storefront + dev portal + API all on VPS
+- [x] Electron build pipeline — NSIS installer + portable exe, GitHub Actions CI, v0.1.0 published
+- [x] Download button on web storefront — header button + Store page banner, links to GitHub Releases
 - [ ] Real cover art / screenshots for Player Character 01 (currently using placehold.co)
+- [ ] Real app icon for Electron client (currently a placeholder — `client/resources/icon.ico`)
 - [ ] Electron client: fetch `.torrent` file from `/api/torrents/:gameId/latest/file` instead of using magnet URI (faster metadata, endpoint exists but client doesn't use it yet)
 - [ ] Electron client: catch-all route for 404s
 - [ ] Electron client: store key whitelist (currently accepts any key — not a security issue since it's local-only, but good hygiene)
@@ -391,9 +461,10 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 ### Medium-term
 - [ ] Steam shortcuts.vdf integration (games appear in Steam library)
 - [ ] Cloud save sync (Backblaze B2)
-- [ ] Client auto-update (electron-updater)
+- [ ] Client auto-update (electron-updater) — `latest.yml` already published with v0.1.0, just needs testing
 - [ ] Search / categories / reviews
 - [ ] Private opentracker instance + seed boxes
+- [ ] Code signing certificate for Windows installer (removes SmartScreen warning)
 
 ### Long-term
 - [ ] Mac/Linux clients
@@ -455,6 +526,10 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 | Stripe onboard tokens | `server/packages/auth/src/developer.routes.ts` (`createOnboardToken`/`verifyOnboardToken`) |
 | Stripe checkout + webhooks | `server/packages/payment/src/service.ts` |
 | Deploy workflow (GH Pages) | `.github/workflows/deploy.yml` |
+| Build workflow (Electron) | `.github/workflows/build-client.yml` |
+| Electron build config | `client/package.json` (`"build"` field) |
+| Electron app icon | `client/resources/icon.ico` (placeholder — replace with real branding) |
+| GitHub Release (v0.1.0) | https://github.com/EthanGeisler/peerplay/releases/tag/v0.1.0 |
 | Electron client API client | `client/src/renderer/api.ts` |
 | Electron client types | `client/src/renderer/types.ts` |
 | Electron client preload bridge | `client/src/main/preload.ts` |
