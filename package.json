@@ -5,12 +5,14 @@
     "server",
     "server/packages/*",
     "client",
-    "web"
+    "web",
+    "dev-portal"
   ],
   "scripts": {
     "dev:server": "npm run dev --workspace=server",
     "dev:client": "npm run dev --workspace=client",
     "dev:web": "npm run dev --workspace=web",
+    "dev:portal": "npm run dev --workspace=dev-portal",
     "build:web": "npm run build --workspace=web",
     "build": "npm run build --workspaces",
     "db:migrate": "npm run db:migrate --workspace=server",

@@ -1,4 +1,7 @@
+/// <reference path="./vendor.d.ts" />
 import { db, NotFoundError, ForbiddenError } from "@peerplay/shared";
+import createTorrent from "create-torrent";
+import parseTorrent, { toMagnetURI } from "parse-torrent";
 
 export async function getLatestTorrent(userId: string, gameId: string) {
   // Verify the user owns a valid license
@@ -42,5 +45,49 @@ export async function getLatestTorrent(userId: string, gameId: string) {
     ...(encrypted && version.game.encryptionKey
       ? { algorithm: version.game.encryptionKey.algorithm }
       : {}),
+  };
+}
+
+const ANNOUNCE_LIST = [
+  ["udp://tracker.opentrackr.org:1337/announce"],
+  ["udp://open.tracker.cl:1337/announce"],
+  ["udp://open.demonii.com:1339/announce"],
+  ["udp://open.stealth.si:80/announce"],
+  ["udp://tracker.torrent.eu.org:451/announce"],
+  ["udp://exodus.desync.com:6969/announce"],
+  ["wss://tracker.openwebtorrent.com"],
+  ["wss://tracker.webtorrent.dev"],
+  ["wss://tracker.btorrent.xyz"],
+];
+
+export async function createGameTorrent(
+  dirPath: string,
+  name: string,
+): Promise<{ torrentBuffer: Buffer; infoHash: string; magnetUri: string }> {
+  const torrentBuffer = await new Promise<Buffer>((resolve, reject) => {
+    createTorrent(
+      dirPath,
+      {
+        name,
+        comment: `Published on Peerplay`,
+        createdBy: "Peerplay",
+        announceList: ANNOUNCE_LIST,
+        private: false,
+        pieceLength: 2 ** 18,
+      },
+      (err: Error | null, buf: Buffer) => {
+        if (err) reject(err);
+        else resolve(buf);
+      },
+    );
+  });
+
+  const parsed = await parseTorrent(torrentBuffer);
+  const magnetUri = toMagnetURI(parsed);
+
+  return {
+    torrentBuffer,
+    infoHash: parsed.infoHash!,
+    magnetUri,
   };
 }

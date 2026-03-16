@@ -23,6 +23,8 @@ const envSchema = z.object({
     .string()
     .regex(/^[0-9a-fA-F]{64,}$/, "Must be at least 64 hex characters")
     .optional(),
+  GAMES_DIR: z.string().default("/opt/peerplay/games"),
+  TRANSMISSION_RPC_URL: z.string().default("http://127.0.0.1:9091/transmission/rpc"),
 });
 
 export type Env = z.infer<typeof envSchema>;

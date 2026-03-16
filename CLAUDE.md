@@ -7,12 +7,13 @@
 - `server/packages/` — Modular service packages (auth, catalog, license, payment, saves, torrent, shared)
 - `server/prisma/` — Database schema and migrations
 - `client/` — Electron + React desktop app (Vite, zustand, WebTorrent)
-- `dev-portal/` — Developer dashboard SPA (future)
+- `dev-portal/` — Developer dashboard SPA (Vite, React 19, Zustand, real API calls)
 - `docs/` — Public documentation (future)
 
 ## Development
 - **Server:** `npm run dev:server` from root (uses tsx watch)
 - **Client:** `npm run dev:client` from root (Vite dev server)
+- **Dev Portal:** `npm run dev:portal` from root (Vite on port 5174, proxies /api to localhost:3001)
 - **Database:** `npm run db:migrate` (Prisma migrate), `npm run db:seed` (seed data)
 - All packages use ESM (`"type": "module"`) — use `.js` extensions in imports
 
