@@ -145,7 +145,7 @@ export function GameDetail() {
   }
 
   const game = currentGame;
-  const owned = licenses.some((l) => l.game.id === game.id && l.status === "ACTIVE");
+  const owned = Array.isArray(licenses) && licenses.some((l) => l.game.id === game.id && l.status === "ACTIVE");
 
   const handleBuy = async () => {
     if (!user) {

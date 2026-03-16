@@ -19,8 +19,8 @@ export const useLibraryStore = create<LibraryState>((set) => ({
   fetchLicenses: async () => {
     set({ loading: true });
     try {
-      const data = await apiFetch<ApiLicense[]>("/licenses");
-      set({ licenses: data, loading: false });
+      const data = await apiFetch<{ licenses: ApiLicense[] }>("/licenses");
+      set({ licenses: data.licenses, loading: false });
     } catch {
       set({ loading: false });
     }
@@ -35,8 +35,8 @@ export const useLibraryStore = create<LibraryState>((set) => ({
       });
       // If free, license was created immediately — refresh licenses
       if (result.free) {
-        const licenses = await apiFetch<ApiLicense[]>("/licenses");
-        set({ licenses, checkoutLoading: false });
+        const resp = await apiFetch<{ licenses: ApiLicense[] }>("/licenses");
+        set({ licenses: resp.licenses, checkoutLoading: false });
       } else {
         set({ checkoutLoading: false });
       }

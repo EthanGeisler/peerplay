@@ -10,7 +10,7 @@ export function getAccessToken() {
   return accessToken;
 }
 
-async function refreshAccessToken(): Promise<string | null> {
+export async function refreshAccessToken(): Promise<string | null> {
   const refreshToken = localStorage.getItem("pp_refresh_token");
   if (!refreshToken) return null;
 

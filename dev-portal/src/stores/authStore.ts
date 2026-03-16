@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { apiFetch, setAccessToken } from "../api";
+import { apiFetch, setAccessToken, refreshAccessToken } from "../api";
 
 interface User {
   id: string;
@@ -98,6 +98,9 @@ export const useAuthStore = create<AuthState>((set) => ({
         body: JSON.stringify({ studioName }),
       });
       set({ developer: dev });
+
+      // Refresh token to get a new JWT with the DEVELOPER role
+      await refreshAccessToken();
 
       // Reload user to get updated role
       const user = await apiFetch<User>("/auth/me");
