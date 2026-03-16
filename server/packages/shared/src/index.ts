@@ -16,3 +16,4 @@ export {
   errorHandler,
 } from "./middleware.js";
 export type { JwtPayload } from "./middleware.js";
+export { getStripe } from "./stripe.js";

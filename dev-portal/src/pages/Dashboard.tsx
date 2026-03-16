@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiFetch } from "../api";
+import { apiFetch, redirectToStripeOnboard } from "../api";
 import { useAuthStore } from "../stores/authStore";
 
 interface GameSummary {
@@ -46,18 +46,17 @@ export function Dashboard() {
   const totalSales = games.reduce((sum, g) => sum + g.salesCount, 0);
   const publishedCount = games.filter((g) => g.status === "PUBLISHED").length;
   const [stripeLoading, setStripeLoading] = useState(false);
+  const [stripeError, setStripeError] = useState<string | null>(null);
 
   const handleStripeConnect = useCallback(async () => {
     setStripeLoading(true);
+    setStripeError(null);
     try {
-      const data = await apiFetch<{ url?: string; status?: string }>("/developer/stripe/onboard");
-      if (data.url) {
-        window.location.assign(data.url);
-      } else {
-        setStripeLoading(false);
-      }
+      const redirected = await redirectToStripeOnboard();
+      if (!redirected) setStripeLoading(false);
     } catch (err) {
       console.error("Stripe onboard failed:", err);
+      setStripeError("Failed to start Stripe setup. Please try again.");
       setStripeLoading(false);
     }
   }, []);
@@ -103,6 +102,9 @@ export function Dashboard() {
           >
             {stripeLoading ? "Loading..." : "Connect with Stripe"}
           </button>
+          {stripeError && (
+            <div style={{ fontSize: 13, color: "var(--accent)", marginTop: 8 }}>{stripeError}</div>
+          )}
         </div>
       )}
 

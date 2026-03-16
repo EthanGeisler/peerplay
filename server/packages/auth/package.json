@@ -12,7 +12,7 @@
     "@boilerdeck/shared": "*",
     "express": "^5.1.0",
     "bcrypt": "^5.1.1",
-    "stripe": "^17.0.0",
+    "stripe": "^20.4.1",
     "jsonwebtoken": "^9.0.2",
     "zod": "^3.24.0"
   },

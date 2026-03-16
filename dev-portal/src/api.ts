@@ -78,6 +78,16 @@ export class ApiError extends Error {
   }
 }
 
+/** Redirect to Stripe Connect onboarding. Returns false if no URL was returned. */
+export async function redirectToStripeOnboard(): Promise<boolean> {
+  const data = await apiFetch<{ url?: string; status?: string }>("/developer/stripe/onboard");
+  if (data.url) {
+    window.location.assign(data.url);
+    return true;
+  }
+  return false;
+}
+
 export function apiUpload<T = unknown>(
   path: string,
   formData: FormData,

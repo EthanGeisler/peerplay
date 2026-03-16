@@ -1,18 +1,5 @@
 import Stripe from "stripe";
-import { db, NotFoundError, ConflictError, ValidationError, AppError, getConfig } from "@boilerdeck/shared";
-
-let _stripe: Stripe | null = null;
-
-function getStripe(): Stripe {
-  if (!_stripe) {
-    const key = getConfig().STRIPE_SECRET_KEY;
-    if (!key) {
-      throw new AppError(500, "Stripe is not configured — set STRIPE_SECRET_KEY in .env");
-    }
-    _stripe = new Stripe(key);
-  }
-  return _stripe;
-}
+import { db, AppError, NotFoundError, ConflictError, ValidationError, getStripe, getConfig } from "@boilerdeck/shared";
 
 export async function checkout(userId: string, gameId: string) {
   // 1. Verify game exists and is published
@@ -100,34 +87,41 @@ export async function checkout(userId: string, gameId: string) {
   const successUrl = `${origin}/#/checkout/success?session_id={CHECKOUT_SESSION_ID}`;
   const cancelUrl = `${origin}/#/checkout/cancel`;
 
-  const session = await stripe.checkout.sessions.create({
-    mode: "payment",
-    line_items: [
-      {
-        price_data: {
-          currency: "usd",
-          product_data: {
-            name: game.title,
+  let session: Stripe.Checkout.Session;
+  try {
+    session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      line_items: [
+        {
+          price_data: {
+            currency: "usd",
+            product_data: {
+              name: game.title,
+            },
+            unit_amount: game.priceCents,
           },
-          unit_amount: game.priceCents,
+          quantity: 1,
         },
-        quantity: 1,
+      ],
+      payment_intent_data: {
+        application_fee_amount: platformFeeCents,
+        transfer_data: {
+          destination: game.developer.stripeAccountId,
+        },
       },
-    ],
-    payment_intent_data: {
-      application_fee_amount: platformFeeCents,
-      transfer_data: {
-        destination: game.developer.stripeAccountId,
+      metadata: {
+        paymentId: payment.id,
+        gameId: game.id,
+        userId,
       },
-    },
-    metadata: {
-      paymentId: payment.id,
-      gameId: game.id,
-      userId,
-    },
-    success_url: successUrl,
-    cancel_url: cancelUrl,
-  });
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+    });
+  } catch (err) {
+    // Clean up orphaned PENDING payment if Stripe call fails
+    await db.payment.delete({ where: { id: payment.id } });
+    throw err;
+  }
 
   // Store the checkout session ID on the payment record
   await db.payment.update({
@@ -153,10 +147,14 @@ export async function handleWebhook(rawBody: Buffer | string, signature: string 
   const stripe = getStripe();
   let event: Stripe.Event;
 
+  if (!signature) {
+    throw new ValidationError("Missing stripe-signature header");
+  }
+
   try {
     event = stripe.webhooks.constructEvent(
       rawBody,
-      signature!,
+      signature,
       config.STRIPE_WEBHOOK_SECRET,
     );
   } catch (err) {
@@ -229,6 +227,10 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
 async function handleCheckoutExpired(session: Stripe.Checkout.Session) {
   const paymentId = session.metadata?.paymentId;
   if (!paymentId) return;
+
+  // Idempotency: don't overwrite a COMPLETED payment
+  const existing = await db.payment.findUnique({ where: { id: paymentId } });
+  if (!existing || existing.status === "COMPLETED") return;
 
   await db.payment.update({
     where: { id: paymentId },

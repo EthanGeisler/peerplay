@@ -1,21 +1,24 @@
 import { Router } from "express";
+import crypto from "crypto";
 import { z, ZodError } from "zod";
-import Stripe from "stripe";
-import { db, authenticate, requireRole, ValidationError, ConflictError, NotFoundError, AppError, getConfig } from "@boilerdeck/shared";
+import { db, redis, authenticate, requireRole, getStripe, ValidationError, ConflictError, NotFoundError, getConfig } from "@boilerdeck/shared";
 
 export const developerRouter = Router();
 
-let _stripe: Stripe | null = null;
+/** Generate a short-lived token for Stripe Connect return/refresh URLs */
+async function createOnboardToken(developerId: string): Promise<string> {
+  const token = crypto.randomBytes(32).toString("hex");
+  await redis.set(`stripe_onboard:${token}`, developerId, "EX", 3600); // 1 hour TTL
+  return token;
+}
 
-function getStripe(): Stripe {
-  if (!_stripe) {
-    const key = getConfig().STRIPE_SECRET_KEY;
-    if (!key) {
-      throw new AppError(500, "Stripe is not configured — set STRIPE_SECRET_KEY in .env");
-    }
-    _stripe = new Stripe(key);
+/** Verify and consume a Stripe Connect onboard token, returns developerId or null */
+async function verifyOnboardToken(token: string): Promise<string | null> {
+  const developerId = await redis.get(`stripe_onboard:${token}`);
+  if (developerId) {
+    await redis.del(`stripe_onboard:${token}`);
   }
-  return _stripe;
+  return developerId;
 }
 
 const registerDevSchema = z.object({
@@ -104,7 +107,9 @@ developerRouter.get(
         });
       }
 
-      // Create an account link for onboarding
+      // Create a signed token for the return/refresh URLs
+      const onboardToken = await createOnboardToken(developer.id);
+
       const returnUrl = config.STRIPE_CONNECT_RETURN_URL
         || `${config.CORS_ORIGIN}/api/developer/stripe/onboard/return`;
       const refreshUrl = config.STRIPE_CONNECT_REFRESH_URL
@@ -112,8 +117,8 @@ developerRouter.get(
 
       const accountLink = await stripe.accountLinks.create({
         account: stripeAccountId,
-        return_url: `${returnUrl}?acct=${stripeAccountId}`,
-        refresh_url: `${refreshUrl}?acct=${stripeAccountId}`,
+        return_url: `${returnUrl}?token=${onboardToken}`,
+        refresh_url: `${refreshUrl}?token=${onboardToken}`,
         type: "account_onboarding",
       });
 
@@ -125,36 +130,35 @@ developerRouter.get(
 );
 
 // Stripe Connect onboarding return — check status and redirect to dev portal
-// No auth middleware — Stripe redirects the browser here with no JWT
+// No auth middleware — Stripe redirects the browser here with a signed token
 developerRouter.get(
   "/developer/stripe/onboard/return",
   async (req, res, next) => {
     try {
-      const acct = String(req.query.acct || "");
-      if (!acct) {
-        res.redirect(`${getConfig().CORS_ORIGIN}/dev/#/dashboard`);
-        return;
-      }
+      const token = String(req.query.token || "");
+      const developerId = token ? await verifyOnboardToken(token) : null;
 
-      const developer = await db.developer.findFirst({
-        where: { stripeAccountId: acct },
-      });
-
-      if (developer) {
-        const stripe = getStripe();
-        const account = await stripe.accounts.retrieve(acct);
-
-        await db.developer.update({
-          where: { id: developer.id },
-          data: {
-            stripeOnboarded: account.charges_enabled ?? false,
-            stripePayoutsEnabled: account.payouts_enabled ?? false,
-          },
+      if (developerId) {
+        const developer = await db.developer.findUnique({
+          where: { id: developerId },
         });
+
+        if (developer?.stripeAccountId) {
+          const stripe = getStripe();
+          const account = await stripe.accounts.retrieve(developer.stripeAccountId);
+
+          await db.developer.update({
+            where: { id: developer.id },
+            data: {
+              stripeOnboarded: account.charges_enabled ?? false,
+              stripePayoutsEnabled: account.payouts_enabled ?? false,
+            },
+          });
+        }
       }
 
       // Redirect to dev portal dashboard
-      res.redirect(`${getConfig().CORS_ORIGIN}/dev/#/dashboard`);
+      res.redirect(`${getConfig().CORS_ORIGIN}/dev/#/`);
     } catch (err) {
       next(err);
     }
@@ -162,14 +166,20 @@ developerRouter.get(
 );
 
 // Stripe Connect onboarding refresh — generate new link (previous one expired)
-// No auth middleware — Stripe redirects the browser here with no JWT
+// No auth middleware — Stripe redirects the browser here with a signed token
 developerRouter.get(
   "/developer/stripe/onboard/refresh",
   async (req, res, next) => {
     try {
-      const acct = String(req.query.acct || "");
-      const developer = await db.developer.findFirst({
-        where: { stripeAccountId: acct },
+      const token = String(req.query.token || "");
+      const developerId = token ? await verifyOnboardToken(token) : null;
+
+      if (!developerId) {
+        throw new ValidationError("Invalid or expired onboarding link");
+      }
+
+      const developer = await db.developer.findUnique({
+        where: { id: developerId },
       });
 
       if (!developer || !developer.stripeAccountId) {
@@ -179,6 +189,9 @@ developerRouter.get(
       const stripe = getStripe();
       const config = getConfig();
 
+      // Generate a fresh token for the new URLs
+      const newToken = await createOnboardToken(developer.id);
+
       const returnUrl = config.STRIPE_CONNECT_RETURN_URL
         || `${config.CORS_ORIGIN}/api/developer/stripe/onboard/return`;
       const refreshUrl = config.STRIPE_CONNECT_REFRESH_URL
@@ -186,8 +199,8 @@ developerRouter.get(
 
       const accountLink = await stripe.accountLinks.create({
         account: developer.stripeAccountId,
-        return_url: `${returnUrl}?acct=${developer.stripeAccountId}`,
-        refresh_url: `${refreshUrl}?acct=${developer.stripeAccountId}`,
+        return_url: `${returnUrl}?token=${newToken}`,
+        refresh_url: `${refreshUrl}?token=${newToken}`,
         type: "account_onboarding",
       });
 

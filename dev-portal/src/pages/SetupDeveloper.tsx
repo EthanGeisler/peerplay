@@ -1,13 +1,16 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../stores/authStore";
-import { apiFetch } from "../api";
+import { redirectToStripeOnboard } from "../api";
 
 export function SetupDeveloper() {
+  const navigate = useNavigate();
   const [studioName, setStudioName] = useState("");
   const registerDeveloper = useAuthStore((s) => s.registerDeveloper);
   const developer = useAuthStore((s) => s.developer);
   const error = useAuthStore((s) => s.error);
   const [stripeLoading, setStripeLoading] = useState(false);
+  const [stripeError, setStripeError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -16,12 +19,13 @@ export function SetupDeveloper() {
 
   const handleStripeConnect = async () => {
     setStripeLoading(true);
+    setStripeError(null);
     try {
-      const data = await apiFetch<{ url?: string; status?: string }>("/developer/stripe/onboard");
-      if (data.url) {
-        window.location.href = data.url;
-      }
-    } catch {
+      const redirected = await redirectToStripeOnboard();
+      if (!redirected) setStripeLoading(false);
+    } catch (err) {
+      console.error("Stripe onboard failed:", err);
+      setStripeError("Failed to start Stripe setup. Please try again.");
       setStripeLoading(false);
     }
   };
@@ -70,6 +74,23 @@ export function SetupDeveloper() {
             You can also do this later from your Dashboard.
           </p>
 
+          {stripeError && (
+            <div
+              style={{
+                padding: "10px 14px",
+                borderRadius: "var(--radius)",
+                backgroundColor: "rgba(233, 69, 96, 0.1)",
+                border: "1px solid rgba(233, 69, 96, 0.3)",
+                color: "var(--accent)",
+                fontSize: 13,
+                marginBottom: 12,
+                textAlign: "left",
+              }}
+            >
+              {stripeError}
+            </div>
+          )}
+
           <button
             onClick={handleStripeConnect}
             disabled={stripeLoading}
@@ -89,7 +110,7 @@ export function SetupDeveloper() {
           </button>
 
           <button
-            onClick={() => window.location.reload()}
+            onClick={() => navigate("/")}
             style={{
               padding: "12px 24px",
               borderRadius: "var(--radius)",
