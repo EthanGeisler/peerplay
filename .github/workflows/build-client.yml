@@ -17,13 +17,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
 
       - name: Install root dependencies
         run: npm ci
 
       - name: Install client dependencies
         working-directory: client
-        run: npm install
+        run: npm ci
 
       - name: Build and package
         working-directory: client
@@ -31,4 +32,4 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npm run build:electron
-          npx electron-builder --publish always
+          npx electron-builder --publish onTagOrDraft

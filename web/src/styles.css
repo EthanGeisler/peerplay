@@ -59,3 +59,9 @@ button {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--border);
 }
+
+@media (max-width: 768px) {
+  .download-label {
+    display: none;
+  }
+}
