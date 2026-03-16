@@ -2,23 +2,15 @@ import { useState } from "react";
 import { useAuthStore } from "../stores/authStore";
 
 export function Login() {
-  const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [displayName, setDisplayName] = useState("");
   const login = useAuthStore((s) => s.login);
-  const register = useAuthStore((s) => s.register);
   const error = useAuthStore((s) => s.error);
   const loading = useAuthStore((s) => s.loading);
-  const clearError = useAuthStore((s) => s.clearError);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (mode === "login") {
-      await login(email, password);
-    } else {
-      await register(email, password, displayName);
-    }
+    await login(email, password);
   };
 
   return (
@@ -58,39 +50,6 @@ export function Login() {
           </div>
         </div>
 
-        <div
-          style={{
-            display: "flex",
-            gap: 4,
-            marginBottom: 24,
-            backgroundColor: "var(--bg-tertiary)",
-            borderRadius: "var(--radius)",
-            padding: 4,
-          }}
-        >
-          {(["login", "register"] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => {
-                setMode(m);
-                clearError();
-              }}
-              style={{
-                flex: 1,
-                padding: "8px 16px",
-                borderRadius: "var(--radius)",
-                backgroundColor: mode === m ? "var(--bg-hover)" : "transparent",
-                color: mode === m ? "var(--text-primary)" : "var(--text-secondary)",
-                fontWeight: mode === m ? 600 : 400,
-                fontSize: 13,
-                transition: "all 0.15s",
-              }}
-            >
-              {m === "login" ? "Sign In" : "Create Account"}
-            </button>
-          ))}
-        </div>
-
         {error && (
           <div
             style={{
@@ -108,24 +67,6 @@ export function Login() {
         )}
 
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {mode === "register" && (
-            <div>
-              <label
-                style={{ display: "block", fontSize: 13, color: "var(--text-secondary)", marginBottom: 6 }}
-              >
-                Display Name
-              </label>
-              <input
-                type="text"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="Your name"
-                required
-                style={{ width: "100%" }}
-              />
-            </div>
-          )}
-
           <div>
             <label
               style={{ display: "block", fontSize: 13, color: "var(--text-secondary)", marginBottom: 6 }}
@@ -173,24 +114,25 @@ export function Login() {
               transition: "opacity 0.15s",
             }}
           >
-            {loading ? "..." : mode === "login" ? "Sign In" : "Create Account"}
+            {loading ? "..." : "Sign In"}
           </button>
         </form>
 
         <div
           style={{
             marginTop: 24,
-            padding: "12px 14px",
-            borderRadius: "var(--radius)",
-            backgroundColor: "var(--bg-tertiary)",
-            fontSize: 12,
+            textAlign: "center",
+            fontSize: 13,
             color: "var(--text-muted)",
-            lineHeight: 1.5,
           }}
         >
-          <strong style={{ color: "var(--text-secondary)" }}>Demo credentials:</strong>
-          <br />
-          dev@example.com / developer123
+          Don't have an account?{" "}
+          <a
+            href="/#/login"
+            style={{ color: "var(--accent)", textDecoration: "underline" }}
+          >
+            Register on the storefront
+          </a>
         </div>
       </div>
     </div>
