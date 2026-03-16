@@ -1,0 +1,217 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  PLAYER
+  DEVELOPER
+  ADMIN
+}
+
+enum GameStatus {
+  DRAFT
+  PENDING_REVIEW
+  PUBLISHED
+  SUSPENDED
+}
+
+enum VersionStatus {
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum DrmTier {
+  NONE
+  LIGHT
+  ENCRYPTED
+}
+
+enum LicenseStatus {
+  ACTIVE
+  REVOKED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  passwordHash    String    @map("password_hash")
+  displayName     String    @map("display_name")
+  role            UserRole  @default(PLAYER)
+  stripeCustomerId String?  @map("stripe_customer_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  developer       Developer?
+  licenses        License[]
+  payments        Payment[]
+  saveFiles       SaveFile[]
+  refreshTokens   RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+model Developer {
+  id              String   @id @default(uuid())
+  userId          String   @unique @map("user_id")
+  studioName      String   @map("studio_name")
+  stripeAccountId String?  @map("stripe_account_id")
+  stripeOnboarded Boolean  @default(false) @map("stripe_onboarded")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  games           Game[]
+
+  @@map("developers")
+}
+
+model Game {
+  id          String     @id @default(uuid())
+  developerId String     @map("developer_id")
+  slug        String     @unique
+  title       String
+  description String     @default("")
+  priceCents  Int        @map("price_cents")
+  drmTier     DrmTier    @default(NONE) @map("drm_tier")
+  status      GameStatus @default(DRAFT)
+  exePath     String?    @map("exe_path")
+  savePaths   String[]   @default([]) @map("save_paths")
+  coverImageUrl String?  @map("cover_image_url")
+  screenshots String[]   @default([])
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  developer   Developer  @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  versions    GameVersion[]
+  licenses    License[]
+  payments    Payment[]
+  saveFiles   SaveFile[]
+  encryptionKey EncryptionKey?
+
+  @@map("games")
+}
+
+model GameVersion {
+  id            String        @id @default(uuid())
+  gameId        String        @map("game_id")
+  version       String
+  torrentId     String?       @unique @map("torrent_id")
+  fileSizeBytes BigInt        @default(0) @map("file_size_bytes")
+  status        VersionStatus @default(PROCESSING)
+  changelog     String        @default("")
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  game          Game          @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  torrent       Torrent?      @relation(fields: [torrentId], references: [id])
+
+  @@unique([gameId, version])
+  @@map("game_versions")
+}
+
+model Torrent {
+  id              String       @id @default(uuid())
+  infoHash        String       @unique @map("info_hash")
+  magnetUri       String       @map("magnet_uri")
+  torrentFile     Bytes        @map("torrent_file")
+  encryptionKeyId String?      @map("encryption_key_id")
+  createdAt       DateTime     @default(now()) @map("created_at")
+
+  version         GameVersion?
+
+  @@map("torrents")
+}
+
+model EncryptionKey {
+  id           String   @id @default(uuid())
+  gameId       String   @unique @map("game_id")
+  masterKeyEnc Bytes    @map("master_key_enc")
+  algorithm    String   @default("aes-256-ctr")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  game         Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@map("encryption_keys")
+}
+
+model License {
+  id                String        @id @default(uuid())
+  userId            String        @map("user_id")
+  gameId            String        @map("game_id")
+  paymentId         String?       @unique @map("payment_id")
+  status            LicenseStatus @default(ACTIVE)
+  deviceFingerprints String[]     @default([]) @map("device_fingerprints")
+  decryptionKeyEnc  Bytes?        @map("decryption_key_enc")
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  game              Game          @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  payment           Payment?      @relation(fields: [paymentId], references: [id])
+
+  @@unique([userId, gameId])
+  @@map("licenses")
+}
+
+model Payment {
+  id                    String        @id @default(uuid())
+  userId                String        @map("user_id")
+  gameId                String        @map("game_id")
+  stripePaymentIntentId String?       @unique @map("stripe_payment_intent_id")
+  amountCents           Int           @map("amount_cents")
+  platformFeeCents      Int           @map("platform_fee_cents")
+  status                PaymentStatus @default(PENDING)
+  createdAt             DateTime      @default(now()) @map("created_at")
+  updatedAt             DateTime      @updatedAt @map("updated_at")
+
+  user                  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  game                  Game          @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  license               License?
+
+  @@map("payments")
+}
+
+model SaveFile {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  gameId     String   @map("game_id")
+  slot       Int      @default(0)
+  filePath   String   @map("file_path")
+  b2Key      String   @map("b2_key")
+  sha256Hash String   @map("sha256_hash")
+  version    Int      @default(1)
+  sizeBytes  BigInt   @default(0) @map("size_bytes")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  game       Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, gameId, slot, filePath])
+  @@map("save_files")
+}

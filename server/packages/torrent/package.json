@@ -1,0 +1,19 @@
+{
+  "name": "@peerplay/torrent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": { "build": "tsc", "lint": "tsc --noEmit" },
+  "dependencies": {
+    "@peerplay/shared": "*",
+    "express": "^5.1.0",
+    "create-torrent": "^6.1.0",
+    "parse-torrent": "^11.0.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "typescript": "^5.7.0"
+  }
+}
