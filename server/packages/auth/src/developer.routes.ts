@@ -112,8 +112,8 @@ developerRouter.get(
 
       const accountLink = await stripe.accountLinks.create({
         account: stripeAccountId,
-        return_url: returnUrl,
-        refresh_url: refreshUrl,
+        return_url: `${returnUrl}?acct=${stripeAccountId}`,
+        refresh_url: `${refreshUrl}?acct=${stripeAccountId}`,
         type: "account_onboarding",
       });
 
@@ -125,37 +125,36 @@ developerRouter.get(
 );
 
 // Stripe Connect onboarding return — check status and redirect to dev portal
+// No auth middleware — Stripe redirects the browser here with no JWT
 developerRouter.get(
   "/developer/stripe/onboard/return",
-  authenticate,
-  requireRole("DEVELOPER"),
   async (req, res, next) => {
     try {
-      const developer = await db.developer.findUnique({
-        where: { userId: req.user!.sub },
-      });
-
-      if (!developer || !developer.stripeAccountId) {
-        throw new NotFoundError("Developer profile");
+      const acct = String(req.query.acct || "");
+      if (!acct) {
+        res.redirect(`${getConfig().CORS_ORIGIN}/dev/#/dashboard`);
+        return;
       }
 
-      const stripe = getStripe();
-      const account = await stripe.accounts.retrieve(developer.stripeAccountId);
-
-      await db.developer.update({
-        where: { id: developer.id },
-        data: {
-          stripeOnboarded: account.charges_enabled ?? false,
-          stripePayoutsEnabled: account.payouts_enabled ?? false,
-        },
+      const developer = await db.developer.findFirst({
+        where: { stripeAccountId: acct },
       });
 
+      if (developer) {
+        const stripe = getStripe();
+        const account = await stripe.accounts.retrieve(acct);
+
+        await db.developer.update({
+          where: { id: developer.id },
+          data: {
+            stripeOnboarded: account.charges_enabled ?? false,
+            stripePayoutsEnabled: account.payouts_enabled ?? false,
+          },
+        });
+      }
+
       // Redirect to dev portal dashboard
-      const config = getConfig();
-      const dashboardUrl = config.CORS_ORIGIN.includes("/dev")
-        ? `${config.CORS_ORIGIN}/#/dashboard`
-        : `${config.CORS_ORIGIN}/dev/#/dashboard`;
-      res.redirect(dashboardUrl);
+      res.redirect(`${getConfig().CORS_ORIGIN}/dev/#/dashboard`);
     } catch (err) {
       next(err);
     }
@@ -163,14 +162,14 @@ developerRouter.get(
 );
 
 // Stripe Connect onboarding refresh — generate new link (previous one expired)
+// No auth middleware — Stripe redirects the browser here with no JWT
 developerRouter.get(
   "/developer/stripe/onboard/refresh",
-  authenticate,
-  requireRole("DEVELOPER"),
   async (req, res, next) => {
     try {
-      const developer = await db.developer.findUnique({
-        where: { userId: req.user!.sub },
+      const acct = String(req.query.acct || "");
+      const developer = await db.developer.findFirst({
+        where: { stripeAccountId: acct },
       });
 
       if (!developer || !developer.stripeAccountId) {
@@ -187,8 +186,8 @@ developerRouter.get(
 
       const accountLink = await stripe.accountLinks.create({
         account: developer.stripeAccountId,
-        return_url: returnUrl,
-        refresh_url: refreshUrl,
+        return_url: `${returnUrl}?acct=${developer.stripeAccountId}`,
+        refresh_url: `${refreshUrl}?acct=${developer.stripeAccountId}`,
         type: "account_onboarding",
       });
 

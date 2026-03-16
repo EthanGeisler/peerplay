@@ -52,9 +52,12 @@ export function Dashboard() {
     try {
       const data = await apiFetch<{ url?: string; status?: string }>("/developer/stripe/onboard");
       if (data.url) {
-        window.location.href = data.url;
+        window.location.assign(data.url);
+      } else {
+        setStripeLoading(false);
       }
-    } catch {
+    } catch (err) {
+      console.error("Stripe onboard failed:", err);
       setStripeLoading(false);
     }
   }, []);
