@@ -13,7 +13,8 @@
 
 ## Development
 - **Server:** `npm run dev:server` from root (uses tsx watch)
-- **Client:** `npm run dev:client` from root (Vite dev server)
+- **Client (Electron):** `npm run dev:client` from root (starts both Vite dev server on port 5173 and Electron main process)
+- **Client build:** `cd client && npm run build:electron` (compiles main process TypeScript), then `npm run dist` (electron-builder package)
 - **Dev Portal:** `npm run dev:portal` from root (Vite on port 5174, proxies /api to localhost:3001)
 - **Web Storefront:** `npm run dev:web` from root (Vite on port 5173, proxies /api to localhost:3001)
 - **Database:** `npm run db:migrate` (Prisma migrate), `npm run db:seed` (seed data)
@@ -27,6 +28,16 @@
 - Error classes: AppError, NotFoundError, UnauthorizedError, ForbiddenError, ConflictError, ValidationError
 - Stripe: import `getStripe` from `@boilerdeck/shared` (singleton in `shared/src/stripe.ts`) — never instantiate Stripe directly in packages
 - Prisma models are PascalCase, DB tables are snake_case (via `@@map`)
+
+## Electron Client Conventions
+- **IPC handlers** go in `client/src/main/index.ts` `setupIpcHandlers()` — namespaced like `store:get`, `downloads:start`, `drm:get-fingerprint`
+- **Preload bridge** at `client/src/main/preload.ts` — every IPC channel must be exposed here under `window.boilerdeck`
+- **Type declarations for `window.boilerdeck`** must be kept in sync in TWO places: `preload.ts` (declare global) and `client/src/renderer/env.d.ts`
+- **Renderer stores** follow the same Zustand patterns as web storefront — select data, compute inline, no function selectors for display state
+- **Refresh tokens** stored via IPC `store:get/set` (JSON file), NOT localStorage (Electron has no persistent localStorage across builds)
+- **Shell links** restricted to `https://` only in the `shell:open-external` handler (security)
+- **Download metadata** stored in module-level Map, not in Zustand (avoids re-render churn)
+- **Native deps** (like `utp-native` for WebTorrent): must be in `asarUnpack` in electron-builder config
 
 ## Deployment to VPS
 Everything runs on a single Hetzner VPS (`boilerdeck.com` / `204.168.133.38`). HTTPS via Let's Encrypt (auto-renews). Deploy process:

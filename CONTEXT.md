@@ -36,7 +36,7 @@ Fully functional REST API running on port **3001** (port 3000 is used by open-we
 | `catalog` | Game CRUD, slug generation, paginated listing, game detail, **file upload pipeline** (zip extraction, torrent creation, Transmission seeding, exe auto-detection) | `src/service.ts`, `src/routes.ts` |
 | `license` | License listing, verification with device fingerprinting (max 3 devices), decryption key delivery for ENCRYPTED tier, device deregistration. Crypto utils for AES-256-GCM key wrap/unwrap and HKDF per-user key derivation. | `src/service.ts`, `src/routes.ts`, `src/crypto.ts` |
 | `payment` | **Real Stripe Checkout** — free games: atomic license grant; paid games: Stripe Checkout Session with Connect destination charges, platform fee (1%), webhook handlers for `checkout.session.completed`/`expired`/`account.updated`, idempotent payment+license creation, orphaned payment cleanup on Stripe failure | `src/service.ts`, `src/routes.ts` |
-| `torrent` | Torrent retrieval with license ownership check, **`createGameTorrent()` for generating .torrent files** (used by catalog upload pipeline) | `src/service.ts`, `src/routes.ts`, `src/vendor.d.ts` |
+| `torrent` | Torrent retrieval with license ownership check, **`createGameTorrent()` for generating .torrent files** (used by catalog upload pipeline), **`getLatestTorrentFile()` for raw .torrent bytes** (used by Electron client) | `src/service.ts`, `src/routes.ts`, `src/vendor.d.ts` |
 | `saves` | Cloud save upload/download — **scaffolded but not implemented** | `src/index.ts` |
 
 **Database:** PostgreSQL 16 via Prisma ORM (`server/prisma/schema.prisma`)
@@ -68,6 +68,7 @@ Fully functional REST API running on port **3001** (port 3000 is used by open-we
 - `DELETE /api/licenses/:gameId/devices/:fingerprint` (device deregistration)
 - `POST /api/payments/checkout`, `POST /api/payments/webhook`
 - `GET /api/torrents/:gameId/latest` (includes `encrypted` flag + `algorithm` for encrypted games)
+- `GET /api/torrents/:gameId/latest/file` (raw `.torrent` bytes, `application/x-bittorrent`, authenticated + license check)
 - `GET /api/health`
 
 ### Web Storefront — Vite + React 19 (`web/`)
@@ -137,17 +138,70 @@ SPA served from VPS at `/dev/`. Talks to the real API. Login with developer cred
 
 **Vite config:** `base: "/dev/"` — **must match the nginx alias path** or assets 404.
 
-### Electron Client — scaffolded (`client/`)
+### Electron Client — functional (`client/`)
 
-Desktop app structure exists but is **not fully functional** yet:
-- `src/main/index.ts` — Electron main process with IPC handlers, hidden torrent BrowserWindow
-- `src/main/preload.ts` — contextBridge for secure IPC
-- `src/renderer/` — React SPA with pages (Store, Library, Downloads, Settings)
-- `src/renderer/api.ts` — Fetch wrapper with auto 401 refresh retry
-- `src/renderer/stores/authStore.ts` — Zustand auth store pointing at localhost:3001
-- `src/renderer/stores/downloadStore.ts` — Zustand download tracking
+Full desktop client: browse store, purchase games (Stripe Checkout in system browser), download via BitTorrent, DRM enforcement, game launch, install management.
 
-The Electron client connects to the real API but WebTorrent integration in the hidden renderer is stubbed.
+**Architecture — critical decisions:**
+- **WebTorrent runs in the Node.js main process** (NOT a hidden renderer). This enables TCP/UDP peering with the Transmission seeder on the VPS. A hidden renderer would only support WebRTC, which Transmission can't connect to.
+- **HashRouter** (not BrowserRouter) — required because Electron loads `file://` URLs in production, which don't support `pushState`.
+- **`contextIsolation: true`, `nodeIntegration: false`** — all renderer↔main communication goes through the preload bridge (`window.boilerdeck`).
+- **IPC pattern:** `ipcRenderer.invoke()` for request/response, `ipcRenderer.on()` for push events (download progress, download completion).
+- **API base:** `https://boilerdeck.com/api` (hardcoded in `client/src/renderer/api.ts`). No local proxy — the client talks directly to the production API.
+
+**Main process (`client/src/main/`):**
+| File | Purpose |
+|------|---------|
+| `index.ts` | Electron app lifecycle, all IPC handler registration, torrent client init/destroy |
+| `preload.ts` | `contextBridge.exposeInMainWorld("boilerdeck", {...})` — sections: platform, store, shell, dialog, games, drm, downloads |
+| `store.ts` | JSON file persistence at `app.getPath("userData")/boilerdeck-config.json`. Keys: refreshToken, installDir, installedGames, settings, deviceFingerprint |
+| `torrentManager.ts` | WebTorrent singleton. `startDownload()` prefers .torrent buffer over magnet. Broadcasts progress every 1s via `mainWindow.webContents.send("downloads:progress-update")`. Sends `downloads:complete` with gameId/title/infoHash/downloadPath on torrent done. |
+| `gameLauncher.ts` | `child_process.spawn(exe, [], { detached: true, stdio: "ignore" })` + `child.unref()`. Tracks running games in a Map. `uninstallGame()` uses `fs.promises.rm(path, { recursive: true, force: true })`. |
+| `fingerprint.ts` | SHA-256 of `hostname|cpuModel|arch|platform|totalMem`. Cached in memory + persisted to store. |
+| `decryptor.ts` | Finds all `.enc` files recursively, reads 16-byte IV prefix, AES-256-CTR decrypt, writes original, deletes `.enc`. |
+| `vendor.d.ts` | Type declarations for `webtorrent` module |
+
+**Renderer (`client/src/renderer/`):**
+| File | Purpose |
+|------|---------|
+| `api.ts` | `apiFetch()` with JWT auto-refresh on 401. Refresh token read/written via `window.boilerdeck.store` IPC (not localStorage). |
+| `types.ts` | All API types + client types (InstalledGame, DownloadProgress) |
+| `utils.ts` | `formatPrice()`, `formatSize()`, `PLACEHOLDER_COVER` |
+| `env.d.ts` | `/// <reference types="vite/client" />` + full `window.boilerdeck` type declarations |
+| `main.tsx` | HashRouter, routes: `/`, `/game/:slug`, `/library`, `/downloads`, `/settings`, `/login` |
+
+**Renderer stores (Zustand, `client/src/renderer/stores/`):**
+| Store | Key functions |
+|-------|-------------|
+| `authStore.ts` | `loadSession()` (refresh token → user), login, register, logout. Persistent tokens via IPC store. |
+| `gameStore.ts` | `fetchGames(page?)`, `fetchGameBySlug(slug)`, `clearCurrentGame()` |
+| `libraryStore.ts` | `fetchLicenses()`, `checkout(gameId)`, `fetchTorrent(gameId)` |
+| `downloadStore.ts` | `startDownload()`, pause/resume/cancel. `initListeners()` subscribes to progress + completion events. Module-level `downloadMeta` Map stores game metadata keyed by gameId. |
+| `installedStore.ts` | `loadInstalled()` (from persistent store), `markInstalled(game)`, `uninstall(gameId)`, `launch(gameId)` (includes DRM verify for LIGHT/ENCRYPTED). |
+
+**Download → Install pipeline (the most complex flow):**
+1. User clicks Download → `downloadStore.startDownload()` stores metadata in `downloadMeta` Map, calls IPC `downloads:start`
+2. Main process adds torrent to WebTorrent, begins downloading
+3. Main process pushes `downloads:progress-update` every 1s → renderer updates progress bars
+4. Torrent completes → main sends `downloads:complete` IPC event
+5. `downloadStore` completion listener fires:
+   - If `drmTier === "ENCRYPTED"`: fetch fingerprint → `POST /licenses/:gameId/key` → `drm.decryptGame()` (main process decrypts all `.enc` files)
+   - Calls `installedStore.markInstalled()` with full metadata → persisted to JSON store
+6. Game appears in Library with Launch button
+
+**DRM enforcement at launch:**
+- `installedStore.launch()` checks `drmTier`
+- LIGHT or ENCRYPTED: `POST /licenses/:gameId/verify` with device fingerprint before spawning exe
+- Failure returns user-friendly error (device limit reached, no internet, etc.)
+
+**Stripe checkout in client:**
+- Free games: `checkout()` returns immediately, `fetchLicenses()` called inline
+- Paid games: Opens Stripe Checkout URL in system browser via `shell.openExternal()`, then polls `fetchLicenses()` every 3s for up to 5 minutes
+
+**Build config:**
+- `electron-builder` in `client/package.json` — NSIS + portable targets, `asarUnpack` for `webtorrent`/`utp-native` (native deps)
+- `vite.config.ts` has `base: "./"` for `file://` protocol
+- `tsconfig.main.json` has `composite: true` (required because it's referenced by root tsconfig)
 
 ### Scripts (`scripts/`)
 
@@ -228,7 +282,7 @@ npm run dev:server    # runs on port 3001
 npm run dev:web       # runs on port 5173
 ```
 
-**Environment:** `server/.env` — contains DATABASE_URL, REDIS_URL, JWT secrets, Stripe keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PLATFORM_FEE_PERCENT`), `CORS_ORIGIN`, port config, optional `DRM_MASTER_KEK` (64+ hex chars, required for ENCRYPTED DRM tier). Not committed to git. Separate `.env` exists on VPS at `/opt/boilerdeck/server/.env`.
+**Environment:** `server/.env` — contains DATABASE_URL, REDIS_URL, JWT secrets, Stripe keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PLATFORM_FEE_PERCENT`), `CORS_ORIGIN`, `CORS_ADDITIONAL_ORIGINS` (comma-separated extra origins, e.g. for Electron dev), port config, optional `DRM_MASTER_KEK` (64+ hex chars, required for ENCRYPTED DRM tier). Not committed to git. Separate `.env` exists on VPS at `/opt/boilerdeck/server/.env`.
 
 ---
 
@@ -277,6 +331,12 @@ magnet:?xt=urn:btih:bf69c35df8f0d24cdacfdf3f10c7afdc4513b09e&dn=player-character
 18. **VPS deploy — Prisma client regeneration** — After wiping `node_modules` on VPS, must run `npx prisma generate` before starting the server, otherwise Prisma client will be missing.
 19. **Stripe Connect onboard tokens** — The return/refresh URLs for Stripe Connect use Redis-backed one-time-use tokens (`crypto.randomBytes(32)`, stored as `stripe_onboard:{token}` with 1-hour TTL). Tokens are consumed on use (deleted from Redis). Never pass raw Stripe account IDs in query params.
 20. **Stripe webhook idempotency** — All webhook handlers (`handleCheckoutCompleted`, `handleCheckoutExpired`, `handleAccountUpdated`) check current state before mutating. `handleCheckoutExpired` won't overwrite a COMPLETED payment. `handleCheckoutCompleted` won't create duplicate licenses.
+21. **CORS `origin: "null"` from Electron** — Electron `file://` sends `Origin: null` as a literal string, not absent. The CORS callback in `server/src/index.ts` handles three cases: `!origin` (no header, e.g. curl), `origin === "null"` (Electron file://), and origins in the allow list. Rejected origins get `callback(null, false)` (silent rejection, no 500).
+22. **WebTorrent must run in main process** — If you put WebTorrent in a hidden BrowserWindow (renderer), it can only use WebRTC — standard BitTorrent clients (Transmission, qBittorrent) can't connect. The main process uses Node.js TCP/UDP sockets, enabling real BitTorrent peering. This is the single most important Electron architecture decision.
+23. **Download completion requires IPC event** — The renderer has no way to know when a torrent finishes unless the main process explicitly sends a `downloads:complete` event. Without this, `markInstalled()` never fires and games don't appear in the Library after downloading. The event carries `{ gameId, title, infoHash, downloadPath }`.
+24. **`downloadMeta` Map is module-level, not in Zustand** — The metadata needed to register an installed game (slug, exePath, drmTier, version, coverImageUrl) is stored in a plain `Map<string, DownloadMeta>` outside the Zustand store in `downloadStore.ts`. This is intentional — it doesn't need to be reactive, and putting it in Zustand would cause unnecessary re-renders.
+25. **`tsconfig.main.json` needs `composite: true`** — Because `tsconfig.json` references it. Without this, you get `TS6306: Referenced project must have setting "composite": true`.
+26. **Electron client renderer types** — `window.boilerdeck` types are declared in two places: `client/src/main/preload.ts` (the runtime `declare global`) and `client/src/renderer/env.d.ts` (for the renderer's tsconfig). Both must stay in sync. The renderer file also needs `/// <reference types="vite/client" />` for `import.meta.env`.
 
 ---
 
@@ -284,25 +344,27 @@ magnet:?xt=urn:btih:bf69c35df8f0d24cdacfdf3f10c7afdc4513b09e&dn=player-character
 
 - **Repo:** https://github.com/EthanGeisler/peerplay (rename pending — GitHub repo still named `peerplay`)
 - **Branch:** `main` (only branch)
-- **17 commits** as of 2026-03-16 (latest first):
-  1. `dfd977a` `Fix review issues: Stripe security, webhook idempotency, frontend cleanup` — Redis-backed onboard tokens, getStripe extraction to shared, orphaned payment cleanup, CheckoutSuccess rewrite, redirectToStripeOnboard helper, Stripe SDK alignment
-  2. `3e6f71d` `Fix Stripe Connect return endpoint and Dashboard error logging`
-  3. `cd78e5c` `Rebrand Peerplay to BoilerDeck and set up boilerdeck.com domain` — all package names @peerplay→@boilerdeck, UI text, HTML titles, server logs, torrent metadata, docs, VPS infra (/opt/boilerdeck, boilerdeck.service, nginx config, SSL cert)
-  4. `5550a92` `Update CONTEXT.md and CLAUDE.md for storefront API integration`
-  5. `148e5ec` `Fix review issues: logout token revocation, 204 handling, accessibility, dedup`
-  6. `6f6caac` `Connect web storefront to real API, replacing all mock data`
-  7. `695459d` `Update CONTEXT.md and CLAUDE.md with upload pipeline and VPS consolidation`
-  8. `47a4b29` `Move web storefront to VPS and add Developer Portal link`
-  9. `f1a267c` `Auto-create upload temp directory if missing`
-  10. `7122663` `Require game build upload when creating a new game`
-  11. `7164553` `Set base path for dev portal served under /dev/`
-  12. `aee5333` `Add game file upload pipeline with automatic torrent creation`
-  13. `b147608` `Deploy to Hetzner VPS with standard BitTorrent seeding`
-  14. `bbc01e1` `Implement LIGHT and ENCRYPTED DRM tiers across server and storefront`
-  15. `a1b1673` `Add CONTEXT.md for session continuity between Claude instances`
-  16. `87ffa4f` `Update Player Character 01 magnet URI to match active WebTorrent seeder`
-  17. `d01f51f` `Add Player Character 01 as first game on the platform`
-  18. `f71401e` `Initial commit: Peerplay MVP`
+- **20 commits** as of 2026-03-16 (latest first):
+  1. `ac3ae87` `Update CONTEXT.md and CLAUDE.md with Stripe Connect details`
+  2. `dd4f235` `Build full Electron client: BitTorrent downloads, DRM, game launch, store/library/settings` — 32 files, +2585/-241. WebTorrent in main process, IPC bridge, all renderer stores, download→decrypt→install pipeline, CORS null-origin fix.
+  3. `dfd977a` `Fix review issues: Stripe security, webhook idempotency, frontend cleanup`
+  4. `3e6f71d` `Fix Stripe Connect return endpoint and Dashboard error logging`
+  5. `cd78e5c` `Rebrand Peerplay to BoilerDeck and set up boilerdeck.com domain`
+  6. `5550a92` `Update CONTEXT.md and CLAUDE.md for storefront API integration`
+  7. `148e5ec` `Fix review issues: logout token revocation, 204 handling, accessibility, dedup`
+  8. `6f6caac` `Connect web storefront to real API, replacing all mock data`
+  9. `695459d` `Update CONTEXT.md and CLAUDE.md with upload pipeline and VPS consolidation`
+  10. `47a4b29` `Move web storefront to VPS and add Developer Portal link`
+  11. `f1a267c` `Auto-create upload temp directory if missing`
+  12. `7122663` `Require game build upload when creating a new game`
+  13. `7164553` `Set base path for dev portal served under /dev/`
+  14. `aee5333` `Add game file upload pipeline with automatic torrent creation`
+  15. `b147608` `Deploy to Hetzner VPS with standard BitTorrent seeding`
+  16. `bbc01e1` `Implement LIGHT and ENCRYPTED DRM tiers across server and storefront`
+  17. `a1b1673` `Add CONTEXT.md for session continuity between Claude instances`
+  18. `87ffa4f` `Update Player Character 01 magnet URI to match active WebTorrent seeder`
+  19. `d01f51f` `Add Player Character 01 as first game on the platform`
+  20. `f71401e` `Initial commit: Peerplay MVP`
 - **Git identity:** `EthanGeisler` / `25466222+EthanGeisler@users.noreply.github.com`
 
 ---
@@ -314,14 +376,17 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 ### Short-term
 - [x] Connect web storefront to real API (replace mock data with fetch calls) — done 2026-03-16
 - [x] Stripe Connect integration (real payments via Stripe Checkout + Connect destination charges) — done 2026-03-16
-- [ ] Finish Electron client (WebTorrent download in hidden renderer, game launch, progress tracking)
-- [x] DRM Tier 1 (LIGHT) — server: device fingerprinting in verifyLicense, max 3 devices, device deregistration endpoint
-- [x] DRM Tier 2 (ENCRYPTED) — server: crypto utils (AES-256-GCM wrap/unwrap, HKDF derivation), key delivery endpoint, encryption metadata in torrent responses, encrypt-game + publish-game-encrypted scripts
-- [x] DRM storefront UI — edition picker on PC01 (Free/Premium), DRM badges on game cards, DRM info card on detail page, 3-column comparison on About page
+- [x] Electron client — full build: store browsing, purchase, BitTorrent downloads, DRM enforcement (LIGHT verify + ENCRYPTED decrypt), game launch, install management, settings
+- [x] DRM Tier 1 (LIGHT) — server + client: device fingerprinting, max 3 devices, verify before launch
+- [x] DRM Tier 2 (ENCRYPTED) — server + client: crypto utils, key delivery, decrypt after download
+- [x] DRM storefront UI — DRM badges on game cards, DRM info card on detail page, 3-column comparison on About page
 - [x] Developer portal SPA (`dev-portal/`) — manage games, file upload pipeline, version management
 - [x] Consolidated hosting — storefront + dev portal + API all on VPS
 - [ ] Real cover art / screenshots for Player Character 01 (currently using placehold.co)
-- [ ] Electron client DRM integration (call verify endpoint at launch, call key endpoint for encrypted games)
+- [ ] Electron client: fetch `.torrent` file from `/api/torrents/:gameId/latest/file` instead of using magnet URI (faster metadata, endpoint exists but client doesn't use it yet)
+- [ ] Electron client: catch-all route for 404s
+- [ ] Electron client: store key whitelist (currently accepts any key — not a security issue since it's local-only, but good hygiene)
+- [ ] Electron client: first real end-to-end test (start app, browse store, download a game)
 
 ### Medium-term
 - [ ] Steam shortcuts.vdf integration (games appear in Steam library)
@@ -390,6 +455,12 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 | Stripe onboard tokens | `server/packages/auth/src/developer.routes.ts` (`createOnboardToken`/`verifyOnboardToken`) |
 | Stripe checkout + webhooks | `server/packages/payment/src/service.ts` |
 | Deploy workflow (GH Pages) | `.github/workflows/deploy.yml` |
+| Electron client API client | `client/src/renderer/api.ts` |
+| Electron client types | `client/src/renderer/types.ts` |
+| Electron client preload bridge | `client/src/main/preload.ts` |
+| Electron client IPC handlers | `client/src/main/index.ts` |
+| Electron torrent manager | `client/src/main/torrentManager.ts` |
+| Electron persistent store | `client/src/main/store.ts` (JSON at `userData/boilerdeck-config.json`) |
 | Full architecture plan | `.claude/plans/twinkling-hugging-thunder.md` |
 | Game build (PC01) | `C:\Users\eface\player-character-01\build\PeerPlayBuild\` |
 | Game files (VPS) | `/opt/boilerdeck/games/<slug>/` |
