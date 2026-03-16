@@ -1,12 +1,12 @@
 {
-  "name": "@peerplay/payment",
+  "name": "@boilerdeck/payment",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "src/index.ts",
   "scripts": { "build": "tsc", "lint": "tsc --noEmit" },
   "dependencies": {
-    "@peerplay/shared": "*",
+    "@boilerdeck/shared": "*",
     "express": "^5.1.0",
     "stripe": "^17.0.0",
     "zod": "^3.24.0"

@@ -1,10 +1,10 @@
-# Peerplay — Project Context
+# BoilerDeck — Project Context
 
 > Read this first every session. This file captures the current state of the project so future Claude instances can pick up where the last one left off.
 
 ---
 
-## What Is Peerplay?
+## What Is BoilerDeck?
 
 A **Steam competitor** that uses **BitTorrent for game file distribution** with a lightweight centralized backend for auth, payments, and metadata.
 
@@ -15,9 +15,9 @@ A **Steam competitor** that uses **BitTorrent for game file distribution** with 
 - Future: Steam library integration, cloud saves, Bitcoin Lightning payments
 
 **Live URLs:**
-- **Storefront:** http://204.168.133.38/ (VPS, served by nginx)
-- **Developer Portal:** http://204.168.133.38/dev/ (VPS, served by nginx)
-- **API:** http://204.168.133.38/api/health
+- **Storefront:** https://boilerdeck.com/ (VPS, nginx + Let's Encrypt SSL)
+- **Developer Portal:** https://boilerdeck.com/dev/
+- **API:** https://boilerdeck.com/api/health
 - **GitHub Pages (legacy):** https://ethangeisler.github.io/peerplay/ — still auto-deploys but storefront is now served from VPS
 
 ---
@@ -46,7 +46,7 @@ Fully functional REST API running on port **3001** (port 3000 is used by open-we
 - BigInt columns (fileSizeBytes, sizeBytes) need `BigInt.prototype.toJSON` patch (in `shared/src/db.ts`)
 
 **Seed data** (`server/prisma/seed.ts`):
-- Admin: `admin@peerplay.io` / `admin123456`
+- Admin: `admin@boilerdeck.com` / `admin123456`
 - Developer: `dev@example.com` / `developer123` (studio: "Indie Games Studio")
 - Player: `player@example.com` / `player123456`
 - 3 sample games (Space Explorer $19.99, Dungeon Crawl $9.99, Pixel Racing Free)
@@ -107,7 +107,7 @@ SPA served from VPS at `/`. Uses **HashRouter**. Talks to the **real API** (not 
 5. `pp_refresh_token` localStorage key is shared with dev-portal (same origin) — acts as SSO
 6. Logout sends refresh token in body so server revokes it in DB
 
-**Deployment:** Served from VPS via nginx (`/opt/peerplay/web/dist`). GitHub Actions still deploys to Pages (`.github/workflows/deploy.yml`) but that's now legacy.
+**Deployment:** Served from VPS via nginx (`/opt/boilerdeck/web/dist`). GitHub Actions still deploys to Pages (`.github/workflows/deploy.yml`) but that's now legacy.
 
 **Vite config:** `base: "/"`, dev proxy: `/api` → `http://localhost:3001` (for local development).
 
@@ -163,31 +163,32 @@ The Electron client connects to the real API but WebTorrent integration in the h
 
 ## Infrastructure
 
-### Production VPS (Hetzner CX23) — `204.168.133.38`
+### Production VPS (Hetzner CX23) — `boilerdeck.com` (`204.168.133.38`)
 
-The production environment runs on a Hetzner VPS. All services auto-start on boot.
+The production environment runs on a Hetzner VPS. All services auto-start on boot. HTTPS via Let's Encrypt (auto-renews, cert at `/etc/letsencrypt/live/boilerdeck.com/`).
 
 | Service | Details |
 |---------|---------|
-| **Nginx** | Port 80 (`default_server`). `/` → `web/dist`, `/dev/` → `dev-portal/dist`, `/api/` → proxy to Node 3001. `client_max_body_size 2g` on `/api/`. |
-| **Peerplay API** | systemd service `peerplay`, Node/tsx on port 3001 |
+| **Nginx** | Ports 80 (→301 HTTPS) + 443 (SSL). `/` → `web/dist`, `/dev/` → `dev-portal/dist`, `/api/` → proxy to Node 3001. `client_max_body_size 2g` on `/api/`. |
+| **BoilerDeck API** | systemd service `boilerdeck`, Node/tsx on port 3001 |
 | **PostgreSQL 16** | User: `peerplay`, DB: `peerplay`, localhost:5432 |
 | **Redis 7** | localhost:6379 |
 | **Transmission** | BitTorrent seeder on port 6881. RPC at `http://127.0.0.1:9091/transmission/rpc`. Upload pipeline auto-adds torrents via RPC. |
 
 **SSH access:** `ssh root@204.168.133.38` (key: `~/.ssh/id_ed25519` on dev machine)
 
-**Project location on VPS:** `/opt/peerplay/`
-**Game files on VPS:** `/opt/peerplay/games/<game-slug>/` (created automatically by upload pipeline)
-**Upload temp dir:** `/opt/peerplay/games/.tmp/` (auto-created by multer on first upload)
+**Project location on VPS:** `/opt/boilerdeck/`
+**Game files on VPS:** `/opt/boilerdeck/games/<game-slug>/` (created automatically by upload pipeline)
+**Upload temp dir:** `/opt/boilerdeck/games/.tmp/` (auto-created by multer on first upload)
 **Torrent file on VPS:** Stored in DB as `Torrent.torrentFile` (Bytes column), no longer loose files
-**Nginx config:** `/etc/nginx/sites-available/peerplay`
-**VPS .env:** `/opt/peerplay/server/.env` (includes `TRANSMISSION_RPC_URL`)
+**Nginx config:** `/etc/nginx/sites-available/boilerdeck`
+**Note:** PostgreSQL DB/user are still named `peerplay` — renaming would require a migration.
+**VPS .env:** `/opt/boilerdeck/server/.env` (includes `TRANSMISSION_RPC_URL`)
 
 **VPS management commands:**
 ```bash
 # Check API
-curl http://204.168.133.38/api/health
+curl https://boilerdeck.com/api/health
 
 # Check seeder status
 ssh root@204.168.133.38 "transmission-remote -l"
@@ -196,7 +197,7 @@ ssh root@204.168.133.38 "transmission-remote -l"
 ssh root@204.168.133.38 "transmission-remote -t 1 -it"
 
 # Restart API
-ssh root@204.168.133.38 "systemctl restart peerplay"
+ssh root@204.168.133.38 "systemctl restart boilerdeck"
 
 # Restart Transmission seeder
 ssh root@204.168.133.38 "pkill transmission; sleep 1; nohup transmission-daemon --config-dir /root/.config/transmission-daemon > /var/log/transmission.log 2>&1 &"
@@ -225,7 +226,7 @@ npm run dev:server    # runs on port 3001
 npm run dev:web       # runs on port 5173
 ```
 
-**Environment:** `server/.env` — contains DATABASE_URL, REDIS_URL, JWT secrets, Stripe keys (mock), port config, optional `DRM_MASTER_KEK` (64+ hex chars, required for ENCRYPTED DRM tier). Not committed to git. Separate `.env` exists on VPS at `/opt/peerplay/server/.env`.
+**Environment:** `server/.env` — contains DATABASE_URL, REDIS_URL, JWT secrets, Stripe keys (mock), port config, optional `DRM_MASTER_KEK` (64+ hex chars, required for ENCRYPTED DRM tier). Not committed to git. Separate `.env` exists on VPS at `/opt/boilerdeck/server/.env`.
 
 ---
 
@@ -255,7 +256,7 @@ magnet:?xt=urn:btih:bf69c35df8f0d24cdacfdf3f10c7afdc4513b09e&dn=player-character
 
 ## Known Issues & Gotchas
 
-1. **Port 3000 conflict** — `open-webui` Docker container uses port 3000. Peerplay API runs on 3001.
+1. **Port 3000 conflict** — `open-webui` Docker container uses port 3000. BoilerDeck API runs on 3001.
 2. **BigInt serialization** — Prisma returns BigInt for large integer columns. The `toJSON` patch in `shared/src/db.ts` handles this, but if you see `TypeError: Do not know how to serialize a BigInt`, the server process may be stale (see #3).
 3. **Stale server processes** — `pkill -f "tsx"` doesn't always kill the old process on Windows. Use `taskkill //F //PID <pid>` or check `netstat -ano | grep 3001` to find and kill the specific process.
 4. **WebTorrent vs standard BitTorrent** — WebTorrent uses WebRTC (for browsers), standard clients use TCP/UDP. They cannot peer with each other. Always use standard tools (`mktorrent`, `transmission-daemon`) for seeding, not `webtorrent-cli`.
@@ -267,15 +268,15 @@ magnet:?xt=urn:btih:bf69c35df8f0d24cdacfdf3f10c7afdc4513b09e&dn=player-character
 10. **Zustand selector trap** — Never select a *function* from a Zustand store (e.g. `useStore(s => s.isOwned)`) and call it during render to derive display state. The function reference is stable, so the component won't re-render when the underlying data changes. Instead, select the *data* (e.g. `useStore(s => s.licenses)`) and compute inline. This bit us with ownership badges not updating after license fetch.
 11. **Refresh token localStorage shared across SPAs** — Both web storefront and dev-portal use `pp_refresh_token` key in localStorage on the same origin. This is intentional SSO. Don't change the key in one without the other.
 13. **Vite `base` must match nginx path** — If a frontend is served under a subpath (e.g. `/dev/`), Vite's `base` in `vite.config.ts` must match (e.g. `base: "/dev/"`), otherwise asset URLs resolve to `/assets/...` instead of `/dev/assets/...` and you get a blank page.
-14. **nginx `default_server`** — The peerplay site config uses `listen 80 default_server;` to override nginx's built-in welcome page. Without this, requests may hit the default nginx page instead.
-15. **Multer temp dir** — The upload route auto-creates `/opt/peerplay/games/.tmp/` via `fs.mkdirSync(tmpDir, { recursive: true })` in the multer destination callback. Don't rely on it pre-existing.
+14. **nginx `default_server`** — The boilerdeck site config uses `listen 80 default_server;` to override nginx's built-in welcome page. Without this, requests may hit the default nginx page instead.
+15. **Multer temp dir** — The upload route auto-creates `/opt/boilerdeck/games/.tmp/` via `fs.mkdirSync(tmpDir, { recursive: true })` in the multer destination callback. Don't rely on it pre-existing.
 16. **Upload pipeline proxy timeout** — nginx default `proxy_read_timeout` is 60s. Large uploads may need `proxy_read_timeout 1800;` in the `/api/` block if server-side processing (zip extraction + torrent creation) takes longer than 60s after upload completes.
 
 ---
 
 ## Git State
 
-- **Repo:** https://github.com/EthanGeisler/peerplay
+- **Repo:** https://github.com/EthanGeisler/peerplay (rename pending)
 - **Branch:** `main` (only branch)
 - **12 commits** as of 2026-03-16:
   1. `Initial commit: Peerplay MVP` — full monorepo with server, client, web, scripts
@@ -330,24 +331,24 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 
 | What | Where |
 |------|-------|
-| Storefront (live) | http://204.168.133.38/ |
-| Developer Portal (live) | http://204.168.133.38/dev/ |
-| Production API | http://204.168.133.38/api/health |
+| Storefront (live) | https://boilerdeck.com/ |
+| Developer Portal (live) | https://boilerdeck.com/dev/ |
+| Production API | https://boilerdeck.com/api/health |
 | GitHub Pages (legacy) | https://ethangeisler.github.io/peerplay/ |
 | Local API | http://localhost:3001/api/health |
 | VPS SSH | `ssh root@204.168.133.38` |
 | Prisma schema | `server/prisma/schema.prisma` |
 | Server env (local) | `server/.env` |
-| Server env (VPS) | `/opt/peerplay/server/.env` |
-| Nginx config (VPS) | `/etc/nginx/sites-available/peerplay` |
+| Server env (VPS) | `/opt/boilerdeck/server/.env` |
+| Nginx config (VPS) | `/etc/nginx/sites-available/boilerdeck` |
 | Storefront API client | `web/src/api.ts` |
 | Storefront types | `web/src/types.ts` |
 | Storefront shared utils | `web/src/utils.ts` |
 | Deploy workflow (GH Pages) | `.github/workflows/deploy.yml` |
 | Full architecture plan | `.claude/plans/twinkling-hugging-thunder.md` |
 | Game build (PC01) | `C:\Users\eface\player-character-01\build\PeerPlayBuild\` |
-| Game files (VPS) | `/opt/peerplay/games/<slug>/` |
-| Upload temp (VPS) | `/opt/peerplay/games/.tmp/` |
+| Game files (VPS) | `/opt/boilerdeck/games/<slug>/` |
+| Upload temp (VPS) | `/opt/boilerdeck/games/.tmp/` |
 | Torrent scripts | `scripts/` |
 | Transmission config | `/root/.config/transmission-daemon/settings.json` (on VPS) |
 | Dev portal login | `dev@example.com` / `developer123` |

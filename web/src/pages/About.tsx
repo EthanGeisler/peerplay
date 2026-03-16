@@ -1,10 +1,10 @@
 export function About() {
   return (
     <div style={{ maxWidth: 720 }}>
-      <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 24 }}>About Peerplay</h1>
+      <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 24 }}>About BoilerDeck</h1>
 
-      <Section title="What is Peerplay?">
-        Peerplay is a decentralized game distribution platform. Think Steam, but powered by
+      <Section title="What is BoilerDeck?">
+        BoilerDeck is a decentralized game distribution platform. Think Steam, but powered by
         BitTorrent. Game files are distributed peer-to-peer, developers keep 99% of revenue,
         and DRM is optional — chosen by the developer, not the platform.
       </Section>
@@ -16,7 +16,7 @@ export function About() {
           <StatBox label="Platform" value="$0.20" color="var(--text-muted)" />
         </div>
         <p>
-          Compare: Steam takes 30%. Epic takes 12%. Peerplay takes 1%.
+          Compare: Steam takes 30%. Epic takes 12%. BoilerDeck takes 1%.
           BitTorrent distribution means our infrastructure costs are a fraction of traditional
           platforms, so we can pass the savings to creators.
         </p>
@@ -24,7 +24,7 @@ export function About() {
 
       <Section title="How BitTorrent Distribution Works">
         <ol style={{ paddingLeft: 20, lineHeight: 2 }}>
-          <li>Developer uploads a game build to Peerplay</li>
+          <li>Developer uploads a game build to BoilerDeck</li>
           <li>Server creates a torrent file and seeds it from dedicated seed boxes</li>
           <li>When you buy a game, your client downloads it via BitTorrent</li>
           <li>While downloading (and after), your client seeds to other buyers</li>
@@ -78,7 +78,7 @@ export function About() {
           />
         </div>
         <p>
-          Every game on Peerplay shows its DRM tier upfront. Developers choose the level
+          Every game on BoilerDeck shows its DRM tier upfront. Developers choose the level
           of protection that matches their goals \u2014 from fully open to fully encrypted.
           Players always know what they're buying.
         </p>

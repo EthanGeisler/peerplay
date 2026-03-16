@@ -1,5 +1,5 @@
 /// <reference path="./vendor.d.ts" />
-import { db, NotFoundError, ForbiddenError } from "@peerplay/shared";
+import { db, NotFoundError, ForbiddenError } from "@boilerdeck/shared";
 import createTorrent from "create-torrent";
 import parseTorrent, { toMagnetURI } from "parse-torrent";
 
@@ -69,8 +69,8 @@ export async function createGameTorrent(
       dirPath,
       {
         name,
-        comment: `Published on Peerplay`,
-        createdBy: "Peerplay",
+        comment: `Published on BoilerDeck`,
+        createdBy: "BoilerDeck",
         announceList: ANNOUNCE_LIST,
         private: false,
         pieceLength: 2 ** 18,

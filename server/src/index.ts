@@ -4,12 +4,12 @@ import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
 import morgan from "morgan";
-import { getConfig, errorHandler } from "@peerplay/shared";
-import { authRouter, developerRouter } from "@peerplay/auth";
-import { catalogRouter } from "@peerplay/catalog";
-import { licenseRouter } from "@peerplay/license";
-import { paymentRouter } from "@peerplay/payment";
-import { torrentRouter } from "@peerplay/torrent";
+import { getConfig, errorHandler } from "@boilerdeck/shared";
+import { authRouter, developerRouter } from "@boilerdeck/auth";
+import { catalogRouter } from "@boilerdeck/catalog";
+import { licenseRouter } from "@boilerdeck/license";
+import { paymentRouter } from "@boilerdeck/payment";
+import { torrentRouter } from "@boilerdeck/torrent";
 
 const config = getConfig();
 const app = express();
@@ -40,7 +40,7 @@ app.use("/api", torrentRouter);
 app.use(errorHandler);
 
 app.listen(config.PORT, () => {
-  console.log(`Peerplay API running on port ${config.PORT} [${config.NODE_ENV}]`);
+  console.log(`BoilerDeck API running on port ${config.PORT} [${config.NODE_ENV}]`);
 });
 
 export default app;

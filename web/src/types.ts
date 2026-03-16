@@ -62,11 +62,10 @@ export interface ApiTorrent {
 }
 
 export interface ApiCheckoutResult {
+  free: boolean;
+  checkoutUrl?: string;
   paymentId: string;
-  licenseId: string;
-  amountCents: number;
-  platformFeeCents: number;
-  status: string;
+  licenseId?: string;
   gameId: string;
   gameTitle: string;
 }

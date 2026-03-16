@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z, ZodError } from "zod";
-import { authenticate, ValidationError } from "@peerplay/shared";
+import { authenticate, ValidationError } from "@boilerdeck/shared";
 import * as paymentService from "./service.js";
 
 export const paymentRouter = Router();

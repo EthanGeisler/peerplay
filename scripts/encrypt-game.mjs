@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Encrypt game files for Peerplay ENCRYPTED DRM tier.
+ * Encrypt game files for BoilerDeck ENCRYPTED DRM tier.
  *
  * Usage: node scripts/encrypt-game.mjs <input-dir> <output-dir>
  *
@@ -81,10 +81,10 @@ const manifest = {
   fileCount,
 };
 writeFileSync(
-  join(outputDir, "_peerplay_manifest.json"),
+  join(outputDir, "_boilerdeck_manifest.json"),
   JSON.stringify(manifest, null, 2),
 );
-console.log(`\nManifest written: _peerplay_manifest.json`);
+console.log(`\nManifest written: _boilerdeck_manifest.json`);
 
 // Wrap master key with KEK
 const wrappedMasterKey = wrapKey(masterKey, kek);

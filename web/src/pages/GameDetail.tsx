@@ -13,7 +13,7 @@ function drmDescription(tier: string): string {
     case "LIGHT":
       return "Online license check at launch \u2014 internet required to start, play offline after";
     case "ENCRYPTED":
-      return "Encrypted distribution \u2014 files decrypted locally after purchase via Peerplay client";
+      return "Encrypted distribution \u2014 files decrypted locally after purchase via BoilerDeck client";
     default:
       return tier;
   }

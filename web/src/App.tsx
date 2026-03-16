@@ -5,6 +5,8 @@ import { GameDetail } from "./pages/GameDetail";
 import { Library } from "./pages/Library";
 import { About } from "./pages/About";
 import { Login } from "./pages/Login";
+import { CheckoutSuccess } from "./pages/CheckoutSuccess";
+import { CheckoutCancel } from "./pages/CheckoutCancel";
 import { useAuthStore } from "./stores/authStore";
 
 const NAV_ITEMS = [
@@ -61,7 +63,7 @@ export function App() {
               textDecoration: "none",
             }}
           >
-            PEERPLAY
+            BOILERDECK
           </Link>
           <nav style={{ display: "flex", gap: 4 }}>
             {NAV_ITEMS.map((item) => {
@@ -159,6 +161,8 @@ export function App() {
           <Route path="/library" element={<Library />} />
           <Route path="/about" element={<About />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/checkout/success" element={<CheckoutSuccess />} />
+          <Route path="/checkout/cancel" element={<CheckoutCancel />} />
         </Routes>
       </main>
 
@@ -172,7 +176,7 @@ export function App() {
           color: "var(--text-muted)",
         }}
       >
-        Peerplay v0.1.0 — Decentralized game distribution. 99/1 revenue split.
+        BoilerDeck v0.1.0 — Decentralized game distribution. 99/1 revenue split.
         Built with BitTorrent.
       </footer>
     </div>

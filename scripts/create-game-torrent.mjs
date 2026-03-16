@@ -16,8 +16,8 @@ console.log(`Creating torrent for: ${absPath}`);
 
 createTorrent(absPath, {
   name: path.basename(absPath),
-  comment: "Player Character 01 — A 2D platformer with world-hopping portals. Published on Peerplay.",
-  createdBy: "Peerplay v0.1.0",
+  comment: "Player Character 01 — A 2D platformer with world-hopping portals. Published on BoilerDeck.",
+  createdBy: "BoilerDeck v0.1.0",
   announceList: [
     ["udp://tracker.opentrackr.org:1337/announce"],
     ["udp://open.tracker.cl:1337/announce"],

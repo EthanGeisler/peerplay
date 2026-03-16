@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { authenticate, ValidationError } from "@peerplay/shared";
+import { authenticate, ValidationError } from "@boilerdeck/shared";
 import { registerSchema, loginSchema } from "./schemas.js";
 import * as authService from "./service.js";
 import { ZodError } from "zod";

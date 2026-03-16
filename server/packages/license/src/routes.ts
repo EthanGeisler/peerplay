@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { authenticate, ValidationError } from "@peerplay/shared";
+import { authenticate, ValidationError } from "@boilerdeck/shared";
 import * as licenseService from "./service.js";
 
 export const licenseRouter = Router();

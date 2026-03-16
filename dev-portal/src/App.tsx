@@ -89,7 +89,7 @@ export function App() {
                 letterSpacing: 2,
               }}
             >
-              PEERPLAY
+              BOILERDECK
             </span>
             <span
               style={{
@@ -182,7 +182,7 @@ export function App() {
           color: "var(--text-muted)",
         }}
       >
-        Peerplay Developer Portal v0.1.0 — 99/1 revenue split. Built with BitTorrent.
+        BoilerDeck Developer Portal v0.1.0 — 99/1 revenue split. Built with BitTorrent.
       </footer>
     </div>
   );

@@ -9,10 +9,10 @@ async function main() {
   // Create admin user
   const adminHash = await bcrypt.hash("admin123456", 12);
   const admin = await db.user.upsert({
-    where: { email: "admin@peerplay.io" },
+    where: { email: "admin@boilerdeck.com" },
     update: {},
     create: {
-      email: "admin@peerplay.io",
+      email: "admin@boilerdeck.com",
       passwordHash: adminHash,
       displayName: "Admin",
       role: "ADMIN",
@@ -117,7 +117,7 @@ async function main() {
       developerId: developer.id,
       slug: "player-character-01-premium",
       title: "Player Character 01 — Premium Edition",
-      description: "The premium edition of Player Character 01 with online license verification. Same game, DRM-protected distribution for developers who want to see how LIGHT DRM works on Peerplay.",
+      description: "The premium edition of Player Character 01 with online license verification. Same game, DRM-protected distribution for developers who want to see how LIGHT DRM works on BoilerDeck.",
       priceCents: 999,
       drmTier: "LIGHT",
       status: "PUBLISHED",
@@ -128,7 +128,7 @@ async function main() {
   });
 
   console.log("Seed complete!");
-  console.log(`  Admin: admin@peerplay.io / admin123456`);
+  console.log(`  Admin: admin@boilerdeck.com / admin123456`);
   console.log(`  Developer: dev@example.com / developer123`);
   console.log(`  Player: player@example.com / player123456`);
   console.log(`  Games: ${game1.title}, ${game2.title}, ${game3.title}, ${game4.title}`);

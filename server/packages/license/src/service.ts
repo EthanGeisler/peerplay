@@ -1,4 +1,4 @@
-import { db, NotFoundError, ForbiddenError, getConfig } from "@peerplay/shared";
+import { db, NotFoundError, ForbiddenError, getConfig } from "@boilerdeck/shared";
 import { unwrapKey, deriveUserKey, wrapKey } from "./crypto.js";
 import { randomBytes } from "node:crypto";
 

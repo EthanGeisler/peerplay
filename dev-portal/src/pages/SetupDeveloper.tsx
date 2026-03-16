@@ -1,15 +1,110 @@
 import { useState } from "react";
 import { useAuthStore } from "../stores/authStore";
+import { apiFetch } from "../api";
 
 export function SetupDeveloper() {
   const [studioName, setStudioName] = useState("");
   const registerDeveloper = useAuthStore((s) => s.registerDeveloper);
+  const developer = useAuthStore((s) => s.developer);
   const error = useAuthStore((s) => s.error);
+  const [stripeLoading, setStripeLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     await registerDeveloper(studioName);
   };
+
+  const handleStripeConnect = async () => {
+    setStripeLoading(true);
+    try {
+      const data = await apiFetch<{ url?: string; status?: string }>("/developer/stripe/onboard");
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    } catch {
+      setStripeLoading(false);
+    }
+  };
+
+  // After registration, show Stripe connect step
+  if (developer) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: "100vh",
+          padding: 24,
+        }}
+      >
+        <div
+          style={{
+            width: "100%",
+            maxWidth: 440,
+            backgroundColor: "var(--bg-secondary)",
+            borderRadius: "var(--radius-lg)",
+            border: "1px solid var(--border)",
+            padding: 32,
+            textAlign: "center",
+          }}
+        >
+          <div
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: "50%",
+              backgroundColor: "rgba(63,185,80,0.15)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              margin: "0 auto 16px",
+              fontSize: 24,
+            }}
+          >
+            {"\u2713"}
+          </div>
+          <h1 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>Profile Created!</h1>
+          <p style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 24, lineHeight: 1.6 }}>
+            Connect your Stripe account to start receiving payments for your games.
+            You can also do this later from your Dashboard.
+          </p>
+
+          <button
+            onClick={handleStripeConnect}
+            disabled={stripeLoading}
+            style={{
+              padding: "12px 24px",
+              borderRadius: "var(--radius)",
+              backgroundColor: "#635bff",
+              color: "#fff",
+              fontSize: 14,
+              fontWeight: 600,
+              marginBottom: 12,
+              width: "100%",
+              opacity: stripeLoading ? 0.7 : 1,
+            }}
+          >
+            {stripeLoading ? "Loading..." : "Connect with Stripe"}
+          </button>
+
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              padding: "12px 24px",
+              borderRadius: "var(--radius)",
+              backgroundColor: "var(--bg-tertiary)",
+              color: "var(--text-secondary)",
+              fontSize: 14,
+              width: "100%",
+            }}
+          >
+            Skip for Now
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -33,11 +128,11 @@ export function SetupDeveloper() {
       >
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <div style={{ fontSize: 24, fontWeight: 800, color: "var(--accent)", letterSpacing: 2, marginBottom: 8 }}>
-            PEERPLAY
+            BOILERDECK
           </div>
           <h1 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>Become a Developer</h1>
           <p style={{ fontSize: 14, color: "var(--text-secondary)" }}>
-            Set up your developer profile to start publishing games on Peerplay.
+            Set up your developer profile to start publishing games on BoilerDeck.
             You'll keep 99% of every sale.
           </p>
         </div>

@@ -12,6 +12,7 @@ interface Developer {
   id: string;
   studioName: string;
   stripeOnboarded: boolean;
+  stripePayoutsEnabled: boolean;
 }
 
 interface AuthState {

@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { Router } from "express";
 import { z, ZodError } from "zod";
 import multer from "multer";
-import { authenticate, requireRole, ValidationError, getConfig } from "@peerplay/shared";
+import { authenticate, requireRole, ValidationError, getConfig } from "@boilerdeck/shared";
 import * as catalogService from "./service.js";
 
 export const catalogRouter = Router();

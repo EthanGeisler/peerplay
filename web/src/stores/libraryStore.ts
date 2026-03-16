@@ -39,9 +39,17 @@ export const useLibraryStore = create<LibraryState>((set) => ({
         method: "POST",
         body: JSON.stringify({ gameId }),
       });
-      // Re-fetch licenses after purchase
-      const data = await apiFetch<{ licenses: ApiLicense[] }>("/licenses");
-      set({ licenses: data.licenses, checkoutLoading: false });
+
+      if (result.free) {
+        // Free game — license granted immediately, re-fetch
+        const data = await apiFetch<{ licenses: ApiLicense[] }>("/licenses");
+        set({ licenses: data.licenses, checkoutLoading: false });
+      } else if (result.checkoutUrl) {
+        // Paid game — redirect to Stripe Checkout
+        window.location.href = result.checkoutUrl;
+        // Don't clear checkoutLoading since we're navigating away
+      }
+
       return result;
     } catch (err) {
       set({ checkoutLoading: false, error: (err as Error).message });

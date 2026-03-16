@@ -30,7 +30,7 @@ export const useDownloadStore = create<DownloadState>((set, get) => ({
       status: 'queued',
     });
     set({ downloads });
-    // TODO: call window.peerplay.downloads.startDownload(magnetUri)
+    // TODO: call window.boilerdeck.downloads.startDownload(magnetUri)
   },
 
   pauseDownload: (gameId: string) => {
@@ -40,7 +40,7 @@ export const useDownloadStore = create<DownloadState>((set, get) => ({
       downloads.set(gameId, { ...entry, status: 'paused', speed: 0 });
       set({ downloads });
     }
-    // TODO: call window.peerplay.downloads.pauseDownload(infoHash)
+    // TODO: call window.boilerdeck.downloads.pauseDownload(infoHash)
   },
 
   removeDownload: (gameId: string) => {

@@ -1,8 +1,8 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import crypto from "node:crypto";
-import { db, getConfig, ConflictError, UnauthorizedError } from "@peerplay/shared";
-import type { JwtPayload } from "@peerplay/shared";
+import { db, getConfig, ConflictError, UnauthorizedError } from "@boilerdeck/shared";
+import type { JwtPayload } from "@boilerdeck/shared";
 import type { RegisterInput, LoginInput } from "./schemas.js";
 
 const SALT_ROUNDS = 12;

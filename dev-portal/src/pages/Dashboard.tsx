@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api";
 import { useAuthStore } from "../stores/authStore";
@@ -45,12 +45,101 @@ export function Dashboard() {
 
   const totalSales = games.reduce((sum, g) => sum + g.salesCount, 0);
   const publishedCount = games.filter((g) => g.status === "PUBLISHED").length;
+  const [stripeLoading, setStripeLoading] = useState(false);
+
+  const handleStripeConnect = useCallback(async () => {
+    setStripeLoading(true);
+    try {
+      const data = await apiFetch<{ url?: string; status?: string }>("/developer/stripe/onboard");
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    } catch {
+      setStripeLoading(false);
+    }
+  }, []);
 
   return (
     <div>
+      {/* Stripe onboarding banner */}
+      {developer && !developer.stripeOnboarded && (
+        <div
+          style={{
+            padding: "16px 20px",
+            borderRadius: "var(--radius-lg)",
+            backgroundColor: "rgba(210, 153, 34, 0.1)",
+            border: "1px solid rgba(210, 153, 34, 0.3)",
+            marginBottom: 24,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 16,
+          }}
+        >
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 14, color: "#d29922", marginBottom: 4 }}>
+              Complete Stripe Setup
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+              Connect your Stripe account to receive payments for your games. Required for publishing paid games.
+            </div>
+          </div>
+          <button
+            onClick={handleStripeConnect}
+            disabled={stripeLoading}
+            style={{
+              padding: "10px 20px",
+              borderRadius: "var(--radius)",
+              backgroundColor: "#635bff",
+              color: "#fff",
+              fontSize: 13,
+              fontWeight: 600,
+              whiteSpace: "nowrap",
+              opacity: stripeLoading ? 0.7 : 1,
+            }}
+          >
+            {stripeLoading ? "Loading..." : "Connect with Stripe"}
+          </button>
+        </div>
+      )}
+
+      {developer && developer.stripeOnboarded && !developer.stripePayoutsEnabled && (
+        <div
+          style={{
+            padding: "16px 20px",
+            borderRadius: "var(--radius-lg)",
+            backgroundColor: "rgba(210, 153, 34, 0.08)",
+            border: "1px solid rgba(210, 153, 34, 0.2)",
+            marginBottom: 24,
+            fontSize: 13,
+            color: "var(--text-secondary)",
+          }}
+        >
+          Your Stripe account is connected but payouts are not yet enabled. Please complete verification in your Stripe dashboard.
+        </div>
+      )}
+
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 32 }}>
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 4 }}>Dashboard</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 4 }}>
+            Dashboard
+            {developer?.stripeOnboarded && developer?.stripePayoutsEnabled && (
+              <span
+                style={{
+                  fontSize: 11,
+                  padding: "3px 8px",
+                  borderRadius: 4,
+                  backgroundColor: "rgba(63,185,80,0.15)",
+                  color: "var(--accent-green)",
+                  fontWeight: 600,
+                  marginLeft: 12,
+                  verticalAlign: "middle",
+                }}
+              >
+                Stripe Connected
+              </span>
+            )}
+          </h1>
           <p style={{ fontSize: 14, color: "var(--text-secondary)" }}>
             {developer?.studioName ?? "Developer Portal"}
           </p>

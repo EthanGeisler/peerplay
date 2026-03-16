@@ -10,6 +10,8 @@ const envSchema = z.object({
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   STRIPE_PLATFORM_FEE_PERCENT: z.coerce.number().default(1),
+  STRIPE_CONNECT_RETURN_URL: z.string().optional(),
+  STRIPE_CONNECT_REFRESH_URL: z.string().optional(),
   B2_ENDPOINT: z.string().optional(),
   B2_REGION: z.string().optional(),
   B2_BUCKET: z.string().optional(),
@@ -23,7 +25,7 @@ const envSchema = z.object({
     .string()
     .regex(/^[0-9a-fA-F]{64,}$/, "Must be at least 64 hex characters")
     .optional(),
-  GAMES_DIR: z.string().default("/opt/peerplay/games"),
+  GAMES_DIR: z.string().default("/opt/boilerdeck/games"),
   TRANSMISSION_RPC_URL: z.string().default("http://127.0.0.1:9091/transmission/rpc"),
 });
 

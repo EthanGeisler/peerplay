@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
-contextBridge.exposeInMainWorld('peerplay', {
+contextBridge.exposeInMainWorld('boilerdeck', {
   platform: {
     getVersion: (): Promise<string> => ipcRenderer.invoke('app:get-version'),
   },
@@ -20,7 +20,7 @@ contextBridge.exposeInMainWorld('peerplay', {
 
 declare global {
   interface Window {
-    peerplay: {
+    boilerdeck: {
       platform: {
         getVersion: () => Promise<string>;
       };

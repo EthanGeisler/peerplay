@@ -51,7 +51,7 @@ export function Login() {
               marginBottom: 8,
             }}
           >
-            PEERPLAY
+            BOILERDECK
           </div>
           <div style={{ fontSize: 14, color: "var(--text-secondary)" }}>
             Developer Portal

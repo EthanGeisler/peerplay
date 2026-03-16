@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { authenticate } from "@peerplay/shared";
+import { authenticate } from "@boilerdeck/shared";
 import * as torrentService from "./service.js";
 
 export const torrentRouter = Router();

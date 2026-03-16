@@ -59,7 +59,7 @@ export function App() {
   return (
     <div style={styles.container}>
       <div style={styles.sidebar}>
-        <div style={styles.logo}>PEERPLAY</div>
+        <div style={styles.logo}>BOILERDECK</div>
         {NAV_ITEMS.map((item) => (
           <div
             key={item.path}

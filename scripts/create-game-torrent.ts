@@ -16,8 +16,8 @@ console.log(`Creating torrent for: ${absPath}`);
 
 createTorrent(absPath, {
   name: "PLAYER_CHARACTER_01",
-  comment: "Player Character 01 — A 2D platformer with world-hopping portals. Published on Peerplay.",
-  createdBy: "Peerplay v0.1.0",
+  comment: "Player Character 01 — A 2D platformer with world-hopping portals. Published on BoilerDeck.",
+  createdBy: "BoilerDeck v0.1.0",
   announceList: [],  // DHT-only for now (no private tracker yet)
   private: false,
   pieceLength: 2 ** 18, // 256KB pieces (good for ~100MB game)

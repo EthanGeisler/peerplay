@@ -1,4 +1,4 @@
-# Peerplay — Decentralized Game Distribution Platform
+# BoilerDeck — Decentralized Game Distribution Platform
 
 > **Start here:** Read `CONTEXT.md` for full project state, what's been built, known issues, and next steps.
 
@@ -22,26 +22,26 @@
 ## Key Conventions
 - Express routes use `try/catch` with `next(err)` pattern
 - Input validation via Zod schemas
-- Auth via JWT (access + refresh tokens), `authenticate` middleware from `@peerplay/shared`
+- Auth via JWT (access + refresh tokens), `authenticate` middleware from `@boilerdeck/shared`
 - Role checks via `requireRole("DEVELOPER")` etc.
 - Error classes: AppError, NotFoundError, UnauthorizedError, ForbiddenError, ConflictError, ValidationError
 - Prisma models are PascalCase, DB tables are snake_case (via `@@map`)
 
 ## Deployment to VPS
-Everything runs on a single Hetzner VPS at `204.168.133.38`. Deploy process:
+Everything runs on a single Hetzner VPS (`boilerdeck.com` / `204.168.133.38`). HTTPS via Let's Encrypt (auto-renews). Deploy process:
 ```bash
 # 1. Commit and push locally
 git add <files> && git commit -m "message" && git push origin main
 
 # 2. SSH pull + install + rebuild
-ssh root@204.168.133.38 "cd /opt/peerplay && git pull origin main && npm install"
+ssh root@204.168.133.38 "cd /opt/boilerdeck && git pull origin main && npm install"
 
 # 3. Rebuild frontends (only if changed)
-ssh root@204.168.133.38 "cd /opt/peerplay && npx vite build web"         # storefront
-ssh root@204.168.133.38 "cd /opt/peerplay && npx vite build dev-portal"  # dev portal
+ssh root@204.168.133.38 "cd /opt/boilerdeck && npx vite build web"         # storefront
+ssh root@204.168.133.38 "cd /opt/boilerdeck && npx vite build dev-portal"  # dev portal
 
 # 4. Restart server (only if backend changed)
-ssh root@204.168.133.38 "systemctl restart peerplay"
+ssh root@204.168.133.38 "systemctl restart boilerdeck"
 ```
 **Gotcha:** If VPS has local changes, `git pull` will fail — use `git stash --include-untracked` first.
 
@@ -51,7 +51,7 @@ ssh root@204.168.133.38 "systemctl restart peerplay"
 |-------|---------|-------------|
 | `feature-coordinator` | `@feature-coordinator {description}` | Produces a cross-cutting implementation plan identifying every file/layer that needs changes, in dependency order |
 | `deploy` | `@deploy` | Handles full deploy to VPS — pre-flight checks, pull, build, restart, health verification |
-| `server-reviewer` | `@server-reviewer` | Reviews recent server code changes for convention compliance, security, and Peerplay-specific gotchas |
+| `server-reviewer` | `@server-reviewer` | Reviews recent server code changes for convention compliance, security, and BoilerDeck-specific gotchas |
 | `frontend-reviewer` | `@frontend-reviewer` | Reviews recent frontend changes across web, dev-portal, and client for correctness and patterns |
 
 ### Recommended Workflow
@@ -62,7 +62,7 @@ ssh root@204.168.133.38 "systemctl restart peerplay"
 4. **Ship:** Commit, push, then `@deploy` to get changes live on the VPS
 
 ### Design Philosophy
-- **Feature coordinator plans, main conversation builds.** Most Peerplay features cut across layers (schema → server → frontend → infra). The coordinator identifies all touchpoints; the main conversation does the actual implementation because cross-cutting changes need tight coordination, not isolated subagents.
+- **Feature coordinator plans, main conversation builds.** Most BoilerDeck features cut across layers (schema → server → frontend → infra). The coordinator identifies all touchpoints; the main conversation does the actual implementation because cross-cutting changes need tight coordination, not isolated subagents.
 - **Reviewers catch, not block.** Run reviewers after writing code to catch convention drift and gotchas. They review only changed files.
 - **Deploy agent automates the manual SSH flow.** It figures out what changed, only rebuilds what's needed, and verifies health after.
 

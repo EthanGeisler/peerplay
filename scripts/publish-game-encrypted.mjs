@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Publish an encrypted game to Peerplay.
+ * Publish an encrypted game to BoilerDeck.
  * Extends publish-game.mjs with EncryptionKey creation and drmTier setting.
  *
  * Usage: node scripts/publish-game-encrypted.mjs <gameId> <torrentPath> <magnetUri> <infoHash> <wrappedMasterKeyHex>

@@ -1,8 +1,8 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { db, NotFoundError, ForbiddenError, getConfig } from "@peerplay/shared";
-import { createGameTorrent } from "@peerplay/torrent";
+import { db, NotFoundError, ForbiddenError, ValidationError, getConfig } from "@boilerdeck/shared";
+import { createGameTorrent } from "@boilerdeck/torrent";
 import type { DrmTier } from "@prisma/client";
 import { Open as unzipOpen } from "unzipper";
 
@@ -197,7 +197,7 @@ export async function createVersion(
   });
 
   // TODO: Generate a real pre-signed upload URL (e.g., S3/B2)
-  const uploadUrl = `https://upload.peerplay.dev/placeholder/${gameVersion.id}`;
+  const uploadUrl = `https://upload.boilerdeck.com/placeholder/${gameVersion.id}`;
 
   return {
     id: gameVersion.id,
@@ -325,6 +325,7 @@ export async function publishGame(gameId: string, developerId: string) {
         where: { status: "READY" },
         take: 1,
       },
+      developer: true,
     },
   });
 
@@ -333,6 +334,13 @@ export async function publishGame(gameId: string, developerId: string) {
   }
   if (game.developerId !== developerId) {
     throw new ForbiddenError("You can only publish your own games");
+  }
+
+  // Paid games require Stripe Connect onboarding
+  if (game.priceCents > 0 && !game.developer.stripeOnboarded) {
+    throw new ValidationError(
+      "Complete Stripe onboarding before publishing paid games. Free games can be published without Stripe.",
+    );
   }
 
   const updated = await db.game.update({
