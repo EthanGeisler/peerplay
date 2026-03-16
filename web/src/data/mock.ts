@@ -11,9 +11,36 @@ export interface Game {
   exePath: string;
   tags: string[];
   releaseDate: string;
+  magnetUri?: string;
+  fileSizeMB?: number;
+  version?: string;
+  featured?: boolean;
 }
 
 export const MOCK_GAMES: Game[] = [
+  {
+    id: "pc01",
+    slug: "player-character-01",
+    title: "Player Character 01",
+    description:
+      "A 2D platformer where you begin inside what appears to be a generic fantasy sidescroller. Shortly in, glitches appear — cracks in the world through which other game genres are visible. Jump through cracks, borrow mechanics from each world, and defeat bosses that have escaped their dimensions. All visuals are procedural — no external art assets. Built in Godot.",
+    priceCents: 0,
+    drmTier: "NONE",
+    coverImageUrl: "https://placehold.co/460x215/0d0d2b/e94560?text=Player+Character+01&font=raleway",
+    screenshots: [
+      "https://placehold.co/1280x720/0d1117/e94560?text=HomeWorld&font=raleway",
+      "https://placehold.co/1280x720/1a0a2e/58a6ff?text=ClassicWorld&font=raleway",
+      "https://placehold.co/1280x720/0a1628/00d4aa?text=PuzzleWorld&font=raleway",
+    ],
+    studioName: "EthanGeisler",
+    exePath: "PLAYER_CHARACTER_01PeerPlay.exe",
+    tags: ["Platformer", "Procedural", "World-Hopping", "Godot"],
+    releaseDate: "2026-03-15",
+    magnetUri: "magnet:?xt=urn:btih:17f09e866c70ab18d4783395e540760b4c0e5fb9&dn=PLAYER_CHARACTER_01",
+    fileSizeMB: 96,
+    version: "0.1.0",
+    featured: true,
+  },
   {
     id: "1",
     slug: "space-explorer",
@@ -132,7 +159,4 @@ export interface OwnedGame {
   purchasedAt: string;
 }
 
-export const MOCK_LIBRARY: OwnedGame[] = [
-  { gameId: "1", purchasedAt: "2026-03-14T10:30:00Z" },
-  { gameId: "3", purchasedAt: "2026-03-15T14:00:00Z" },
-];
+export const MOCK_LIBRARY: OwnedGame[] = [];

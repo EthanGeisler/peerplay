@@ -126,19 +126,56 @@ export function GameDetail() {
           </div>
 
           {owned ? (
-            <div
-              style={{
-                padding: "12px 0",
-                textAlign: "center",
-                borderRadius: "var(--radius)",
-                backgroundColor: "rgba(63,185,80,0.15)",
-                color: "var(--accent-green)",
-                fontWeight: 700,
-                fontSize: 14,
-                marginBottom: 16,
-              }}
-            >
-              In Your Library
+            <div style={{ marginBottom: 16 }}>
+              <div
+                style={{
+                  padding: "12px 0",
+                  textAlign: "center",
+                  borderRadius: "var(--radius)",
+                  backgroundColor: "rgba(63,185,80,0.15)",
+                  color: "var(--accent-green)",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  marginBottom: 8,
+                }}
+              >
+                In Your Library
+              </div>
+              {game.magnetUri && (
+                <a
+                  href={game.magnetUri}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    padding: "12px 0",
+                    borderRadius: "var(--radius)",
+                    backgroundColor: "var(--accent-blue)",
+                    color: "#fff",
+                    fontWeight: 700,
+                    fontSize: 14,
+                    textAlign: "center",
+                    textDecoration: "none",
+                    marginBottom: 8,
+                  }}
+                >
+                  Download via Torrent ({game.fileSizeMB}MB)
+                </a>
+              )}
+              {game.magnetUri && (
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "var(--text-muted)",
+                    backgroundColor: "var(--bg-primary)",
+                    padding: 8,
+                    borderRadius: "var(--radius)",
+                    wordBreak: "break-all",
+                    fontFamily: "monospace",
+                  }}
+                >
+                  {game.magnetUri}
+                </div>
+              )}
             </div>
           ) : (
             <button

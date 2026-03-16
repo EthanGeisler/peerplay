@@ -10,53 +10,88 @@ function formatPrice(cents: number): string {
 export function Store() {
   const navigate = useNavigate();
   const isOwned = useAppStore((s) => s.isOwned);
+  const featured = MOCK_GAMES.find((g) => g.featured);
 
   return (
     <div>
-      {/* Hero banner */}
-      <div
-        style={{
-          background: "linear-gradient(135deg, #1a0028 0%, #0d1117 50%, #001a1a 100%)",
-          borderRadius: "var(--radius-lg)",
-          padding: "48px 40px",
-          marginBottom: 32,
-          border: "1px solid var(--border)",
-          position: "relative",
-          overflow: "hidden",
-        }}
-      >
+      {/* Featured game hero */}
+      {featured && (
         <div
+          onClick={() => navigate(`/game/${featured.slug}`)}
           style={{
-            position: "absolute",
-            top: -50,
-            right: -50,
-            width: 200,
-            height: 200,
-            background: "radial-gradient(circle, var(--accent) 0%, transparent 70%)",
-            opacity: 0.1,
+            background: "linear-gradient(135deg, #1a0028 0%, #0d1117 50%, #001a1a 100%)",
+            borderRadius: "var(--radius-lg)",
+            padding: "40px",
+            marginBottom: 32,
+            border: "1px solid var(--border)",
+            position: "relative",
+            overflow: "hidden",
+            cursor: "pointer",
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 32,
           }}
-        />
-        <h1
-          style={{
-            fontSize: 36,
-            fontWeight: 800,
-            marginBottom: 12,
-            background: "linear-gradient(90deg, var(--accent), var(--accent-blue))",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
-          }}
+          onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
+          onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
         >
-          Welcome to Peerplay
-        </h1>
-        <p style={{ fontSize: 16, color: "var(--text-secondary)", maxWidth: 600, lineHeight: 1.6 }}>
-          Decentralized game distribution powered by BitTorrent.
-          Developers keep 99% of revenue. No gatekeepers. Open platform.
-        </p>
-        <div style={{ display: "flex", gap: 12, marginTop: 24 }}>
-          <span style={tagStyle("#3fb950", "rgba(63,185,80,0.15)")}>99/1 Revenue Split</span>
-          <span style={tagStyle("#58a6ff", "rgba(88,166,255,0.15)")}>BitTorrent Powered</span>
-          <span style={tagStyle("#d29922", "rgba(210,153,34,0.15)")}>Developer Choice DRM</span>
+          <div>
+            <span style={tagStyle("#e94560", "rgba(233,69,96,0.2)")}>FEATURED</span>
+            <h1
+              style={{
+                fontSize: 32,
+                fontWeight: 800,
+                marginTop: 12,
+                marginBottom: 12,
+                color: "var(--text-primary)",
+              }}
+            >
+              {featured.title}
+            </h1>
+            <p style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.7, marginBottom: 20 }}>
+              {featured.description}
+            </p>
+            <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16 }}>
+              <span
+                style={{
+                  fontSize: 20,
+                  fontWeight: 800,
+                  color: "var(--accent-green)",
+                }}
+              >
+                Free
+              </span>
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                {featured.fileSizeMB}MB &middot; DRM-Free &middot; v{featured.version}
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {featured.tags.map((tag) => (
+                <span key={tag} style={tagStyle("var(--text-secondary)", "var(--bg-tertiary)")}>
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <img
+              src={featured.coverImageUrl}
+              alt={featured.title}
+              style={{
+                width: "100%",
+                maxWidth: 420,
+                borderRadius: "var(--radius-lg)",
+                border: "1px solid var(--border)",
+              }}
+            />
+          </div>
         </div>
+      )}
+
+      {/* Platform info */}
+      <div style={{ display: "flex", gap: 12, marginBottom: 32 }}>
+        <span style={tagStyle("#3fb950", "rgba(63,185,80,0.15)")}>99/1 Revenue Split</span>
+        <span style={tagStyle("#58a6ff", "rgba(88,166,255,0.15)")}>BitTorrent Powered</span>
+        <span style={tagStyle("#d29922", "rgba(210,153,34,0.15)")}>Developer Choice DRM</span>
       </div>
 
       {/* Game grid */}

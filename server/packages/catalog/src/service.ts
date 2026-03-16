@@ -111,7 +111,12 @@ export async function getGameBySlug(slug: string) {
     screenshots: game.screenshots,
     exePath: game.exePath,
     studioName: game.developer.studioName,
-    latestVersion: game.versions[0] ?? null,
+    latestVersion: game.versions[0]
+      ? {
+          ...game.versions[0],
+          fileSizeBytes: Number(game.versions[0].fileSizeBytes),
+        }
+      : null,
     createdAt: game.createdAt,
     updatedAt: game.updatedAt,
   };
