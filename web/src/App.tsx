@@ -84,6 +84,22 @@ export function App() {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <a
+            href="/dev/"
+            style={{
+              padding: "6px 14px",
+              borderRadius: "var(--radius)",
+              backgroundColor: "transparent",
+              color: "var(--text-secondary)",
+              fontSize: 13,
+              textDecoration: "none",
+              transition: "color 0.15s",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text-primary)")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-secondary)")}
+          >
+            Developer Portal
+          </a>
           {user ? (
             <>
               <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
