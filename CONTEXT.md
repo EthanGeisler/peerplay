@@ -31,11 +31,11 @@ Fully functional REST API running on port **3001** (port 3000 is used by open-we
 **Packages** (`server/packages/`):
 | Package | What it does | Key files |
 |---------|-------------|-----------|
-| `shared` | Prisma client, middleware (auth, role check, error handler), config (Zod-validated env), Redis client, error classes | `src/db.ts`, `src/middleware.ts`, `src/config.ts`, `src/errors.ts`, `src/redis.ts` |
-| `auth` | JWT auth (access 15m + refresh 7d with rotation), bcrypt password hashing, user registration/login | `src/service.ts`, `src/routes.ts`, `src/developer.routes.ts` |
+| `shared` | Prisma client, middleware (auth, role check, error handler), config (Zod-validated env), Redis client, error classes, Stripe singleton | `src/db.ts`, `src/middleware.ts`, `src/config.ts`, `src/errors.ts`, `src/redis.ts`, `src/stripe.ts` |
+| `auth` | JWT auth (access 15m + refresh 7d with rotation), bcrypt password hashing, user registration/login, **Stripe Connect onboarding** (account creation + account links, Redis-backed one-time tokens for return/refresh URLs) | `src/service.ts`, `src/routes.ts`, `src/developer.routes.ts` |
 | `catalog` | Game CRUD, slug generation, paginated listing, game detail, **file upload pipeline** (zip extraction, torrent creation, Transmission seeding, exe auto-detection) | `src/service.ts`, `src/routes.ts` |
 | `license` | License listing, verification with device fingerprinting (max 3 devices), decryption key delivery for ENCRYPTED tier, device deregistration. Crypto utils for AES-256-GCM key wrap/unwrap and HKDF per-user key derivation. | `src/service.ts`, `src/routes.ts`, `src/crypto.ts` |
-| `payment` | Mock checkout flow — atomic `$transaction` creates Payment + License together, 1% platform fee calc | `src/service.ts`, `src/routes.ts` |
+| `payment` | **Real Stripe Checkout** — free games: atomic license grant; paid games: Stripe Checkout Session with Connect destination charges, platform fee (1%), webhook handlers for `checkout.session.completed`/`expired`/`account.updated`, idempotent payment+license creation, orphaned payment cleanup on Stripe failure | `src/service.ts`, `src/routes.ts` |
 | `torrent` | Torrent retrieval with license ownership check, **`createGameTorrent()` for generating .torrent files** (used by catalog upload pipeline) | `src/service.ts`, `src/routes.ts`, `src/vendor.d.ts` |
 | `saves` | Cloud save upload/download — **scaffolded but not implemented** | `src/index.ts` |
 
@@ -59,7 +59,7 @@ Fully functional REST API running on port **3001** (port 3000 is used by open-we
 **API endpoints (all verified working):**
 - `POST /api/auth/register|login|refresh|logout`, `GET /api/auth/me`
 - `GET /api/games`, `GET /api/games/:slug`
-- `POST /api/developer/register`, `GET /api/developer/stripe/onboard`, `GET /api/developer/me`
+- `POST /api/developer/register`, `GET /api/developer/stripe/onboard`, `GET /api/developer/stripe/return?token=...`, `GET /api/developer/stripe/refresh?token=...`, `GET /api/developer/me`
 - `POST /api/developer/games`, `PUT /api/developer/games/:id`
 - `POST /api/developer/games/:id/versions`
 - `POST /api/developer/games/:id/versions/:versionId/upload` (multipart, `gameZip` field, 2GB limit, 30min timeout)
@@ -80,6 +80,8 @@ SPA served from VPS at `/`. Uses **HashRouter**. Talks to the **real API** (not 
 - `Library.tsx` — Owned games from real licenses (`GET /api/licenses`). Links to `/login` for unauthenticated users.
 - `Login.tsx` — Login/Register form with tabs. JWT auth via `POST /api/auth/login|register`.
 - `About.tsx` — Platform explainer (revenue split, BitTorrent, 3-column DRM tier comparison cards, tech stack)
+- `CheckoutSuccess.tsx` — Post-purchase page. Polls `fetchLicenses()` until new license appears (webhook latency). Handles unauthenticated users with sign-in prompt.
+- `CheckoutCancel.tsx` — Shown when user cancels Stripe Checkout. Links back to store.
 
 **State:** Three Zustand stores (split by concern):
 - `web/src/stores/authStore.ts` — Login, register, logout, session restore via refresh token. On mount, `loadSession()` tries to restore session from `pp_refresh_token` in localStorage.
@@ -117,8 +119,8 @@ SPA served from VPS at `/dev/`. Talks to the real API. Login with developer cred
 
 **Pages** (`dev-portal/src/pages/`):
 - `Login.tsx` — Email/password login
-- `SetupDeveloper.tsx` — First-time developer profile creation
-- `Dashboard.tsx` — Lists developer's games with version/license counts
+- `SetupDeveloper.tsx` — First-time developer profile creation + Stripe Connect onboarding prompt (uses shared `redirectToStripeOnboard()`)
+- `Dashboard.tsx` — Lists developer's games with version/license counts. Shows Stripe onboarding banner if not connected, payouts-pending notice if connected but payouts disabled, "Stripe Connected" badge when fully set up.
 - `GameDetail.tsx` — Full game management: publish/unpublish, version list with torrent info, **file upload** (drag-and-drop zip → progress bar → processing → READY)
 - `GameEditor.tsx` — Create/edit game form. **Creating a game requires uploading a zip** (version + zip fields). Exe auto-detected from upload.
 
@@ -130,7 +132,7 @@ SPA served from VPS at `/dev/`. Talks to the real API. Login with developer cred
 5. Transmission RPC (`addToTransmission`): POST to `http://127.0.0.1:9091/transmission/rpc`, handles 409 CSRF dance, base64 metainfo, non-blocking (failure logged but doesn't block upload)
 
 **Key files:**
-- `dev-portal/src/api.ts` — `apiFetch()` (fetch + auth refresh) + `apiUpload()` (XHR with progress callback)
+- `dev-portal/src/api.ts` — `apiFetch()` (fetch + auth refresh) + `apiUpload()` (XHR with progress callback) + `redirectToStripeOnboard()` (shared Stripe Connect redirect helper)
 - `dev-portal/vite.config.ts` — `base: "/dev/"` for VPS subpath
 
 **Vite config:** `base: "/dev/"` — **must match the nginx alias path** or assets 404.
@@ -226,7 +228,7 @@ npm run dev:server    # runs on port 3001
 npm run dev:web       # runs on port 5173
 ```
 
-**Environment:** `server/.env` — contains DATABASE_URL, REDIS_URL, JWT secrets, Stripe keys (mock), port config, optional `DRM_MASTER_KEK` (64+ hex chars, required for ENCRYPTED DRM tier). Not committed to git. Separate `.env` exists on VPS at `/opt/boilerdeck/server/.env`.
+**Environment:** `server/.env` — contains DATABASE_URL, REDIS_URL, JWT secrets, Stripe keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PLATFORM_FEE_PERCENT`), `CORS_ORIGIN`, port config, optional `DRM_MASTER_KEK` (64+ hex chars, required for ENCRYPTED DRM tier). Not committed to git. Separate `.env` exists on VPS at `/opt/boilerdeck/server/.env`.
 
 ---
 
@@ -271,26 +273,36 @@ magnet:?xt=urn:btih:bf69c35df8f0d24cdacfdf3f10c7afdc4513b09e&dn=player-character
 14. **nginx `default_server`** — The boilerdeck site config uses `listen 80 default_server;` to override nginx's built-in welcome page. Without this, requests may hit the default nginx page instead.
 15. **Multer temp dir** — The upload route auto-creates `/opt/boilerdeck/games/.tmp/` via `fs.mkdirSync(tmpDir, { recursive: true })` in the multer destination callback. Don't rely on it pre-existing.
 16. **Upload pipeline proxy timeout** — nginx default `proxy_read_timeout` is 60s. Large uploads may need `proxy_read_timeout 1800;` in the `/api/` block if server-side processing (zip extraction + torrent creation) takes longer than 60s after upload completes.
+17. **VPS deploy — Rollup Linux binding** — `package-lock.json` generated on Windows won't include `@rollup/rollup-linux-x64-gnu`. After `npm install` on VPS, may need `npm install @rollup/rollup-linux-x64-gnu` explicitly, or do a clean `rm -rf node_modules && npm install` on the VPS.
+18. **VPS deploy — Prisma client regeneration** — After wiping `node_modules` on VPS, must run `npx prisma generate` before starting the server, otherwise Prisma client will be missing.
+19. **Stripe Connect onboard tokens** — The return/refresh URLs for Stripe Connect use Redis-backed one-time-use tokens (`crypto.randomBytes(32)`, stored as `stripe_onboard:{token}` with 1-hour TTL). Tokens are consumed on use (deleted from Redis). Never pass raw Stripe account IDs in query params.
+20. **Stripe webhook idempotency** — All webhook handlers (`handleCheckoutCompleted`, `handleCheckoutExpired`, `handleAccountUpdated`) check current state before mutating. `handleCheckoutExpired` won't overwrite a COMPLETED payment. `handleCheckoutCompleted` won't create duplicate licenses.
 
 ---
 
 ## Git State
 
-- **Repo:** https://github.com/EthanGeisler/peerplay (rename pending)
+- **Repo:** https://github.com/EthanGeisler/peerplay (rename pending — GitHub repo still named `peerplay`)
 - **Branch:** `main` (only branch)
-- **12 commits** as of 2026-03-16:
-  1. `Initial commit: Peerplay MVP` — full monorepo with server, client, web, scripts
-  2. `Add Player Character 01 as first game on the platform` — mock data, publish script, torrent file
-  3. `Update Player Character 01 magnet URI to match active WebTorrent seeder` — fixed info hash mismatch
-  4. `Add CONTEXT.md for session continuity between Claude instances`
-  5. `Implement LIGHT and ENCRYPTED DRM tiers across server and storefront` — device fingerprinting, key delivery, crypto utils, edition picker, DRM badges, About page overhaul, encryption scripts
-  6. `Deploy to Hetzner VPS with Transmission seeder` — VPS setup, standard BitTorrent seeding, CONTEXT.md updates
-  7. `Add game file upload pipeline with automatic torrent creation` — dev portal, upload route, multer, unzipper, Transmission RPC, XHR progress, drag-and-drop UI
-  8. `Set base path for dev portal served under /dev/` — Vite `base: "/dev/"` fix
-  9. `Require game build upload when creating a new game` — zip + version required on game creation
-  10. `Move web storefront to VPS and add Developer Portal link` — `base: "/"`, nginx serves web at `/`, dev portal link in header
-  11. `Connect web storefront to real API, replacing all mock data` — deleted mock.ts + appStore.ts, added api.ts, types.ts, authStore, gameStore, libraryStore, Login page, rewrote Store/GameDetail/Library/App to use real API
-  12. `Fix review issues: logout token revocation, 204 handling, accessibility, dedup` — send refresh token on logout, handle 204 in apiFetch, extract shared utils.ts, htmlFor/id on labels, keyboard-accessible cards, individual Zustand selectors
+- **17 commits** as of 2026-03-16 (latest first):
+  1. `dfd977a` `Fix review issues: Stripe security, webhook idempotency, frontend cleanup` — Redis-backed onboard tokens, getStripe extraction to shared, orphaned payment cleanup, CheckoutSuccess rewrite, redirectToStripeOnboard helper, Stripe SDK alignment
+  2. `3e6f71d` `Fix Stripe Connect return endpoint and Dashboard error logging`
+  3. `cd78e5c` `Rebrand Peerplay to BoilerDeck and set up boilerdeck.com domain` — all package names @peerplay→@boilerdeck, UI text, HTML titles, server logs, torrent metadata, docs, VPS infra (/opt/boilerdeck, boilerdeck.service, nginx config, SSL cert)
+  4. `5550a92` `Update CONTEXT.md and CLAUDE.md for storefront API integration`
+  5. `148e5ec` `Fix review issues: logout token revocation, 204 handling, accessibility, dedup`
+  6. `6f6caac` `Connect web storefront to real API, replacing all mock data`
+  7. `695459d` `Update CONTEXT.md and CLAUDE.md with upload pipeline and VPS consolidation`
+  8. `47a4b29` `Move web storefront to VPS and add Developer Portal link`
+  9. `f1a267c` `Auto-create upload temp directory if missing`
+  10. `7122663` `Require game build upload when creating a new game`
+  11. `7164553` `Set base path for dev portal served under /dev/`
+  12. `aee5333` `Add game file upload pipeline with automatic torrent creation`
+  13. `b147608` `Deploy to Hetzner VPS with standard BitTorrent seeding`
+  14. `bbc01e1` `Implement LIGHT and ENCRYPTED DRM tiers across server and storefront`
+  15. `a1b1673` `Add CONTEXT.md for session continuity between Claude instances`
+  16. `87ffa4f` `Update Player Character 01 magnet URI to match active WebTorrent seeder`
+  17. `d01f51f` `Add Player Character 01 as first game on the platform`
+  18. `f71401e` `Initial commit: Peerplay MVP`
 - **Git identity:** `EthanGeisler` / `25466222+EthanGeisler@users.noreply.github.com`
 
 ---
@@ -301,7 +313,7 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 
 ### Short-term
 - [x] Connect web storefront to real API (replace mock data with fetch calls) — done 2026-03-16
-- [ ] Stripe Connect integration (real payments, currently mocked)
+- [x] Stripe Connect integration (real payments via Stripe Checkout + Connect destination charges) — done 2026-03-16
 - [ ] Finish Electron client (WebTorrent download in hidden renderer, game launch, progress tracking)
 - [x] DRM Tier 1 (LIGHT) — server: device fingerprinting in verifyLicense, max 3 devices, device deregistration endpoint
 - [x] DRM Tier 2 (ENCRYPTED) — server: crypto utils (AES-256-GCM wrap/unwrap, HKDF derivation), key delivery endpoint, encryption metadata in torrent responses, encrypt-game + publish-game-encrypted scripts
@@ -327,6 +339,36 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 
 ---
 
+## Stripe Connect Integration
+
+**Architecture:** Stripe Connect with Express accounts + destination charges.
+
+**Onboarding flow (developer):**
+1. Developer clicks "Connect with Stripe" → `GET /api/developer/stripe/onboard`
+2. Server creates Stripe Express account (if none), generates Account Link, stores Redis-backed onboard token
+3. Developer completes Stripe onboarding → redirected to `GET /api/developer/stripe/return?token=...`
+4. Return endpoint verifies token, checks `charges_enabled`/`payouts_enabled`, updates Developer record
+5. If onboarding incomplete, refresh endpoint generates new Account Link with fresh token
+
+**Checkout flow (player):**
+1. Player clicks "Buy" on game detail page → `POST /api/payments/checkout`
+2. **Free games:** Atomic `$transaction` creates Payment (COMPLETED) + License (ACTIVE) immediately
+3. **Paid games:** Creates PENDING Payment → Stripe Checkout Session with `application_fee_amount` + `transfer_data.destination` → returns checkout URL
+4. Player completes payment on Stripe → `checkout.session.completed` webhook fires
+5. Webhook handler: updates Payment to COMPLETED, creates License (ACTIVE) — all in `$transaction`
+6. If session expires: `checkout.session.expired` webhook sets Payment to FAILED (only if not already COMPLETED)
+
+**Key files:**
+- `server/packages/auth/src/developer.routes.ts` — onboard, return, refresh endpoints + Redis token functions
+- `server/packages/payment/src/service.ts` — checkout, handleWebhook, handleCheckoutCompleted/Expired/AccountUpdated
+- `server/packages/shared/src/stripe.ts` — `getStripe()` singleton (used by both auth and payment)
+- `web/src/pages/CheckoutSuccess.tsx` — post-purchase polling page
+- `dev-portal/src/api.ts` — `redirectToStripeOnboard()` shared helper
+
+**Stripe SDK:** `stripe@^20.4.1` (aligned across shared, auth, payment packages)
+
+---
+
 ## Quick Reference
 
 | What | Where |
@@ -344,6 +386,9 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 | Storefront API client | `web/src/api.ts` |
 | Storefront types | `web/src/types.ts` |
 | Storefront shared utils | `web/src/utils.ts` |
+| Stripe singleton | `server/packages/shared/src/stripe.ts` |
+| Stripe onboard tokens | `server/packages/auth/src/developer.routes.ts` (`createOnboardToken`/`verifyOnboardToken`) |
+| Stripe checkout + webhooks | `server/packages/payment/src/service.ts` |
 | Deploy workflow (GH Pages) | `.github/workflows/deploy.yml` |
 | Full architecture plan | `.claude/plans/twinkling-hugging-thunder.md` |
 | Game build (PC01) | `C:\Users\eface\player-character-01\build\PeerPlayBuild\` |

@@ -25,6 +25,7 @@
 - Auth via JWT (access + refresh tokens), `authenticate` middleware from `@boilerdeck/shared`
 - Role checks via `requireRole("DEVELOPER")` etc.
 - Error classes: AppError, NotFoundError, UnauthorizedError, ForbiddenError, ConflictError, ValidationError
+- Stripe: import `getStripe` from `@boilerdeck/shared` (singleton in `shared/src/stripe.ts`) — never instantiate Stripe directly in packages
 - Prisma models are PascalCase, DB tables are snake_case (via `@@map`)
 
 ## Deployment to VPS
@@ -44,6 +45,8 @@ ssh root@204.168.133.38 "cd /opt/boilerdeck && npx vite build dev-portal"  # dev
 ssh root@204.168.133.38 "systemctl restart boilerdeck"
 ```
 **Gotcha:** If VPS has local changes, `git pull` will fail — use `git stash --include-untracked` first.
+**Gotcha:** `package-lock.json` from Windows may lack `@rollup/rollup-linux-x64-gnu`. If Vite build fails on VPS, run `npm install @rollup/rollup-linux-x64-gnu` or do a clean `rm -rf node_modules && npm install`.
+**Gotcha:** After wiping `node_modules` on VPS, run `npx prisma generate` before `systemctl restart boilerdeck`.
 
 ## Agents (`.claude/agents/`)
 
