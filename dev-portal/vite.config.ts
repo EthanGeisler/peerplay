@@ -18,6 +18,7 @@ export default defineConfig({
       },
     },
   },
+  base: "/dev/",
   build: {
     outDir: "dist",
   },
