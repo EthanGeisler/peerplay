@@ -97,9 +97,8 @@ export function Store() {
       {/* Download CTA */}
       {!isSearching && (
         <a
-          href="https://github.com/EthanGeisler/peerplay/releases/latest"
-          target="_blank"
-          rel="noopener noreferrer"
+          href="/downloads/BoilerDeck%20Setup%200.1.0.exe"
+          download
           style={{
             display: "flex",
             alignItems: "center",
