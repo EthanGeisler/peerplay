@@ -36,7 +36,7 @@ export const MOCK_GAMES: Game[] = [
     exePath: "PLAYER_CHARACTER_01PeerPlay.exe",
     tags: ["Platformer", "Procedural", "World-Hopping", "Godot"],
     releaseDate: "2026-03-15",
-    magnetUri: "magnet:?xt=urn:btih:17f09e866c70ab18d4783395e540760b4c0e5fb9&dn=PLAYER_CHARACTER_01",
+    magnetUri: "magnet:?xt=urn:btih:e82a3849a528a865692c72260e346dcc8071c86e&dn=PeerPlayBuild&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&tr=wss%3A%2F%2Ftracker.webtorrent.dev",
     fileSizeMB: 96,
     version: "0.1.0",
     featured: true,
