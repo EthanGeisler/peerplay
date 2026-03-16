@@ -72,21 +72,44 @@ Fully functional REST API running on port **3001** (port 3000 is used by open-we
 
 ### Web Storefront — Vite + React 19 (`web/`)
 
-Static SPA served from VPS at `/`. Uses **HashRouter**. Also still deploys to GitHub Pages via Actions but the primary URL is now the VPS. Header includes a "Developer Portal" link to `/dev/`.
+SPA served from VPS at `/`. Uses **HashRouter**. Talks to the **real API** (not mock data). Also still deploys to GitHub Pages via Actions but the primary URL is now the VPS. Header includes a "Developer Portal" link to `/dev/`.
 
 **Pages** (`web/src/pages/`):
-- `Store.tsx` — Featured hero (Player Character 01) + game grid cards with DRM tier badges (green "DRM-Free", amber "Online Check", blue "Encrypted")
-- `GameDetail.tsx` — Full detail page with edition picker (for games with multiple editions), dynamic DRM info card, purchase button, magnet download link, revenue split breakdown, tags
-- `Library.tsx` — Owned games with Play button
-- `About.tsx` — Platform explainer (revenue split, BitTorrent, 3-column DRM tier comparison cards with player/developer perspectives, tech stack)
+- `Store.tsx` — Featured hero (first game in DB) + game grid cards with DRM tier badges. Fetches real games from `GET /api/games`.
+- `GameDetail.tsx` — Full detail page with DRM info card, purchase button (real checkout via `POST /api/payments/checkout`), torrent download link after purchase (via `GET /api/torrents/:gameId/latest`), revenue split breakdown, version info
+- `Library.tsx` — Owned games from real licenses (`GET /api/licenses`). Links to `/login` for unauthenticated users.
+- `Login.tsx` — Login/Register form with tabs. JWT auth via `POST /api/auth/login|register`.
+- `About.tsx` — Platform explainer (revenue split, BitTorrent, 3-column DRM tier comparison cards, tech stack)
 
-**State:** Zustand store (`web/src/stores/appStore.ts`) — mock auth, purchase/library/cart logic, all client-side (no API calls from the web storefront).
+**State:** Three Zustand stores (split by concern):
+- `web/src/stores/authStore.ts` — Login, register, logout, session restore via refresh token. On mount, `loadSession()` tries to restore session from `pp_refresh_token` in localStorage.
+- `web/src/stores/gameStore.ts` — `fetchGames()` (listing) and `fetchGameBySlug()` (detail page)
+- `web/src/stores/libraryStore.ts` — `fetchLicenses()`, `checkout()`, `fetchTorrent()`. No `isOwned` function — components select the `licenses` array directly and compute ownership inline (see Zustand gotcha below).
 
-**Data:** `web/src/data/mock.ts` — 7 games including Player Character 01 (featured, free, with real magnet URI). PC01 has an `editions` array (Free Edition DRM-Free / Premium Edition $9.99 LIGHT DRM). The mock data is separate from the DB seed data — they exist independently.
+**API client:** `web/src/api.ts` — `apiFetch()` with JWT auto-refresh on 401, `ApiError` class, 204 handling. Copied from dev-portal's `api.ts` (minus `apiUpload()`). `refreshAccessToken()` is exported and reused by authStore's `loadSession`.
+
+**Types:** `web/src/types.ts` — TypeScript interfaces matching actual server response shapes: `ApiGame`, `ApiGameDetail`, `ApiUser`, `ApiAuthResponse`, `ApiLicense`, `ApiTorrent`, `ApiCheckoutResult`, `ApiGameListResponse`.
+
+**Shared utils:** `web/src/utils.ts` — `formatPrice()`, `formatSize()`, `PLACEHOLDER_COVER` constant. Used by Store, GameDetail, Library.
+
+**Key differences from mock era:**
+- No more `editions` concept (DB has single `priceCents`/`drmTier` per game, no edition picker)
+- No more `tags` (DB Game model has no tags column)
+- No more `featured` flag (first game in listing is used as hero)
+- No more `releaseDate`, `fileSizeMB`, `version` on listing cards (only available in detail endpoint via `latestVersion`)
+- `coverImageUrl` and `screenshots` may be null/empty for seeded games — all `<img>` tags use fallback placeholders
+
+**Auth flow:**
+1. User clicks "Sign In" → navigates to `/#/login`
+2. Login form calls `POST /api/auth/login` → gets `{ user, accessToken, refreshToken }`
+3. Access token stored in memory (`api.ts` module var), refresh token in `localStorage` key `pp_refresh_token`
+4. On page reload, `loadSession()` calls `refreshAccessToken()` (exported from `api.ts`) then `GET /api/auth/me`
+5. `pp_refresh_token` localStorage key is shared with dev-portal (same origin) — acts as SSO
+6. Logout sends refresh token in body so server revokes it in DB
 
 **Deployment:** Served from VPS via nginx (`/opt/peerplay/web/dist`). GitHub Actions still deploys to Pages (`.github/workflows/deploy.yml`) but that's now legacy.
 
-**Vite config:** `base: "/"` (changed from `/peerplay/` when moved to VPS).
+**Vite config:** `base: "/"`, dev proxy: `/api` → `http://localhost:3001` (for local development).
 
 ### Developer Portal — Vite + React 19 (`dev-portal/`)
 
@@ -212,7 +235,7 @@ npm run dev:web       # runs on port 5173
 - **Executable:** `PLAYER_CHARACTER_01PeerPlay.exe`
 - **Size:** ~101MB (3 files: exe, console exe, pck)
 - **Active info hash:** `bf69c35df8f0d24cdacfdf3f10c7afdc4513b09e` (from `mktorrent` on VPS — this is the one in use)
-- **Featured** on the web storefront with `featured: true` flag
+- **Featured** on the web storefront (first game returned by `GET /api/games`)
 - **DRM:** None (free, DRM-free)
 - **Seeded from:** VPS via Transmission daemon on `204.168.133.38:6881`
 
@@ -226,7 +249,7 @@ magnet:?xt=urn:btih:bf69c35df8f0d24cdacfdf3f10c7afdc4513b09e&dn=player-character
 - **Serve .torrent files, not just magnet links.** Magnet links require metadata download from a peer first — if peer discovery is slow, clients get stuck on "downloading metadata." .torrent files work immediately.
 - **The local dev machine is behind CGNAT** (Centracom ISP) and cannot seed torrents. All seeding must happen from the VPS.
 - **Info hashes differ between tools.** `mktorrent`, `create-torrent`, and `webtorrent` all produce different hashes from the same files. The only hash that matters is the one from the active seeder.
-- The hash in `web/src/data/mock.ts` and the DB `Torrent` record need to be updated to match the active VPS hash (`bf69c35...`).
+- The DB `Torrent` record must match the active VPS seeder hash (`bf69c35...`). The storefront now reads the magnet URI from the torrent API, not hardcoded mock data.
 
 ---
 
@@ -241,11 +264,12 @@ magnet:?xt=urn:btih:bf69c35df8f0d24cdacfdf3f10c7afdc4513b09e&dn=player-character
 7. **Express 5 params** — `req.params.*` returns `string | string[]`. All route handlers wrap params with `String()`.
 8. **JWT expiresIn typing** — Newer `@types/jsonwebtoken` expects `StringValue`. Cast with `as unknown as jwt.SignOptions["expiresIn"]`.
 9. **ioredis ESM import** — Use `const RedisClient = IORedis.default ?? IORedis;` for ESM compatibility.
-10. **Web storefront is mock-only** — The storefront uses hardcoded mock data in `web/src/data/mock.ts`, not the real API. The Electron client is the one that talks to the API.
-11. **Vite `base` must match nginx path** — If a frontend is served under a subpath (e.g. `/dev/`), Vite's `base` in `vite.config.ts` must match (e.g. `base: "/dev/"`), otherwise asset URLs resolve to `/assets/...` instead of `/dev/assets/...` and you get a blank page.
-12. **nginx `default_server`** — The peerplay site config uses `listen 80 default_server;` to override nginx's built-in welcome page. Without this, requests may hit the default nginx page instead.
-13. **Multer temp dir** — The upload route auto-creates `/opt/peerplay/games/.tmp/` via `fs.mkdirSync(tmpDir, { recursive: true })` in the multer destination callback. Don't rely on it pre-existing.
-14. **Upload pipeline proxy timeout** — nginx default `proxy_read_timeout` is 60s. Large uploads may need `proxy_read_timeout 1800;` in the `/api/` block if server-side processing (zip extraction + torrent creation) takes longer than 60s after upload completes.
+10. **Zustand selector trap** — Never select a *function* from a Zustand store (e.g. `useStore(s => s.isOwned)`) and call it during render to derive display state. The function reference is stable, so the component won't re-render when the underlying data changes. Instead, select the *data* (e.g. `useStore(s => s.licenses)`) and compute inline. This bit us with ownership badges not updating after license fetch.
+11. **Refresh token localStorage shared across SPAs** — Both web storefront and dev-portal use `pp_refresh_token` key in localStorage on the same origin. This is intentional SSO. Don't change the key in one without the other.
+13. **Vite `base` must match nginx path** — If a frontend is served under a subpath (e.g. `/dev/`), Vite's `base` in `vite.config.ts` must match (e.g. `base: "/dev/"`), otherwise asset URLs resolve to `/assets/...` instead of `/dev/assets/...` and you get a blank page.
+14. **nginx `default_server`** — The peerplay site config uses `listen 80 default_server;` to override nginx's built-in welcome page. Without this, requests may hit the default nginx page instead.
+15. **Multer temp dir** — The upload route auto-creates `/opt/peerplay/games/.tmp/` via `fs.mkdirSync(tmpDir, { recursive: true })` in the multer destination callback. Don't rely on it pre-existing.
+16. **Upload pipeline proxy timeout** — nginx default `proxy_read_timeout` is 60s. Large uploads may need `proxy_read_timeout 1800;` in the `/api/` block if server-side processing (zip extraction + torrent creation) takes longer than 60s after upload completes.
 
 ---
 
@@ -253,7 +277,7 @@ magnet:?xt=urn:btih:bf69c35df8f0d24cdacfdf3f10c7afdc4513b09e&dn=player-character
 
 - **Repo:** https://github.com/EthanGeisler/peerplay
 - **Branch:** `main` (only branch)
-- **10 commits** as of 2026-03-16:
+- **12 commits** as of 2026-03-16:
   1. `Initial commit: Peerplay MVP` — full monorepo with server, client, web, scripts
   2. `Add Player Character 01 as first game on the platform` — mock data, publish script, torrent file
   3. `Update Player Character 01 magnet URI to match active WebTorrent seeder` — fixed info hash mismatch
@@ -264,6 +288,8 @@ magnet:?xt=urn:btih:bf69c35df8f0d24cdacfdf3f10c7afdc4513b09e&dn=player-character
   8. `Set base path for dev portal served under /dev/` — Vite `base: "/dev/"` fix
   9. `Require game build upload when creating a new game` — zip + version required on game creation
   10. `Move web storefront to VPS and add Developer Portal link` — `base: "/"`, nginx serves web at `/`, dev portal link in header
+  11. `Connect web storefront to real API, replacing all mock data` — deleted mock.ts + appStore.ts, added api.ts, types.ts, authStore, gameStore, libraryStore, Login page, rewrote Store/GameDetail/Library/App to use real API
+  12. `Fix review issues: logout token revocation, 204 handling, accessibility, dedup` — send refresh token on logout, handle 204 in apiFetch, extract shared utils.ts, htmlFor/id on labels, keyboard-accessible cards, individual Zustand selectors
 - **Git identity:** `EthanGeisler` / `25466222+EthanGeisler@users.noreply.github.com`
 
 ---
@@ -273,7 +299,7 @@ magnet:?xt=urn:btih:bf69c35df8f0d24cdacfdf3f10c7afdc4513b09e&dn=player-character
 Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full roadmap. Key next steps:
 
 ### Short-term
-- [ ] Connect web storefront to real API (replace mock data with fetch calls)
+- [x] Connect web storefront to real API (replace mock data with fetch calls) — done 2026-03-16
 - [ ] Stripe Connect integration (real payments, currently mocked)
 - [ ] Finish Electron client (WebTorrent download in hidden renderer, game launch, progress tracking)
 - [x] DRM Tier 1 (LIGHT) — server: device fingerprinting in verifyLicense, max 3 devices, device deregistration endpoint
@@ -314,7 +340,9 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 | Server env (local) | `server/.env` |
 | Server env (VPS) | `/opt/peerplay/server/.env` |
 | Nginx config (VPS) | `/etc/nginx/sites-available/peerplay` |
-| Mock game data | `web/src/data/mock.ts` |
+| Storefront API client | `web/src/api.ts` |
+| Storefront types | `web/src/types.ts` |
+| Storefront shared utils | `web/src/utils.ts` |
 | Deploy workflow (GH Pages) | `.github/workflows/deploy.yml` |
 | Full architecture plan | `.claude/plans/twinkling-hugging-thunder.md` |
 | Game build (PC01) | `C:\Users\eface\player-character-01\build\PeerPlayBuild\` |
@@ -323,3 +351,4 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 | Torrent scripts | `scripts/` |
 | Transmission config | `/root/.config/transmission-daemon/settings.json` (on VPS) |
 | Dev portal login | `dev@example.com` / `developer123` |
+| Storefront player login | `player@example.com` / `player123456` |
