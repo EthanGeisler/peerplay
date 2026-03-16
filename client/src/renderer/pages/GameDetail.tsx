@@ -102,6 +102,7 @@ export function GameDetail() {
 
   const currentGame = useGameStore((s) => s.currentGame);
   const currentGameLoading = useGameStore((s) => s.currentGameLoading);
+  const currentGameError = useGameStore((s) => s.currentGameError);
   const fetchGameBySlug = useGameStore((s) => s.fetchGameBySlug);
   const clearCurrentGame = useGameStore((s) => s.clearCurrentGame);
 
@@ -124,7 +125,23 @@ export function GameDetail() {
   }, [user, fetchLicenses]);
 
   if (currentGameLoading || !currentGame) {
-    return <p style={styles.loading}>{currentGameLoading ? "Loading..." : "Game not found"}</p>;
+    return (
+      <div>
+        <button style={styles.back} onClick={() => navigate("/")}>
+          &larr; Back to Store
+        </button>
+        {currentGameLoading ? (
+          <p style={styles.loading}>Loading...</p>
+        ) : (
+          <div style={{ textAlign: "center", marginTop: 40 }}>
+            <p style={{ color: "#fff", fontSize: 18, marginBottom: 8 }}>Game not found</p>
+            {currentGameError && (
+              <p style={{ color: "#e94560", fontSize: 13 }}>{currentGameError}</p>
+            )}
+          </div>
+        )}
+      </div>
+    );
   }
 
   const game = currentGame;

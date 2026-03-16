@@ -10,6 +10,7 @@ interface GameState {
   loading: boolean;
   currentGame: ApiGameDetail | null;
   currentGameLoading: boolean;
+  currentGameError: string | null;
   fetchGames: (page?: number) => Promise<void>;
   fetchGameBySlug: (slug: string) => Promise<void>;
   clearCurrentGame: () => void;
@@ -23,6 +24,7 @@ export const useGameStore = create<GameState>((set) => ({
   loading: false,
   currentGame: null,
   currentGameLoading: false,
+  currentGameError: null,
 
   fetchGames: async (page = 1) => {
     set({ loading: true });
@@ -41,12 +43,14 @@ export const useGameStore = create<GameState>((set) => ({
   },
 
   fetchGameBySlug: async (slug: string) => {
-    set({ currentGameLoading: true });
+    set({ currentGameLoading: true, currentGameError: null });
     try {
       const data = await apiFetch<ApiGameDetail>(`/games/${slug}`);
       set({ currentGame: data, currentGameLoading: false });
-    } catch {
-      set({ currentGame: null, currentGameLoading: false });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to load game";
+      console.error("[gameStore] fetchGameBySlug failed:", message);
+      set({ currentGame: null, currentGameLoading: false, currentGameError: message });
     }
   },
 

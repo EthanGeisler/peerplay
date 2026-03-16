@@ -17,7 +17,9 @@ const app = express();
 // Stripe webhooks need raw body — must be before express.json()
 app.post("/api/payments/webhook", express.raw({ type: "application/json" }));
 
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+}));
 const allowedOrigins = [
   config.CORS_ORIGIN,
   ...config.CORS_ADDITIONAL_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean),
