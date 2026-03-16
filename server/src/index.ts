@@ -18,7 +18,23 @@ const app = express();
 app.post("/api/payments/webhook", express.raw({ type: "application/json" }));
 
 app.use(helmet());
-app.use(cors({ origin: config.CORS_ORIGIN, credentials: true }));
+const allowedOrigins = [
+  config.CORS_ORIGIN,
+  ...config.CORS_ADDITIONAL_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean),
+];
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin or "null" origin (Electron file://, server-to-server)
+      if (!origin || origin === "null" || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(null, false);
+      }
+    },
+    credentials: true,
+  }),
+);
 app.use(compression());
 app.use(express.json({ limit: "10mb" }));
 app.use(morgan(config.NODE_ENV === "production" ? "combined" : "dev"));

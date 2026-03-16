@@ -1,51 +1,146 @@
-import { create } from 'zustand';
+import { create } from "zustand";
+import { apiFetch } from "../api";
+import { useInstalledStore } from "./installedStore";
+import type { DownloadProgress, InstalledGame } from "../types";
 
-type DownloadStatus = 'queued' | 'downloading' | 'paused' | 'completed' | 'error';
-
-interface DownloadEntry {
+// Metadata needed to register a game as installed when download completes
+interface DownloadMeta {
   gameId: string;
   title: string;
-  progress: number;
-  speed: number;
-  status: DownloadStatus;
+  slug: string;
+  exePath: string | null;
+  drmTier: "NONE" | "LIGHT" | "ENCRYPTED";
+  version: string;
+  coverImageUrl: string | null;
+  downloadPath: string;
 }
 
+// Module-level map — survives store re-renders, doesn't need to be reactive
+const downloadMeta = new Map<string, DownloadMeta>();
+
 interface DownloadState {
-  downloads: Map<string, DownloadEntry>;
-  addDownload: (gameId: string, title: string, magnetUri: string) => void;
-  pauseDownload: (gameId: string) => void;
-  removeDownload: (gameId: string) => void;
+  downloads: Map<string, DownloadProgress>;
+  startDownload: (opts: {
+    magnetUri: string;
+    torrentFileBase64?: string;
+    gameId: string;
+    title: string;
+    downloadPath: string;
+    meta: DownloadMeta;
+  }) => Promise<void>;
+  pauseDownload: (infoHash: string) => Promise<void>;
+  resumeDownload: (infoHash: string) => Promise<void>;
+  cancelDownload: (infoHash: string) => Promise<void>;
+  initListeners: () => void;
+  cleanupListeners: () => void;
 }
 
 export const useDownloadStore = create<DownloadState>((set, get) => ({
   downloads: new Map(),
 
-  addDownload: (gameId: string, title: string, _magnetUri: string) => {
-    const downloads = new Map(get().downloads);
-    downloads.set(gameId, {
-      gameId,
-      title,
-      progress: 0,
-      speed: 0,
-      status: 'queued',
-    });
-    set({ downloads });
-    // TODO: call window.boilerdeck.downloads.startDownload(magnetUri)
-  },
+  startDownload: async (opts) => {
+    // Store metadata for when download completes
+    downloadMeta.set(opts.gameId, opts.meta);
 
-  pauseDownload: (gameId: string) => {
-    const downloads = new Map(get().downloads);
-    const entry = downloads.get(gameId);
-    if (entry) {
-      downloads.set(gameId, { ...entry, status: 'paused', speed: 0 });
+    const result = await window.boilerdeck.downloads.startDownload({
+      magnetUri: opts.magnetUri,
+      torrentFileBase64: opts.torrentFileBase64,
+      gameId: opts.gameId,
+      title: opts.title,
+      downloadPath: opts.downloadPath,
+    });
+    if (result.success && result.infoHash) {
+      const downloads = new Map(get().downloads);
+      downloads.set(result.infoHash, {
+        gameId: opts.gameId,
+        infoHash: result.infoHash,
+        title: opts.title,
+        progress: 0,
+        downloadSpeed: 0,
+        uploadSpeed: 0,
+        numPeers: 0,
+        status: "downloading",
+        downloaded: 0,
+        total: 0,
+      });
       set({ downloads });
     }
-    // TODO: call window.boilerdeck.downloads.pauseDownload(infoHash)
   },
 
-  removeDownload: (gameId: string) => {
+  pauseDownload: async (infoHash) => {
+    await window.boilerdeck.downloads.pauseDownload(infoHash);
+  },
+
+  resumeDownload: async (infoHash) => {
+    await window.boilerdeck.downloads.resumeDownload(infoHash);
+  },
+
+  cancelDownload: async (infoHash) => {
+    await window.boilerdeck.downloads.cancelDownload(infoHash);
     const downloads = new Map(get().downloads);
-    downloads.delete(gameId);
+    downloads.delete(infoHash);
     set({ downloads });
+  },
+
+  initListeners: () => {
+    // Progress updates (push from main, every 1s)
+    window.boilerdeck.downloads.onProgressUpdate((data) => {
+      const progressList = data as DownloadProgress[];
+      const downloads = new Map<string, DownloadProgress>();
+      for (const p of progressList) {
+        downloads.set(p.infoHash, p);
+      }
+      set({ downloads });
+    });
+
+    // Download completion — decrypt if needed, then register as installed
+    window.boilerdeck.downloads.onComplete(async (data) => {
+      const meta = downloadMeta.get(data.gameId);
+      if (!meta) return;
+
+      // ENCRYPTED DRM: fetch key and decrypt before registering
+      if (meta.drmTier === "ENCRYPTED") {
+        try {
+          const fingerprint = await window.boilerdeck.drm.getFingerprint();
+          const keyResult = await apiFetch<{ key: string; algorithm: string }>(
+            `/licenses/${meta.gameId}/key`,
+            {
+              method: "POST",
+              body: JSON.stringify({ deviceFingerprint: fingerprint }),
+            },
+          );
+          const decryptResult = await window.boilerdeck.drm.decryptGame({
+            installPath: data.downloadPath,
+            key: keyResult.key,
+            algorithm: keyResult.algorithm,
+          });
+          if (!decryptResult.success) {
+            console.error("[download] Decryption failed:", decryptResult.error);
+            // Still register as installed so user can retry
+          }
+        } catch (err) {
+          console.error("[download] Failed to decrypt:", err);
+        }
+      }
+
+      const installed: InstalledGame = {
+        gameId: meta.gameId,
+        title: meta.title,
+        slug: meta.slug,
+        installPath: data.downloadPath,
+        exePath: meta.exePath,
+        drmTier: meta.drmTier,
+        version: meta.version,
+        coverImageUrl: meta.coverImageUrl,
+        installedAt: new Date().toISOString(),
+      };
+      await useInstalledStore.getState().markInstalled(installed);
+      downloadMeta.delete(data.gameId);
+    });
+  },
+
+  cleanupListeners: () => {
+    window.boilerdeck.downloads.removeProgressListener();
+    window.boilerdeck.downloads.removeCompleteListener();
   },
 }));

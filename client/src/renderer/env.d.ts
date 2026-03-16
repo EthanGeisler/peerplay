@@ -1,0 +1,66 @@
+/// <reference types="vite/client" />
+
+// Re-declare window.boilerdeck for the renderer process
+// (The canonical declaration lives in src/main/preload.ts but that file
+// isn't included in the renderer tsconfig.)
+declare global {
+  interface Window {
+    boilerdeck: {
+      platform: {
+        getVersion: () => Promise<string>;
+        getInstallDir: () => Promise<string>;
+      };
+      store: {
+        get: (key: string) => Promise<unknown>;
+        set: (key: string, value: unknown) => Promise<boolean>;
+        delete: (key: string) => Promise<boolean>;
+      };
+      shell: {
+        openExternal: (url: string) => Promise<void>;
+      };
+      dialog: {
+        selectDirectory: () => Promise<string | null>;
+      };
+      games: {
+        launch: (opts: {
+          gameId: string;
+          installPath: string;
+          exePath: string;
+        }) => Promise<{ success: boolean; error?: string }>;
+        uninstall: (installPath: string) => Promise<{ success: boolean; error?: string }>;
+      };
+      drm: {
+        getFingerprint: () => Promise<string>;
+        decryptGame: (opts: {
+          installPath: string;
+          key: string;
+          algorithm: string;
+        }) => Promise<{ success: boolean; error?: string }>;
+      };
+      downloads: {
+        startDownload: (opts: {
+          magnetUri: string;
+          torrentFileBase64?: string;
+          gameId: string;
+          title: string;
+          downloadPath: string;
+        }) => Promise<{ success: boolean; infoHash?: string }>;
+        pauseDownload: (infoHash: string) => Promise<{ success: boolean }>;
+        resumeDownload: (infoHash: string) => Promise<{ success: boolean }>;
+        cancelDownload: (infoHash: string) => Promise<{ success: boolean }>;
+        getProgress: () => Promise<unknown[]>;
+        onProgressUpdate: (callback: (data: unknown) => void) => void;
+        removeProgressListener: () => void;
+        onComplete: (callback: (data: {
+          gameId: string;
+          title: string;
+          infoHash: string;
+          downloadPath: string;
+        }) => void) => void;
+        removeCompleteListener: () => void;
+      };
+    };
+  }
+}
+
+export {};

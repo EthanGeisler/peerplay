@@ -19,3 +19,21 @@ torrentRouter.get(
     }
   },
 );
+
+torrentRouter.get(
+  "/torrents/:gameId/latest/file",
+  authenticate,
+  async (req, res, next) => {
+    try {
+      const buffer = await torrentService.getLatestTorrentFile(
+        req.user!.sub,
+        String(req.params.gameId),
+      );
+      res.set("Content-Type", "application/x-bittorrent");
+      res.set("Content-Disposition", "attachment");
+      res.send(buffer);
+    } catch (err) {
+      next(err);
+    }
+  },
+);

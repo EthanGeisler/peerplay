@@ -48,6 +48,32 @@ export async function getLatestTorrent(userId: string, gameId: string) {
   };
 }
 
+export async function getLatestTorrentFile(userId: string, gameId: string): Promise<Buffer> {
+  // Verify the user owns a valid license
+  const license = await db.license.findUnique({
+    where: { userId_gameId: { userId, gameId } },
+  });
+  if (!license || license.status !== "ACTIVE") {
+    throw new ForbiddenError("You do not own a valid license for this game");
+  }
+
+  const version = await db.gameVersion.findFirst({
+    where: {
+      gameId,
+      status: "READY",
+      torrentId: { not: null },
+    },
+    orderBy: { createdAt: "desc" },
+    include: { torrent: true },
+  });
+
+  if (!version?.torrent?.torrentFile) {
+    throw new NotFoundError("Torrent file");
+  }
+
+  return Buffer.from(version.torrent.torrentFile);
+}
+
 const ANNOUNCE_LIST = [
   ["udp://tracker.opentrackr.org:1337/announce"],
   ["udp://open.tracker.cl:1337/announce"],

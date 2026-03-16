@@ -7,6 +7,9 @@
     "dev": "vite",
     "dev:electron": "electron .",
     "build": "vite build && tsc -p tsconfig.main.json",
+    "build:electron": "vite build && tsc -p tsconfig.main.json",
+    "pack": "npm run build:electron && electron-builder --dir",
+    "dist": "npm run build:electron && electron-builder",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -21,7 +24,36 @@
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.4.0",
     "electron": "^35.0.0",
+    "electron-builder": "^25.1.0",
     "typescript": "^5.7.0",
     "vite": "^6.3.0"
+  },
+  "build": {
+    "appId": "com.boilerdeck.client",
+    "productName": "BoilerDeck",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/webtorrent/**",
+      "node_modules/utp-native/**"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": null
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }

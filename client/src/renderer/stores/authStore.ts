@@ -1,74 +1,75 @@
-import { create } from 'zustand';
-import { apiClient } from '../api';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001/api';
-
-interface User {
-  id: string;
-  email: string;
-  displayName: string;
-  role: string;
-}
+import { create } from "zustand";
+import {
+  apiFetch,
+  setAccessToken,
+  refreshAccessToken,
+} from "../api";
+import type { ApiUser, ApiAuthResponse } from "../types";
 
 interface AuthState {
-  user: User | null;
-  accessToken: string | null;
-  refreshToken: string | null;
+  user: ApiUser | null;
+  loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, displayName: string) => Promise<void>;
-  logout: () => void;
-  refresh: () => Promise<void>;
+  logout: () => Promise<void>;
+  loadSession: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>((set, get) => ({
+export const useAuthStore = create<AuthState>((set) => ({
   user: null,
-  accessToken: null,
-  refreshToken: null,
+  loading: true,
 
   login: async (email: string, password: string) => {
-    const data = await apiClient.post<{
-      user: User;
-      accessToken: string;
-      refreshToken: string;
-    }>(`${API_BASE_URL}/auth/login`, { email, password });
-
-    set({
-      user: data.user,
-      accessToken: data.accessToken,
-      refreshToken: data.refreshToken,
+    const data = await apiFetch<ApiAuthResponse>("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
     });
+
+    setAccessToken(data.accessToken);
+    await window.boilerdeck.store.set("refreshToken", data.refreshToken);
+    set({ user: data.user });
   },
 
   register: async (email: string, password: string, displayName: string) => {
-    const data = await apiClient.post<{
-      user: User;
-      accessToken: string;
-      refreshToken: string;
-    }>(`${API_BASE_URL}/auth/register`, { email, password, displayName });
-
-    set({
-      user: data.user,
-      accessToken: data.accessToken,
-      refreshToken: data.refreshToken,
+    const data = await apiFetch<ApiAuthResponse>("/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ email, password, displayName }),
     });
+
+    setAccessToken(data.accessToken);
+    await window.boilerdeck.store.set("refreshToken", data.refreshToken);
+    set({ user: data.user });
   },
 
-  logout: () => {
-    set({ user: null, accessToken: null, refreshToken: null });
+  logout: async () => {
+    const refreshToken = (await window.boilerdeck.store.get("refreshToken")) as
+      | string
+      | null;
+    if (refreshToken) {
+      apiFetch("/auth/logout", {
+        method: "POST",
+        body: JSON.stringify({ refreshToken }),
+      }).catch(() => {});
+    }
+    setAccessToken(null);
+    await window.boilerdeck.store.delete("refreshToken");
+    set({ user: null });
   },
 
-  refresh: async () => {
-    const { refreshToken } = get();
-    if (!refreshToken) throw new Error('No refresh token');
-
-    const data = await apiClient.post<{
-      accessToken: string;
-      refreshToken: string;
-    }>(`${API_BASE_URL}/auth/refresh`, { refreshToken });
-
-    set({
-      accessToken: data.accessToken,
-      refreshToken: data.refreshToken,
-    });
+  loadSession: async () => {
+    set({ loading: true });
+    try {
+      const token = await refreshAccessToken();
+      if (!token) {
+        set({ user: null, loading: false });
+        return;
+      }
+      const user = await apiFetch<ApiUser>("/auth/me");
+      set({ user, loading: false });
+    } catch {
+      setAccessToken(null);
+      await window.boilerdeck.store.delete("refreshToken");
+      set({ user: null, loading: false });
+    }
   },
 }));
