@@ -1,4 +1,5 @@
 import path from "node:path";
+import fs from "node:fs";
 import { Router } from "express";
 import { z, ZodError } from "zod";
 import multer from "multer";
@@ -12,6 +13,7 @@ const upload = multer({
   storage: multer.diskStorage({
     destination: (_req, _file, cb) => {
       const tmpDir = path.join(getConfig().GAMES_DIR, ".tmp");
+      fs.mkdirSync(tmpDir, { recursive: true });
       cb(null, tmpDir);
     },
     filename: (_req, file, cb) => {
