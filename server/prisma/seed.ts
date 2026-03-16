@@ -109,11 +109,29 @@ async function main() {
     },
   });
 
+  // Create PC01 Premium Edition (LIGHT DRM, paid)
+  const game4 = await db.game.upsert({
+    where: { slug: "player-character-01-premium" },
+    update: {},
+    create: {
+      developerId: developer.id,
+      slug: "player-character-01-premium",
+      title: "Player Character 01 — Premium Edition",
+      description: "The premium edition of Player Character 01 with online license verification. Same game, DRM-protected distribution for developers who want to see how LIGHT DRM works on Peerplay.",
+      priceCents: 999,
+      drmTier: "LIGHT",
+      status: "PUBLISHED",
+      exePath: "PLAYER_CHARACTER_01PeerPlay.exe",
+      coverImageUrl: "https://placehold.co/460x215/0d0d2b/58a6ff?text=PC01+Premium&font=raleway",
+      screenshots: [],
+    },
+  });
+
   console.log("Seed complete!");
   console.log(`  Admin: admin@peerplay.io / admin123456`);
   console.log(`  Developer: dev@example.com / developer123`);
   console.log(`  Player: player@example.com / player123456`);
-  console.log(`  Games: ${game1.title}, ${game2.title}, ${game3.title}`);
+  console.log(`  Games: ${game1.title}, ${game2.title}, ${game3.title}, ${game4.title}`);
 }
 
 main()

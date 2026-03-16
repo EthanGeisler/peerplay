@@ -19,6 +19,10 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(3000),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   CORS_ORIGIN: z.string().default("http://localhost:5173"),
+  DRM_MASTER_KEK: z
+    .string()
+    .regex(/^[0-9a-fA-F]{64,}$/, "Must be at least 64 hex characters")
+    .optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

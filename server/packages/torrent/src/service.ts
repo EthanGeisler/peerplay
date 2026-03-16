@@ -19,12 +19,17 @@ export async function getLatestTorrent(userId: string, gameId: string) {
     orderBy: { createdAt: "desc" },
     include: {
       torrent: true,
+      game: {
+        select: { drmTier: true, encryptionKey: { select: { algorithm: true } } },
+      },
     },
   });
 
   if (!version || !version.torrent) {
     throw new NotFoundError("Torrent");
   }
+
+  const encrypted = version.game.drmTier === "ENCRYPTED";
 
   return {
     gameId,
@@ -33,5 +38,9 @@ export async function getLatestTorrent(userId: string, gameId: string) {
     fileSizeBytes: version.fileSizeBytes.toString(),
     magnetUri: version.torrent.magnetUri,
     infoHash: version.torrent.infoHash,
+    encrypted,
+    ...(encrypted && version.game.encryptionKey
+      ? { algorithm: version.game.encryptionKey.algorithm }
+      : {}),
   };
 }

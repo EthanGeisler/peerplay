@@ -8,7 +8,7 @@ interface AppState {
   cart: string[];
   login: (email: string) => void;
   logout: () => void;
-  purchase: (gameId: string) => void;
+  purchase: (gameId: string, editionId?: string) => void;
   isOwned: (gameId: string) => boolean;
   getGame: (slug: string) => Game | undefined;
   getOwnedGames: () => Game[];
@@ -29,11 +29,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ user: null });
   },
 
-  purchase: (gameId) => {
+  purchase: (gameId, editionId?) => {
     const { library } = get();
     if (library.some((l) => l.gameId === gameId)) return;
     set({
-      library: [...library, { gameId, purchasedAt: new Date().toISOString() }],
+      library: [...library, { gameId, editionId, purchasedAt: new Date().toISOString() }],
       cart: get().cart.filter((id) => id !== gameId),
     });
   },

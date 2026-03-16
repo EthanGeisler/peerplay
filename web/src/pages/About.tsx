@@ -33,21 +33,55 @@ export function About() {
       </Section>
 
       <Section title="DRM Tiers (Developer's Choice)">
-        <DrmTier
-          name="Tier 0: None"
-          desc="DRM-free. Download it, keep it, share it. Like GOG."
-          color="var(--accent-green)"
-        />
-        <DrmTier
-          name="Tier 1: Light"
-          desc="Quick online license check when you launch the game. Works offline after first activation."
-          color="var(--accent-yellow)"
-        />
-        <DrmTier
-          name="Tier 2: Encrypted"
-          desc="Game files are AES-256 encrypted. Per-user decryption key tied to your account + device. Coming in v0.2."
-          color="var(--accent)"
-        />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
+          <DrmCard
+            name="None"
+            color="var(--accent-green)"
+            players={[
+              "Download it, keep it forever",
+              "Play anytime \u2014 online or offline",
+              "Share freely, like GOG",
+            ]}
+            developers={[
+              "Maximum player trust",
+              "No server dependency",
+              "Ideal for free / open-source games",
+            ]}
+          />
+          <DrmCard
+            name="Light"
+            color="#d29922"
+            players={[
+              "Quick license check at launch",
+              "Play offline after first activation",
+              "Up to 3 devices per license",
+            ]}
+            developers={[
+              "Prevents casual piracy",
+              "Device fingerprint tracking",
+              "Low friction for legit buyers",
+            ]}
+          />
+          <DrmCard
+            name="Encrypted"
+            color="var(--accent-blue)"
+            players={[
+              "Files decrypted locally after purchase",
+              "Per-user decryption key via client",
+              "Device-locked for security",
+            ]}
+            developers={[
+              "AES-256-CTR encrypted distribution",
+              "Per-user key derivation (HKDF)",
+              "Strongest protection available",
+            ]}
+          />
+        </div>
+        <p>
+          Every game on Peerplay shows its DRM tier upfront. Developers choose the level
+          of protection that matches their goals \u2014 from fully open to fully encrypted.
+          Players always know what they're buying.
+        </p>
       </Section>
 
       <Section title="Tech Stack">
@@ -121,19 +155,43 @@ function StatBox({ label, value, color }: { label: string; value: string; color:
   );
 }
 
-function DrmTier({ name, desc, color }: { name: string; desc: string; color: string }) {
+function DrmCard({
+  name,
+  color,
+  players,
+  developers,
+}: {
+  name: string;
+  color: string;
+  players: string[];
+  developers: string[];
+}) {
   return (
     <div
       style={{
-        padding: 12,
+        padding: 16,
         backgroundColor: "var(--bg-tertiary)",
         borderRadius: "var(--radius)",
-        borderLeft: `3px solid ${color}`,
-        marginBottom: 8,
+        borderTop: `3px solid ${color}`,
       }}
     >
-      <div style={{ fontWeight: 700, color, fontSize: 13, marginBottom: 4 }}>{name}</div>
-      <div style={{ fontSize: 13 }}>{desc}</div>
+      <div style={{ fontWeight: 800, color, fontSize: 15, marginBottom: 12 }}>{name}</div>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 700, marginBottom: 6 }}>
+        For Players
+      </div>
+      <ul style={{ paddingLeft: 16, margin: "0 0 12px", fontSize: 12, lineHeight: 1.8 }}>
+        {players.map((p) => (
+          <li key={p}>{p}</li>
+        ))}
+      </ul>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 700, marginBottom: 6 }}>
+        For Developers
+      </div>
+      <ul style={{ paddingLeft: 16, margin: 0, fontSize: 12, lineHeight: 1.8 }}>
+        {developers.map((d) => (
+          <li key={d}>{d}</li>
+        ))}
+      </ul>
     </div>
   );
 }

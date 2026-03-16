@@ -7,6 +7,30 @@ function formatPrice(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
+function getDrmBadge(game: (typeof MOCK_GAMES)[number]): {
+  label: string;
+  color: string;
+  bg: string;
+} {
+  // For games with editions, show the lowest DRM tier
+  const tier =
+    game.editions && game.editions.length > 0
+      ? game.editions.reduce((lowest, ed) => {
+          const order = { NONE: 0, LIGHT: 1, ENCRYPTED: 2 } as const;
+          return order[ed.drmTier] < order[lowest] ? ed.drmTier : lowest;
+        }, game.editions[0].drmTier)
+      : game.drmTier;
+
+  switch (tier) {
+    case "NONE":
+      return { label: "DRM-Free", color: "#3fb950", bg: "rgba(63,185,80,0.15)" };
+    case "LIGHT":
+      return { label: "Online Check", color: "#d29922", bg: "rgba(210,153,34,0.15)" };
+    case "ENCRYPTED":
+      return { label: "Encrypted", color: "#58a6ff", bg: "rgba(88,166,255,0.15)" };
+  }
+}
+
 export function Store() {
   const navigate = useNavigate();
   const isOwned = useAppStore((s) => s.isOwned);
@@ -177,7 +201,24 @@ export function Store() {
                     {formatPrice(game.priceCents)}
                   </span>
                 </div>
-                <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
+                  {(() => {
+                    const badge = getDrmBadge(game);
+                    return (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          color: badge.color,
+                          backgroundColor: badge.bg,
+                          padding: "2px 8px",
+                          borderRadius: 4,
+                        }}
+                      >
+                        {badge.label}
+                      </span>
+                    );
+                  })()}
                   {game.tags.map((tag) => (
                     <span
                       key={tag}

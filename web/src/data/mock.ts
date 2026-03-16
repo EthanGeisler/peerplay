@@ -1,3 +1,10 @@
+export interface GameEdition {
+  id: string;
+  label: string;
+  priceCents: number;
+  drmTier: "NONE" | "LIGHT" | "ENCRYPTED";
+}
+
 export interface Game {
   id: string;
   slug: string;
@@ -15,6 +22,7 @@ export interface Game {
   fileSizeMB?: number;
   version?: string;
   featured?: boolean;
+  editions?: GameEdition[];
 }
 
 export const MOCK_GAMES: Game[] = [
@@ -40,6 +48,10 @@ export const MOCK_GAMES: Game[] = [
     fileSizeMB: 96,
     version: "0.1.0",
     featured: true,
+    editions: [
+      { id: "free", label: "Free Edition", priceCents: 0, drmTier: "NONE" },
+      { id: "premium", label: "Premium Edition", priceCents: 999, drmTier: "LIGHT" },
+    ],
   },
   {
     id: "1",
@@ -156,6 +168,7 @@ export const MOCK_GAMES: Game[] = [
 
 export interface OwnedGame {
   gameId: string;
+  editionId?: string;
   purchasedAt: string;
 }
 

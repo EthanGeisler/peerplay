@@ -1,9 +1,24 @@
+import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAppStore } from "../stores/appStore";
+import type { GameEdition } from "../data/mock";
 
 function formatPrice(cents: number): string {
   if (cents === 0) return "Free";
   return `$${(cents / 100).toFixed(2)}`;
+}
+
+function drmDescription(tier: string): string {
+  switch (tier) {
+    case "NONE":
+      return "DRM-Free \u2014 play anytime, online or offline";
+    case "LIGHT":
+      return "Online license check at launch \u2014 internet required to start, play offline after";
+    case "ENCRYPTED":
+      return "Encrypted distribution \u2014 files decrypted locally after purchase via Peerplay client";
+    default:
+      return tier;
+  }
 }
 
 export function GameDetail() {
@@ -16,6 +31,9 @@ export function GameDetail() {
   const login = useAppStore((s) => s.login);
 
   const game = getGame(slug ?? "");
+  const [selectedEditionId, setSelectedEditionId] = useState<string | undefined>(
+    game?.editions?.[0]?.id,
+  );
 
   if (!game) {
     return (
@@ -39,7 +57,15 @@ export function GameDetail() {
   }
 
   const owned = isOwned(game.id);
-  const devShare = game.priceCents - Math.ceil(game.priceCents / 100);
+  const hasEditions = game.editions && game.editions.length > 1;
+  const selectedEdition: GameEdition | undefined = hasEditions
+    ? game.editions!.find((e) => e.id === selectedEditionId) ?? game.editions![0]
+    : undefined;
+
+  // Use selected edition's values if available, otherwise fall back to game-level
+  const displayPrice = selectedEdition ? selectedEdition.priceCents : game.priceCents;
+  const displayDrmTier = selectedEdition ? selectedEdition.drmTier : game.drmTier;
+  const devShare = displayPrice - Math.ceil(displayPrice / 100);
 
   return (
     <div>
@@ -114,15 +140,63 @@ export function GameDetail() {
             by {game.studioName}
           </p>
 
+          {/* Edition picker */}
+          {hasEditions && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8, fontWeight: 600 }}>
+                Choose Edition
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                {game.editions!.map((edition) => {
+                  const isSelected = edition.id === (selectedEdition?.id ?? game.editions![0].id);
+                  return (
+                    <button
+                      key={edition.id}
+                      onClick={() => setSelectedEditionId(edition.id)}
+                      style={{
+                        flex: 1,
+                        padding: "10px 8px",
+                        borderRadius: "var(--radius)",
+                        backgroundColor: isSelected ? "var(--bg-tertiary)" : "transparent",
+                        border: isSelected
+                          ? "2px solid var(--accent)"
+                          : "1px solid var(--border)",
+                        color: isSelected ? "var(--text-primary)" : "var(--text-secondary)",
+                        fontSize: 12,
+                        fontWeight: isSelected ? 700 : 500,
+                        cursor: "pointer",
+                        textAlign: "center",
+                        transition: "all 0.15s",
+                      }}
+                    >
+                      <div>{edition.label}</div>
+                      <div
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 800,
+                          marginTop: 4,
+                          color: edition.priceCents === 0 ? "var(--accent-green)" : "var(--text-primary)",
+                        }}
+                      >
+                        {formatPrice(edition.priceCents)}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div
             style={{
-              fontSize: 28,
+              fontSize: hasEditions ? 20 : 28,
               fontWeight: 800,
               marginBottom: 16,
-              color: game.priceCents === 0 ? "var(--accent-green)" : "var(--text-primary)",
+              color: displayPrice === 0 ? "var(--accent-green)" : "var(--text-primary)",
             }}
           >
-            {formatPrice(game.priceCents)}
+            {hasEditions ? (selectedEdition?.label ?? "") : formatPrice(displayPrice)}
+            {!hasEditions ? "" : ` \u2014 ${formatPrice(displayPrice)}`}
           </div>
 
           {owned ? (
@@ -181,7 +255,7 @@ export function GameDetail() {
             <button
               onClick={() => {
                 if (!user) login("player@peerplay.io");
-                purchase(game.id);
+                purchase(game.id, selectedEdition?.id);
               }}
               style={{
                 width: "100%",
@@ -197,12 +271,52 @@ export function GameDetail() {
               onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--accent-hover)")}
               onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "var(--accent)")}
             >
-              {game.priceCents === 0 ? "Get for Free" : `Buy Now — ${formatPrice(game.priceCents)}`}
+              {displayPrice === 0 ? "Get for Free" : `Buy Now \u2014 ${formatPrice(displayPrice)}`}
             </button>
           )}
 
+          {/* DRM info */}
+          <div
+            style={{
+              backgroundColor: "var(--bg-tertiary)",
+              borderRadius: "var(--radius)",
+              padding: 12,
+              marginBottom: 16,
+              borderLeft: `3px solid ${
+                displayDrmTier === "NONE"
+                  ? "var(--accent-green)"
+                  : displayDrmTier === "LIGHT"
+                    ? "#d29922"
+                    : "var(--accent-blue)"
+              }`,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 700,
+                marginBottom: 4,
+                color:
+                  displayDrmTier === "NONE"
+                    ? "var(--accent-green)"
+                    : displayDrmTier === "LIGHT"
+                      ? "#d29922"
+                      : "var(--accent-blue)",
+              }}
+            >
+              {displayDrmTier === "NONE"
+                ? "DRM-Free"
+                : displayDrmTier === "LIGHT"
+                  ? "Online Check"
+                  : "Encrypted"}
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+              {drmDescription(displayDrmTier)}
+            </div>
+          </div>
+
           {/* Revenue breakdown */}
-          {game.priceCents > 0 && (
+          {displayPrice > 0 && (
             <div
               style={{
                 backgroundColor: "var(--bg-tertiary)",
@@ -222,7 +336,7 @@ export function GameDetail() {
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span style={{ color: "var(--text-muted)" }}>Platform (1%)</span>
                 <span style={{ color: "var(--text-muted)" }}>
-                  ${(Math.ceil(game.priceCents / 100) / 100).toFixed(2)}
+                  ${(Math.ceil(displayPrice / 100) / 100).toFixed(2)}
                 </span>
               </div>
             </div>
@@ -248,16 +362,6 @@ export function GameDetail() {
 
           {/* Meta */}
           <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 2 }}>
-            <div>
-              DRM:{" "}
-              <span style={{ color: "var(--text-secondary)" }}>
-                {game.drmTier === "NONE"
-                  ? "None (DRM-Free)"
-                  : game.drmTier === "LIGHT"
-                    ? "Light (Online check at launch)"
-                    : "Encrypted"}
-              </span>
-            </div>
             <div>
               Distribution:{" "}
               <span style={{ color: "var(--text-secondary)" }}>BitTorrent (P2P)</span>
