@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { apiFetch, ApiError } from "../api";
+import { apiFetch, apiUpload, ApiError } from "../api";
 
 interface GameForm {
   title: string;
@@ -40,6 +40,12 @@ export function GameEditor() {
   const [loading, setLoading] = useState(isEditing);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Upload state (create mode only)
+  const [initialVersion, setInitialVersion] = useState("1.0.0");
+  const [zipFile, setZipFile] = useState<File | null>(null);
+  const [uploadState, setUploadState] = useState<"idle" | "creating" | "uploading" | "processing" | "done" | "error">("idle");
+  const [uploadPercent, setUploadPercent] = useState(0);
 
   // Exe detection state
   const [gameDirs, setGameDirs] = useState<GameDir[]>([]);
@@ -100,8 +106,14 @@ export function GameEditor() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaving(true);
     setError(null);
+
+    if (!isEditing && !zipFile) {
+      setError("Please select a .zip file for your game build");
+      return;
+    }
+
+    setSaving(true);
 
     try {
       const body: Record<string, unknown> = {
@@ -120,13 +132,44 @@ export function GameEditor() {
         });
         navigate(`/games/${id}`);
       } else {
+        // 1. Create the game
+        setUploadState("creating");
         const game = await apiFetch<{ id: string }>("/developer/games", {
           method: "POST",
           body: JSON.stringify(body),
         });
+
+        // 2. Create initial version
+        const version = await apiFetch<{ id: string }>(
+          `/developer/games/${game.id}/versions`,
+          {
+            method: "POST",
+            body: JSON.stringify({ version: initialVersion }),
+          },
+        );
+
+        // 3. Upload the zip
+        setUploadState("uploading");
+        setUploadPercent(0);
+        const formData = new FormData();
+        formData.append("gameZip", zipFile!);
+
+        await apiUpload(
+          `/developer/games/${game.id}/versions/${version.id}/upload`,
+          formData,
+          (percent) => {
+            setUploadPercent(percent);
+            if (percent === 100) {
+              setUploadState("processing");
+            }
+          },
+        );
+
+        setUploadState("done");
         navigate(`/games/${game.id}`);
       }
     } catch (err: unknown) {
+      setUploadState("error");
       if (err instanceof ApiError) {
         setError(err.message);
       } else {
@@ -247,8 +290,8 @@ export function GameEditor() {
           </div>
         </div>
 
-        {/* Executable — auto-detect */}
-        <div>
+        {/* Executable — auto-detect (edit mode only, create auto-detects from upload) */}
+        {isEditing && <div>
           <label style={labelStyle}>Executable</label>
 
           {form.exePath ? (
@@ -398,7 +441,7 @@ export function GameEditor() {
           <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
             Scans game files on the server to find the main executable automatically.
           </div>
-        </div>
+        </div>}
 
         {/* Cover image URL */}
         <div>
@@ -426,11 +469,139 @@ export function GameEditor() {
           )}
         </div>
 
+        {/* Game Build (create mode only) */}
+        {!isEditing && (
+          <div>
+            <label style={labelStyle}>Game Build *</label>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 12 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>
+                  Version (semver)
+                </label>
+                <input
+                  type="text"
+                  value={initialVersion}
+                  onChange={(e) => setInitialVersion(e.target.value)}
+                  placeholder="1.0.0"
+                  pattern="^\d+\.\d+\.\d+$"
+                  required
+                  style={{ width: "100%" }}
+                />
+              </div>
+            </div>
+
+            <div
+              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const file = e.dataTransfer.files[0];
+                if (file && file.name.endsWith(".zip")) setZipFile(file);
+              }}
+              onClick={() => {
+                const input = document.createElement("input");
+                input.type = "file";
+                input.accept = ".zip";
+                input.onchange = () => {
+                  if (input.files?.[0]) setZipFile(input.files[0]);
+                };
+                input.click();
+              }}
+              style={{
+                border: "2px dashed var(--border)",
+                borderRadius: "var(--radius)",
+                padding: 24,
+                textAlign: "center",
+                cursor: "pointer",
+                backgroundColor: "var(--bg-tertiary)",
+              }}
+            >
+              {zipFile ? (
+                <div>
+                  <div style={{ fontSize: 14, color: "var(--text-primary)", fontWeight: 600 }}>
+                    {zipFile.name}
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
+                    {(zipFile.size / (1024 * 1024)).toFixed(1)} MB
+                  </div>
+                </div>
+              ) : (
+                <div style={{ fontSize: 14, color: "var(--text-muted)" }}>
+                  Drop .zip here or click to browse
+                </div>
+              )}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
+              Zip your game folder and upload it. The server will extract it, create a torrent, and start seeding automatically.
+            </div>
+          </div>
+        )}
+
+        {/* Upload progress (create mode) */}
+        {!isEditing && uploadState !== "idle" && uploadState !== "error" && (
+          <div
+            style={{
+              padding: 20,
+              backgroundColor: "var(--bg-tertiary)",
+              borderRadius: "var(--radius)",
+              textAlign: "center",
+            }}
+          >
+            {uploadState === "creating" && (
+              <div style={{ fontSize: 14, color: "var(--text-secondary)" }}>Creating game...</div>
+            )}
+            {uploadState === "uploading" && (
+              <>
+                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>
+                  Uploading v{initialVersion}...
+                </div>
+                <div
+                  style={{
+                    height: 8,
+                    backgroundColor: "var(--bg-secondary)",
+                    borderRadius: 4,
+                    overflow: "hidden",
+                    marginBottom: 8,
+                  }}
+                >
+                  <div
+                    style={{
+                      height: "100%",
+                      width: `${uploadPercent}%`,
+                      backgroundColor: "var(--accent)",
+                      borderRadius: 4,
+                      transition: "width 0.3s ease",
+                    }}
+                  />
+                </div>
+                <div style={{ fontSize: 13, color: "var(--text-muted)" }}>{uploadPercent}%</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>
+                  Do not close this page.
+                </div>
+              </>
+            )}
+            {uploadState === "processing" && (
+              <>
+                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>
+                  Processing — creating torrent & seeding
+                </div>
+                <div style={{ fontSize: 24, letterSpacing: 4, color: "var(--text-muted)" }}>...</div>
+              </>
+            )}
+            {uploadState === "done" && (
+              <div style={{ fontSize: 14, color: "var(--accent-green)", fontWeight: 600 }}>
+                Done! Redirecting...
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Actions */}
         <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
           <button
             type="submit"
-            disabled={saving}
+            disabled={saving || (uploadState !== "idle" && uploadState !== "error")}
             style={{
               padding: "12px 24px",
               borderRadius: "var(--radius)",
@@ -441,7 +612,7 @@ export function GameEditor() {
               opacity: saving ? 0.7 : 1,
             }}
           >
-            {saving ? "Saving..." : isEditing ? "Save Changes" : "Create Game"}
+            {saving && !isEditing ? "Uploading..." : saving ? "Saving..." : isEditing ? "Save Changes" : "Create Game & Upload"}
           </button>
           <button
             type="button"
