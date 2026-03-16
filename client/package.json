@@ -1,6 +1,8 @@
 {
   "name": "@boilerdeck/client",
   "version": "0.1.0",
+  "description": "BoilerDeck desktop client — decentralized game distribution powered by BitTorrent",
+  "author": "BoilerDeck <dev@boilerdeck.com>",
   "private": true,
   "main": "dist/main/index.js",
   "scripts": {
@@ -34,6 +36,8 @@
   "build": {
     "appId": "com.boilerdeck.client",
     "productName": "BoilerDeck",
+    "electronVersion": "35.7.5",
+    "npmRebuild": false,
     "directories": {
       "output": "release"
     },
@@ -45,14 +49,16 @@
     "asar": true,
     "asarUnpack": [
       "node_modules/webtorrent/**",
-      "node_modules/utp-native/**"
+      "node_modules/utp-native/**",
+      "node_modules/**/*.node"
     ],
     "win": {
       "target": [
         "nsis",
         "portable"
       ],
-      "icon": null
+      "icon": "resources/icon.ico",
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,
