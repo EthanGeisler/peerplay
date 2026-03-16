@@ -1,26 +1,20 @@
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { MOCK_GAMES } from "../data/mock";
-import { useAppStore } from "../stores/appStore";
+import { useGameStore } from "../stores/gameStore";
+import { useLibraryStore } from "../stores/libraryStore";
+import { useAuthStore } from "../stores/authStore";
+import type { ApiGame } from "../types";
 
 function formatPrice(cents: number): string {
   if (cents === 0) return "Free";
   return `$${(cents / 100).toFixed(2)}`;
 }
 
-function getDrmBadge(game: (typeof MOCK_GAMES)[number]): {
+function getDrmBadge(tier: ApiGame["drmTier"]): {
   label: string;
   color: string;
   bg: string;
 } {
-  // For games with editions, show the lowest DRM tier
-  const tier =
-    game.editions && game.editions.length > 0
-      ? game.editions.reduce((lowest, ed) => {
-          const order = { NONE: 0, LIGHT: 1, ENCRYPTED: 2 } as const;
-          return order[ed.drmTier] < order[lowest] ? ed.drmTier : lowest;
-        }, game.editions[0].drmTier)
-      : game.drmTier;
-
   switch (tier) {
     case "NONE":
       return { label: "DRM-Free", color: "#3fb950", bg: "rgba(63,185,80,0.15)" };
@@ -31,10 +25,32 @@ function getDrmBadge(game: (typeof MOCK_GAMES)[number]): {
   }
 }
 
+const PLACEHOLDER_COVER = "https://placehold.co/460x215/0d1117/58a6ff?text=No+Cover&font=raleway";
+
 export function Store() {
   const navigate = useNavigate();
-  const isOwned = useAppStore((s) => s.isOwned);
-  const featured = MOCK_GAMES.find((g) => g.featured);
+  const { games, loading, fetchGames } = useGameStore();
+  const licenses = useLibraryStore((s) => s.licenses);
+  const fetchLicenses = useLibraryStore((s) => s.fetchLicenses);
+  const user = useAuthStore((s) => s.user);
+
+  useEffect(() => {
+    fetchGames();
+  }, [fetchGames]);
+
+  useEffect(() => {
+    if (user) fetchLicenses();
+  }, [user, fetchLicenses]);
+
+  if (loading && games.length === 0) {
+    return (
+      <div style={{ textAlign: "center", padding: "80px 0", color: "var(--text-secondary)" }}>
+        Loading games...
+      </div>
+    );
+  }
+
+  const featured = games[0];
 
   return (
     <div>
@@ -74,31 +90,24 @@ export function Store() {
             <p style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.7, marginBottom: 20 }}>
               {featured.description}
             </p>
-            <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16 }}>
+            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
               <span
                 style={{
                   fontSize: 20,
                   fontWeight: 800,
-                  color: "var(--accent-green)",
+                  color: featured.priceCents === 0 ? "var(--accent-green)" : "var(--text-primary)",
                 }}
               >
-                Free
+                {formatPrice(featured.priceCents)}
               </span>
               <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                {featured.fileSizeMB}MB &middot; DRM-Free &middot; v{featured.version}
+                by {featured.studioName}
               </span>
-            </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {featured.tags.map((tag) => (
-                <span key={tag} style={tagStyle("var(--text-secondary)", "var(--bg-tertiary)")}>
-                  {tag}
-                </span>
-              ))}
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
             <img
-              src={featured.coverImageUrl}
+              src={featured.coverImageUrl || PLACEHOLDER_COVER}
               alt={featured.title}
               style={{
                 width: "100%",
@@ -129,8 +138,9 @@ export function Store() {
           gap: 20,
         }}
       >
-        {MOCK_GAMES.map((game) => {
-          const owned = isOwned(game.id);
+        {games.map((game) => {
+          const owned = licenses.some((l) => l.game.id === game.id && l.status === "ACTIVE");
+          const badge = getDrmBadge(game.drmTier);
           return (
             <div
               key={game.id}
@@ -153,7 +163,7 @@ export function Store() {
               }}
             >
               <img
-                src={game.coverImageUrl}
+                src={game.coverImageUrl || PLACEHOLDER_COVER}
                 alt={game.title}
                 style={{ width: "100%", height: 140, objectFit: "cover", display: "block" }}
               />
@@ -202,37 +212,18 @@ export function Store() {
                   </span>
                 </div>
                 <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
-                  {(() => {
-                    const badge = getDrmBadge(game);
-                    return (
-                      <span
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          color: badge.color,
-                          backgroundColor: badge.bg,
-                          padding: "2px 8px",
-                          borderRadius: 4,
-                        }}
-                      >
-                        {badge.label}
-                      </span>
-                    );
-                  })()}
-                  {game.tags.map((tag) => (
-                    <span
-                      key={tag}
-                      style={{
-                        fontSize: 11,
-                        color: "var(--text-muted)",
-                        backgroundColor: "var(--bg-tertiary)",
-                        padding: "2px 8px",
-                        borderRadius: 4,
-                      }}
-                    >
-                      {tag}
-                    </span>
-                  ))}
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: badge.color,
+                      backgroundColor: badge.bg,
+                      padding: "2px 8px",
+                      borderRadius: 4,
+                    }}
+                  >
+                    {badge.label}
+                  </span>
                 </div>
               </div>
             </div>

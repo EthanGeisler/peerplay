@@ -1,9 +1,11 @@
+import { useEffect } from "react";
 import { Routes, Route, useNavigate, useLocation, Link } from "react-router-dom";
 import { Store } from "./pages/Store";
 import { GameDetail } from "./pages/GameDetail";
 import { Library } from "./pages/Library";
 import { About } from "./pages/About";
-import { useAppStore } from "./stores/appStore";
+import { Login } from "./pages/Login";
+import { useAuthStore } from "./stores/authStore";
 
 const NAV_ITEMS = [
   { label: "Store", path: "/" },
@@ -14,9 +16,22 @@ const NAV_ITEMS = [
 export function App() {
   const navigate = useNavigate();
   const location = useLocation();
-  const user = useAppStore((s) => s.user);
-  const login = useAppStore((s) => s.login);
-  const logout = useAppStore((s) => s.logout);
+  const user = useAuthStore((s) => s.user);
+  const loading = useAuthStore((s) => s.loading);
+  const logout = useAuthStore((s) => s.logout);
+  const loadSession = useAuthStore((s) => s.loadSession);
+
+  useEffect(() => {
+    loadSession();
+  }, [loadSession]);
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" }}>
+        <span style={{ color: "var(--text-secondary)" }}>Loading...</span>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
@@ -120,7 +135,7 @@ export function App() {
             </>
           ) : (
             <button
-              onClick={() => login("player@peerplay.io")}
+              onClick={() => navigate("/login")}
               style={{
                 padding: "6px 14px",
                 borderRadius: "var(--radius)",
@@ -130,7 +145,7 @@ export function App() {
                 fontWeight: 600,
               }}
             >
-              Sign In (Demo)
+              Sign In
             </button>
           )}
         </div>
@@ -143,6 +158,7 @@ export function App() {
           <Route path="/game/:slug" element={<GameDetail />} />
           <Route path="/library" element={<Library />} />
           <Route path="/about" element={<About />} />
+          <Route path="/login" element={<Login />} />
         </Routes>
       </main>
 

@@ -1,11 +1,18 @@
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAppStore } from "../stores/appStore";
+import { useAuthStore } from "../stores/authStore";
+import { useLibraryStore } from "../stores/libraryStore";
+
+const PLACEHOLDER_COVER = "https://placehold.co/120x56/0d1117/58a6ff?text=No+Cover&font=raleway";
 
 export function Library() {
   const navigate = useNavigate();
-  const user = useAppStore((s) => s.user);
-  const login = useAppStore((s) => s.login);
-  const getOwnedGames = useAppStore((s) => s.getOwnedGames);
+  const user = useAuthStore((s) => s.user);
+  const { licenses, loading, fetchLicenses } = useLibraryStore();
+
+  useEffect(() => {
+    if (user) fetchLicenses();
+  }, [user, fetchLicenses]);
 
   if (!user) {
     return (
@@ -15,7 +22,7 @@ export function Library() {
           Sign in to see your games.
         </p>
         <button
-          onClick={() => login("player@peerplay.io")}
+          onClick={() => navigate("/login")}
           style={{
             padding: "10px 24px",
             borderRadius: "var(--radius)",
@@ -25,19 +32,27 @@ export function Library() {
             fontSize: 14,
           }}
         >
-          Sign In (Demo)
+          Sign In
         </button>
       </div>
     );
   }
 
-  const ownedGames = getOwnedGames();
+  if (loading) {
+    return (
+      <div style={{ textAlign: "center", padding: "80px 0", color: "var(--text-secondary)" }}>
+        Loading library...
+      </div>
+    );
+  }
+
+  const activeLicenses = licenses.filter((l) => l.status === "ACTIVE");
 
   return (
     <div>
       <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 24 }}>Your Library</h2>
 
-      {ownedGames.length === 0 ? (
+      {activeLicenses.length === 0 ? (
         <div style={{ textAlign: "center", padding: "60px 0" }}>
           <p style={{ color: "var(--text-secondary)", marginBottom: 16 }}>
             Your library is empty. Browse the store to find games.
@@ -58,10 +73,10 @@ export function Library() {
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {ownedGames.map((game) => (
+          {activeLicenses.map((license) => (
             <div
-              key={game.id}
-              onClick={() => navigate(`/game/${game.slug}`)}
+              key={license.id}
+              onClick={() => navigate(`/game/${license.game.slug}`)}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -77,8 +92,8 @@ export function Library() {
               onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
             >
               <img
-                src={game.coverImageUrl}
-                alt={game.title}
+                src={license.game.coverImageUrl || PLACEHOLDER_COVER}
+                alt={license.game.title}
                 style={{
                   width: 120,
                   height: 56,
@@ -88,8 +103,8 @@ export function Library() {
                 }}
               />
               <div style={{ flex: 1 }}>
-                <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>{game.title}</h3>
-                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{game.studioName}</span>
+                <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>{license.game.title}</h3>
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{license.game.studioName}</span>
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <span
@@ -104,24 +119,6 @@ export function Library() {
                 >
                   Ready
                 </span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    alert(
-                      `In the full desktop client, this would launch ${game.exePath} via BitTorrent download + local execution.`,
-                    );
-                  }}
-                  style={{
-                    padding: "8px 20px",
-                    borderRadius: "var(--radius)",
-                    backgroundColor: "var(--accent-green)",
-                    color: "#fff",
-                    fontWeight: 700,
-                    fontSize: 13,
-                  }}
-                >
-                  Play
-                </button>
               </div>
             </div>
           ))}

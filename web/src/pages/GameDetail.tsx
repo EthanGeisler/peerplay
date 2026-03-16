@@ -1,11 +1,20 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useAppStore } from "../stores/appStore";
-import type { GameEdition } from "../data/mock";
+import { useGameStore } from "../stores/gameStore";
+import { useLibraryStore } from "../stores/libraryStore";
+import { useAuthStore } from "../stores/authStore";
+import type { ApiTorrent } from "../types";
 
 function formatPrice(cents: number): string {
   if (cents === 0) return "Free";
   return `$${(cents / 100).toFixed(2)}`;
+}
+
+function formatSize(bytes: number | string): string {
+  const n = typeof bytes === "string" ? Number(bytes) : bytes;
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}GB`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(0)}MB`;
+  return `${(n / 1_000).toFixed(0)}KB`;
 }
 
 function drmDescription(tier: string): string {
@@ -21,19 +30,48 @@ function drmDescription(tier: string): string {
   }
 }
 
+const PLACEHOLDER_COVER = "https://placehold.co/460x215/0d1117/58a6ff?text=No+Cover&font=raleway";
+
 export function GameDetail() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
-  const getGame = useAppStore((s) => s.getGame);
-  const isOwned = useAppStore((s) => s.isOwned);
-  const purchase = useAppStore((s) => s.purchase);
-  const user = useAppStore((s) => s.user);
-  const login = useAppStore((s) => s.login);
+  const { currentGame: game, loading, fetchGameBySlug } = useGameStore();
+  const user = useAuthStore((s) => s.user);
+  const licenses = useLibraryStore((s) => s.licenses);
+  const checkout = useLibraryStore((s) => s.checkout);
+  const checkoutLoading = useLibraryStore((s) => s.checkoutLoading);
+  const fetchLicenses = useLibraryStore((s) => s.fetchLicenses);
+  const fetchTorrent = useLibraryStore((s) => s.fetchTorrent);
 
-  const game = getGame(slug ?? "");
-  const [selectedEditionId, setSelectedEditionId] = useState<string | undefined>(
-    game?.editions?.[0]?.id,
-  );
+  const [torrent, setTorrent] = useState<ApiTorrent | null>(null);
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
+
+  const owned = game
+    ? licenses.some((l) => l.game.id === game.id && l.status === "ACTIVE")
+    : false;
+
+  useEffect(() => {
+    if (slug) fetchGameBySlug(slug);
+  }, [slug, fetchGameBySlug]);
+
+  useEffect(() => {
+    if (user) fetchLicenses();
+  }, [user, fetchLicenses]);
+
+  // Fetch torrent when game is owned
+  useEffect(() => {
+    if (owned && game) {
+      fetchTorrent(game.id).then(setTorrent).catch(() => {});
+    }
+  }, [owned, game, fetchTorrent]);
+
+  if (loading) {
+    return (
+      <div style={{ textAlign: "center", padding: "80px 0", color: "var(--text-secondary)" }}>
+        Loading...
+      </div>
+    );
+  }
 
   if (!game) {
     return (
@@ -56,16 +94,22 @@ export function GameDetail() {
     );
   }
 
-  const owned = isOwned(game.id);
-  const hasEditions = game.editions && game.editions.length > 1;
-  const selectedEdition: GameEdition | undefined = hasEditions
-    ? game.editions!.find((e) => e.id === selectedEditionId) ?? game.editions![0]
-    : undefined;
-
-  // Use selected edition's values if available, otherwise fall back to game-level
-  const displayPrice = selectedEdition ? selectedEdition.priceCents : game.priceCents;
-  const displayDrmTier = selectedEdition ? selectedEdition.drmTier : game.drmTier;
+  const displayPrice = game.priceCents;
+  const displayDrmTier = game.drmTier;
   const devShare = displayPrice - Math.ceil(displayPrice / 100);
+
+  const handlePurchase = async () => {
+    if (!user) {
+      navigate("/login");
+      return;
+    }
+    setPurchaseError(null);
+    try {
+      await checkout(game.id);
+    } catch (err) {
+      setPurchaseError((err as Error).message);
+    }
+  };
 
   return (
     <div>
@@ -94,7 +138,7 @@ export function GameDetail() {
       >
         <div>
           <img
-            src={game.coverImageUrl}
+            src={game.coverImageUrl || PLACEHOLDER_COVER}
             alt={game.title}
             style={{
               width: "100%",
@@ -140,63 +184,15 @@ export function GameDetail() {
             by {game.studioName}
           </p>
 
-          {/* Edition picker */}
-          {hasEditions && (
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8, fontWeight: 600 }}>
-                Choose Edition
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                {game.editions!.map((edition) => {
-                  const isSelected = edition.id === (selectedEdition?.id ?? game.editions![0].id);
-                  return (
-                    <button
-                      key={edition.id}
-                      onClick={() => setSelectedEditionId(edition.id)}
-                      style={{
-                        flex: 1,
-                        padding: "10px 8px",
-                        borderRadius: "var(--radius)",
-                        backgroundColor: isSelected ? "var(--bg-tertiary)" : "transparent",
-                        border: isSelected
-                          ? "2px solid var(--accent)"
-                          : "1px solid var(--border)",
-                        color: isSelected ? "var(--text-primary)" : "var(--text-secondary)",
-                        fontSize: 12,
-                        fontWeight: isSelected ? 700 : 500,
-                        cursor: "pointer",
-                        textAlign: "center",
-                        transition: "all 0.15s",
-                      }}
-                    >
-                      <div>{edition.label}</div>
-                      <div
-                        style={{
-                          fontSize: 14,
-                          fontWeight: 800,
-                          marginTop: 4,
-                          color: edition.priceCents === 0 ? "var(--accent-green)" : "var(--text-primary)",
-                        }}
-                      >
-                        {formatPrice(edition.priceCents)}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
           <div
             style={{
-              fontSize: hasEditions ? 20 : 28,
+              fontSize: 28,
               fontWeight: 800,
               marginBottom: 16,
               color: displayPrice === 0 ? "var(--accent-green)" : "var(--text-primary)",
             }}
           >
-            {hasEditions ? (selectedEdition?.label ?? "") : formatPrice(displayPrice)}
-            {!hasEditions ? "" : ` \u2014 ${formatPrice(displayPrice)}`}
+            {formatPrice(displayPrice)}
           </div>
 
           {owned ? (
@@ -215,64 +211,89 @@ export function GameDetail() {
               >
                 In Your Library
               </div>
-              {game.magnetUri && (
-                <a
-                  href={game.magnetUri}
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    padding: "12px 0",
-                    borderRadius: "var(--radius)",
-                    backgroundColor: "var(--accent-blue)",
-                    color: "#fff",
-                    fontWeight: 700,
-                    fontSize: 14,
-                    textAlign: "center",
-                    textDecoration: "none",
-                    marginBottom: 8,
-                  }}
-                >
-                  Download via Torrent ({game.fileSizeMB}MB)
-                </a>
-              )}
-              {game.magnetUri && (
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "var(--text-muted)",
-                    backgroundColor: "var(--bg-primary)",
-                    padding: 8,
-                    borderRadius: "var(--radius)",
-                    wordBreak: "break-all",
-                    fontFamily: "monospace",
-                  }}
-                >
-                  {game.magnetUri}
-                </div>
+              {torrent && (
+                <>
+                  <a
+                    href={torrent.magnetUri}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      padding: "12px 0",
+                      borderRadius: "var(--radius)",
+                      backgroundColor: "var(--accent-blue)",
+                      color: "#fff",
+                      fontWeight: 700,
+                      fontSize: 14,
+                      textAlign: "center",
+                      textDecoration: "none",
+                      marginBottom: 8,
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    Download via Torrent ({formatSize(torrent.fileSizeBytes)})
+                  </a>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: "var(--text-muted)",
+                      backgroundColor: "var(--bg-primary)",
+                      padding: 8,
+                      borderRadius: "var(--radius)",
+                      wordBreak: "break-all",
+                      fontFamily: "monospace",
+                    }}
+                  >
+                    {torrent.magnetUri}
+                  </div>
+                </>
               )}
             </div>
           ) : (
-            <button
-              onClick={() => {
-                if (!user) login("player@peerplay.io");
-                purchase(game.id, selectedEdition?.id);
-              }}
-              style={{
-                width: "100%",
-                padding: "12px 0",
-                borderRadius: "var(--radius)",
-                backgroundColor: "var(--accent)",
-                color: "#fff",
-                fontWeight: 700,
-                fontSize: 14,
-                marginBottom: 16,
-                transition: "background-color 0.15s",
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--accent-hover)")}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "var(--accent)")}
-            >
-              {displayPrice === 0 ? "Get for Free" : `Buy Now \u2014 ${formatPrice(displayPrice)}`}
-            </button>
+            <div style={{ marginBottom: 16 }}>
+              {purchaseError && (
+                <div
+                  style={{
+                    padding: "8px 12px",
+                    borderRadius: "var(--radius)",
+                    backgroundColor: "rgba(233,69,96,0.15)",
+                    color: "#e94560",
+                    fontSize: 12,
+                    marginBottom: 8,
+                  }}
+                >
+                  {purchaseError}
+                </div>
+              )}
+              <button
+                onClick={handlePurchase}
+                disabled={checkoutLoading}
+                style={{
+                  width: "100%",
+                  padding: "12px 0",
+                  borderRadius: "var(--radius)",
+                  backgroundColor: checkoutLoading ? "var(--bg-tertiary)" : "var(--accent)",
+                  color: "#fff",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  opacity: checkoutLoading ? 0.7 : 1,
+                  transition: "background-color 0.15s",
+                }}
+                onMouseEnter={(e) => {
+                  if (!checkoutLoading) e.currentTarget.style.backgroundColor = "var(--accent-hover)";
+                }}
+                onMouseLeave={(e) => {
+                  if (!checkoutLoading) e.currentTarget.style.backgroundColor = "var(--accent)";
+                }}
+              >
+                {checkoutLoading
+                  ? "Processing..."
+                  : !user
+                    ? "Sign In to Purchase"
+                    : displayPrice === 0
+                      ? "Get for Free"
+                      : `Buy Now \u2014 ${formatPrice(displayPrice)}`}
+              </button>
+            </div>
           )}
 
           {/* DRM info */}
@@ -342,35 +363,20 @@ export function GameDetail() {
             </div>
           )}
 
-          {/* Tags */}
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
-            {game.tags.map((tag) => (
-              <span
-                key={tag}
-                style={{
-                  fontSize: 11,
-                  color: "var(--text-muted)",
-                  backgroundColor: "var(--bg-primary)",
-                  padding: "4px 10px",
-                  borderRadius: 4,
-                }}
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
-
-          {/* Meta */}
-          <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 2 }}>
-            <div>
-              Distribution:{" "}
-              <span style={{ color: "var(--text-secondary)" }}>BitTorrent (P2P)</span>
+          {/* Version info */}
+          {game.latestVersion && (
+            <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 2 }}>
+              <div>
+                Version: <span style={{ color: "var(--text-secondary)" }}>v{game.latestVersion.version}</span>
+              </div>
+              <div>
+                Size: <span style={{ color: "var(--text-secondary)" }}>{formatSize(game.latestVersion.fileSizeBytes)}</span>
+              </div>
+              <div>
+                Distribution: <span style={{ color: "var(--text-secondary)" }}>BitTorrent (P2P)</span>
+              </div>
             </div>
-            <div>
-              Released:{" "}
-              <span style={{ color: "var(--text-secondary)" }}>{game.releaseDate}</span>
-            </div>
-          </div>
+          )}
         </div>
       </div>
 
