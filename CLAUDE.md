@@ -1,5 +1,7 @@
 # Peerplay — Decentralized Game Distribution Platform
 
+> **Start here:** Read `CONTEXT.md` for full project state, what's been built, known issues, and next steps.
+
 ## Project Structure
 - `server/` — Node.js + TypeScript backend monorepo (Express, Prisma, PostgreSQL)
 - `server/packages/` — Modular service packages (auth, catalog, license, payment, saves, torrent, shared)
