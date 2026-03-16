@@ -37,12 +37,19 @@ export interface UpdateGameInput {
   screenshots?: string[];
 }
 
-export async function listPublishedGames(page: number, limit: number) {
+export async function listPublishedGames(page: number, limit: number, search?: string) {
   const skip = (page - 1) * limit;
+
+  const where = {
+    status: "PUBLISHED" as const,
+    ...(search && {
+      title: { contains: search, mode: "insensitive" as const },
+    }),
+  };
 
   const [games, total] = await Promise.all([
     db.game.findMany({
-      where: { status: "PUBLISHED" },
+      where,
       select: {
         id: true,
         slug: true,
@@ -59,7 +66,7 @@ export async function listPublishedGames(page: number, limit: number) {
       skip,
       take: limit,
     }),
-    db.game.count({ where: { status: "PUBLISHED" } }),
+    db.game.count({ where }),
   ]);
 
   return {

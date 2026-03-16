@@ -6,6 +6,16 @@ contextBridge.exposeInMainWorld("boilerdeck", {
     getInstallDir: (): Promise<string> => ipcRenderer.invoke("app:get-install-dir"),
   },
 
+  updater: {
+    onUpdateDownloaded: (callback: (data: { version: string }) => void): void => {
+      ipcRenderer.on("app:update-downloaded", (_event, data) => callback(data));
+    },
+    removeUpdateListener: (): void => {
+      ipcRenderer.removeAllListeners("app:update-downloaded");
+    },
+    restartForUpdate: (): Promise<void> => ipcRenderer.invoke("app:restart-for-update"),
+  },
+
   store: {
     get: (key: string): Promise<unknown> => ipcRenderer.invoke("store:get", key),
     set: (key: string, value: unknown): Promise<boolean> =>
@@ -89,6 +99,11 @@ declare global {
       platform: {
         getVersion: () => Promise<string>;
         getInstallDir: () => Promise<string>;
+      };
+      updater: {
+        onUpdateDownloaded: (callback: (data: { version: string }) => void) => void;
+        removeUpdateListener: () => void;
+        restartForUpdate: () => Promise<void>;
       };
       store: {
         get: (key: string) => Promise<unknown>;

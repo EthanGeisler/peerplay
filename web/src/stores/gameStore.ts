@@ -7,7 +7,7 @@ interface GameState {
   currentGame: ApiGameDetail | null;
   loading: boolean;
   error: string | null;
-  fetchGames: () => Promise<void>;
+  fetchGames: (search?: string) => Promise<void>;
   fetchGameBySlug: (slug: string) => Promise<void>;
 }
 
@@ -17,10 +17,12 @@ export const useGameStore = create<GameState>((set) => ({
   loading: false,
   error: null,
 
-  fetchGames: async () => {
+  fetchGames: async (search?: string) => {
     set({ loading: true, error: null });
     try {
-      const data = await apiFetch<ApiGameListResponse>("/games?limit=50");
+      const params = new URLSearchParams({ limit: "50" });
+      if (search) params.set("search", search);
+      const data = await apiFetch<ApiGameListResponse>(`/games?${params}`);
       set({ games: data.games, loading: false });
     } catch (err) {
       set({ loading: false, error: (err as Error).message });

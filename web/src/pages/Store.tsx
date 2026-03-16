@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGameStore } from "../stores/gameStore";
 import { useLibraryStore } from "../stores/libraryStore";
@@ -30,9 +30,29 @@ export function Store() {
   const fetchLicenses = useLibraryStore((s) => s.fetchLicenses);
   const user = useAuthStore((s) => s.user);
 
+  const [searchQuery, setSearchQuery] = useState("");
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+
   useEffect(() => {
     fetchGames();
   }, [fetchGames]);
+
+  const handleSearch = useCallback(
+    (value: string) => {
+      setSearchQuery(value);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        fetchGames(value || undefined);
+      }, 300);
+    },
+    [fetchGames],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (user) fetchLicenses();
@@ -46,12 +66,36 @@ export function Store() {
     );
   }
 
+  const isSearching = searchQuery.trim().length > 0;
   const featured = games[0];
 
   return (
     <div>
+      {/* Search bar */}
+      <div style={{ marginBottom: 24 }}>
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => handleSearch(e.target.value)}
+          placeholder="Search games..."
+          style={{
+            width: "100%",
+            padding: "12px 16px",
+            fontSize: 15,
+            backgroundColor: "var(--bg-card)",
+            color: "var(--text-primary)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-lg)",
+            outline: "none",
+            transition: "border-color 0.15s",
+          }}
+          onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
+          onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
+        />
+      </div>
+
       {/* Featured game hero */}
-      {featured && (
+      {!isSearching && featured && (
         <div
           role="link"
           tabIndex={0}
@@ -120,15 +164,17 @@ export function Store() {
       )}
 
       {/* Platform info */}
-      <div style={{ display: "flex", gap: 12, marginBottom: 32 }}>
-        <span style={tagStyle("#3fb950", "rgba(63,185,80,0.15)")}>99/1 Revenue Split</span>
-        <span style={tagStyle("#58a6ff", "rgba(88,166,255,0.15)")}>BitTorrent Powered</span>
-        <span style={tagStyle("#d29922", "rgba(210,153,34,0.15)")}>Developer Choice DRM</span>
-      </div>
+      {!isSearching && (
+        <div style={{ display: "flex", gap: 12, marginBottom: 32 }}>
+          <span style={tagStyle("#3fb950", "rgba(63,185,80,0.15)")}>99/1 Revenue Split</span>
+          <span style={tagStyle("#58a6ff", "rgba(88,166,255,0.15)")}>BitTorrent Powered</span>
+          <span style={tagStyle("#d29922", "rgba(210,153,34,0.15)")}>Developer Choice DRM</span>
+        </div>
+      )}
 
       {/* Game grid */}
       <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 20, color: "var(--text-primary)" }}>
-        Browse Games
+        {isSearching ? `Results for "${searchQuery}"` : "Browse Games"}
       </h2>
       <div
         style={{

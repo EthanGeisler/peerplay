@@ -10,16 +10,19 @@
     "build:electron": "vite build && tsc -p tsconfig.main.json",
     "pack": "npm run build:electron && electron-builder --dir",
     "dist": "npm run build:electron && electron-builder",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e": "npx playwright test"
   },
   "dependencies": {
+    "electron-updater": "^6.3.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.6.0",
-    "zustand": "^5.0.0",
-    "webtorrent": "^2.5.0"
+    "webtorrent": "^2.5.0",
+    "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.4.0",
@@ -54,6 +57,13 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "EthanGeisler",
+        "repo": "peerplay"
+      }
+    ]
   }
 }

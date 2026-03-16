@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, shell, dialog } from "electron";
 import * as path from "path";
-import { initStore, storeGet, storeSet, storeDelete, getDefaultInstallDir } from "./store.js";
+import { autoUpdater } from "electron-updater";
+import { initStore, storeGet, storeSet, storeDelete, getDefaultInstallDir, isAllowedStoreKey } from "./store.js";
 import * as torrentManager from "./torrentManager.js";
 import * as gameLauncher from "./gameLauncher.js";
 import { getDeviceFingerprint } from "./fingerprint.js";
@@ -8,7 +9,7 @@ import { decryptGameFiles } from "./decryptor.js";
 
 let mainWindow: BrowserWindow | null = null;
 
-const isDev = !app.isPackaged;
+const isDev = !app.isPackaged && !process.env.ELECTRON_E2E;
 
 function createMainWindow(): void {
   mainWindow = new BrowserWindow({
@@ -37,15 +38,27 @@ function createMainWindow(): void {
 function setupIpcHandlers(): void {
   // --- Store (persistence) ---
   ipcMain.handle("store:get", (_event, key: string) => {
+    if (!isAllowedStoreKey(key)) {
+      console.warn(`[store] Blocked read of disallowed key: "${key}"`);
+      return undefined;
+    }
     return storeGet(key);
   });
 
   ipcMain.handle("store:set", (_event, key: string, value: unknown) => {
+    if (!isAllowedStoreKey(key)) {
+      console.warn(`[store] Blocked write of disallowed key: "${key}"`);
+      return false;
+    }
     storeSet(key, value);
     return true;
   });
 
   ipcMain.handle("store:delete", (_event, key: string) => {
+    if (!isAllowedStoreKey(key)) {
+      console.warn(`[store] Blocked delete of disallowed key: "${key}"`);
+      return false;
+    }
     storeDelete(key);
     return true;
   });
@@ -117,6 +130,36 @@ function setupIpcHandlers(): void {
   ipcMain.handle("downloads:get-progress", () => {
     return torrentManager.getProgress();
   });
+
+  // --- Auto-update ---
+  ipcMain.handle("app:restart-for-update", () => {
+    autoUpdater.quitAndInstall();
+  });
+}
+
+function setupAutoUpdater(): void {
+  // Don't check for updates in dev mode or during E2E tests
+  if (isDev || process.env.ELECTRON_E2E) return;
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on("update-available", (info) => {
+    console.log("[updater] Update available:", info.version);
+  });
+
+  autoUpdater.on("update-downloaded", (info) => {
+    console.log("[updater] Update downloaded:", info.version);
+    mainWindow?.webContents.send("app:update-downloaded", {
+      version: info.version,
+    });
+  });
+
+  autoUpdater.on("error", (err) => {
+    console.error("[updater] Error:", err.message);
+  });
+
+  autoUpdater.checkForUpdatesAndNotify();
 }
 
 app.whenReady().then(() => {
@@ -124,6 +167,7 @@ app.whenReady().then(() => {
   setupIpcHandlers();
   createMainWindow();
   if (mainWindow) torrentManager.setMainWindow(mainWindow);
+  setupAutoUpdater();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

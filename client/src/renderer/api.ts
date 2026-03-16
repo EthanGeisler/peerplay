@@ -71,6 +71,42 @@ export async function apiFetch<T = unknown>(
   return res.json() as Promise<T>;
 }
 
+/**
+ * Fetch raw .torrent file bytes as a base64 string.
+ * Uses the same auth + auto-refresh logic as apiFetch.
+ */
+export async function fetchTorrentFileBase64(gameId: string): Promise<string> {
+  const headers: Record<string, string> = {};
+  if (accessToken) {
+    headers["Authorization"] = `Bearer ${accessToken}`;
+  }
+
+  let res = await fetch(`${API_BASE}/torrents/${gameId}/latest/file`, { headers });
+
+  // Auto-refresh on 401
+  if (res.status === 401 && accessToken) {
+    const newToken = await refreshAccessToken();
+    if (newToken) {
+      headers["Authorization"] = `Bearer ${newToken}`;
+      res = await fetch(`${API_BASE}/torrents/${gameId}/latest/file`, { headers });
+    }
+  }
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ message: res.statusText }));
+    throw new ApiError(res.status, body.message || res.statusText, body.code);
+  }
+
+  const arrayBuffer = await res.arrayBuffer();
+  // Convert ArrayBuffer to base64 string
+  const bytes = new Uint8Array(arrayBuffer);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,

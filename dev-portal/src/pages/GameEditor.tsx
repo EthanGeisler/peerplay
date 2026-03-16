@@ -47,12 +47,28 @@ export function GameEditor() {
   const [uploadState, setUploadState] = useState<"idle" | "creating" | "uploading" | "processing" | "done" | "error">("idle");
   const [uploadPercent, setUploadPercent] = useState(0);
 
+  // Cover image upload state
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [coverPreview, setCoverPreview] = useState<string | null>(null);
+  const [coverUploadState, setCoverUploadState] = useState<"idle" | "uploading" | "done" | "error">("idle");
+  const [coverUploadPercent, setCoverUploadPercent] = useState(0);
+  const [coverError, setCoverError] = useState<string | null>(null);
+  const [showCoverUrl, setShowCoverUrl] = useState(false);
+
   // Exe detection state
   const [gameDirs, setGameDirs] = useState<GameDir[]>([]);
   const [dirsLoading, setDirsLoading] = useState(false);
   const [selectedDir, setSelectedDir] = useState<string>("");
   const [detectResult, setDetectResult] = useState<DetectResult | null>(null);
   const [detecting, setDetecting] = useState(false);
+
+  // Revoke cover preview object URL on unmount to prevent memory leak
+  useEffect(() => {
+    return () => {
+      if (coverPreview) URL.revokeObjectURL(coverPreview);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -101,6 +117,50 @@ export function GameEditor() {
       setError(err instanceof Error ? err.message : "Failed to detect executable");
     } finally {
       setDetecting(false);
+    }
+  };
+
+  const uploadCover = async (gameId: string, file: File) => {
+    setCoverUploadState("uploading");
+    setCoverUploadPercent(0);
+    setCoverError(null);
+    const fd = new FormData();
+    fd.append("coverImage", file);
+    try {
+      const result = await apiUpload<{ coverImageUrl: string }>(
+        `/developer/games/${gameId}/cover`,
+        fd,
+        (percent) => setCoverUploadPercent(percent),
+      );
+      setCoverUploadState("done");
+      update("coverImageUrl", result.coverImageUrl);
+      setCoverFile(null);
+    } catch (err: unknown) {
+      setCoverUploadState("error");
+      setCoverError(err instanceof Error ? err.message : "Cover upload failed");
+    }
+  };
+
+  const handleCoverFileSelected = (file: File) => {
+    if (file.size > 10 * 1024 * 1024) {
+      setCoverError("File exceeds 10 MB limit");
+      setCoverUploadState("error");
+      return;
+    }
+    setCoverFile(file);
+    setCoverError(null);
+    setCoverUploadState("idle");
+
+    // Revoke previous object URL to avoid memory leak
+    if (coverPreview) URL.revokeObjectURL(coverPreview);
+
+    // Generate local preview
+    const url = URL.createObjectURL(file);
+    setCoverPreview(url);
+
+    // If editing an existing game, upload immediately
+    if (isEditing && id) {
+      uploadCover(id, file);
     }
   };
 
@@ -164,6 +224,11 @@ export function GameEditor() {
             }
           },
         );
+
+        // 4. Upload cover image if selected
+        if (coverFile) {
+          await uploadCover(game.id, coverFile);
+        }
 
         setUploadState("done");
         navigate(`/games/${game.id}`);
@@ -443,29 +508,171 @@ export function GameEditor() {
           </div>
         </div>}
 
-        {/* Cover image URL */}
+        {/* Cover Image */}
         <div>
-          <label style={labelStyle}>Cover Image URL</label>
-          <input
-            type="url"
-            value={form.coverImageUrl}
-            onChange={(e) => update("coverImageUrl", e.target.value)}
-            placeholder="https://..."
-            style={{ width: "100%" }}
-          />
-          {form.coverImageUrl && (
+          <label style={labelStyle}>Cover Image</label>
+          {coverPreview || form.coverImageUrl ? (
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 8 }}>
+              <div
+                style={{
+                  width: 200,
+                  height: 94,
+                  borderRadius: 6,
+                  backgroundImage: `url(${coverPreview || form.coverImageUrl})`,
+                  backgroundSize: "cover",
+                  backgroundPosition: "center",
+                  border: "1px solid var(--border)",
+                  flexShrink: 0,
+                }}
+              />
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const input = document.createElement("input");
+                    input.type = "file";
+                    input.accept = "image/jpeg,image/png,image/webp";
+                    input.onchange = () => {
+                      if (input.files?.[0]) handleCoverFileSelected(input.files[0]);
+                    };
+                    input.click();
+                  }}
+                  style={{
+                    fontSize: 12,
+                    padding: "4px 10px",
+                    borderRadius: 4,
+                    backgroundColor: "var(--bg-tertiary)",
+                    color: "var(--text-secondary)",
+                  }}
+                >
+                  Change
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCoverFile(null);
+                    setCoverPreview(null);
+                    update("coverImageUrl", "");
+                  }}
+                  style={{
+                    fontSize: 12,
+                    padding: "4px 10px",
+                    borderRadius: 4,
+                    backgroundColor: "var(--bg-secondary)",
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          ) : (
             <div
-              style={{
-                marginTop: 8,
-                width: 200,
-                height: 94,
-                borderRadius: 6,
-                backgroundImage: `url(${form.coverImageUrl})`,
-                backgroundSize: "cover",
-                backgroundPosition: "center",
-                border: "1px solid var(--border)",
+              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const file = e.dataTransfer.files[0];
+                if (file && file.type.startsWith("image/") && /\.(jpe?g|png|webp)$/i.test(file.name)) handleCoverFileSelected(file);
               }}
-            />
+              onClick={() => {
+                const input = document.createElement("input");
+                input.type = "file";
+                input.accept = "image/jpeg,image/png,image/webp";
+                input.onchange = () => {
+                  if (input.files?.[0]) handleCoverFileSelected(input.files[0]);
+                };
+                input.click();
+              }}
+              style={{
+                border: "2px dashed var(--border)",
+                borderRadius: "var(--radius)",
+                padding: 24,
+                textAlign: "center",
+                cursor: "pointer",
+                backgroundColor: "var(--bg-tertiary)",
+              }}
+            >
+              <div style={{ fontSize: 14, color: "var(--text-muted)" }}>
+                Drop image here or click to browse
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                JPG, PNG, or WebP — max 10 MB
+              </div>
+            </div>
+          )}
+          {/* Cover upload progress (edit mode immediate upload) */}
+          {coverUploadState === "uploading" && (
+            <div style={{ marginTop: 8 }}>
+              <div
+                style={{
+                  height: 6,
+                  backgroundColor: "var(--bg-secondary)",
+                  borderRadius: 3,
+                  overflow: "hidden",
+                  marginBottom: 4,
+                }}
+              >
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${coverUploadPercent}%`,
+                    backgroundColor: "var(--accent-blue)",
+                    borderRadius: 3,
+                    transition: "width 0.3s ease",
+                  }}
+                />
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Uploading cover... {coverUploadPercent}%</div>
+            </div>
+          )}
+          {coverUploadState === "error" && (
+            <div style={{ fontSize: 12, color: "var(--accent)", marginTop: 6 }}>{coverError}</div>
+          )}
+          {/* URL fallback toggle */}
+          {!showCoverUrl ? (
+            <button
+              type="button"
+              onClick={() => setShowCoverUrl(true)}
+              style={{
+                fontSize: 11,
+                color: "var(--text-muted)",
+                backgroundColor: "transparent",
+                marginTop: 6,
+                padding: 0,
+                textDecoration: "underline",
+              }}
+            >
+              or enter URL manually
+            </button>
+          ) : (
+            <div style={{ marginTop: 8 }}>
+              <input
+                type="url"
+                value={form.coverImageUrl}
+                onChange={(e) => {
+                  update("coverImageUrl", e.target.value);
+                  setCoverFile(null);
+                  setCoverPreview(null);
+                }}
+                placeholder="https://..."
+                style={{ width: "100%", fontSize: 13 }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowCoverUrl(false)}
+                style={{
+                  fontSize: 11,
+                  color: "var(--text-muted)",
+                  backgroundColor: "transparent",
+                  marginTop: 4,
+                  padding: 0,
+                  textDecoration: "underline",
+                }}
+              >
+                hide URL input
+              </button>
+            </div>
           )}
         </div>
 

@@ -15,6 +15,7 @@ interface StoreData {
     downloadSpeedLimit?: number;
     uploadSpeedLimit?: number;
   };
+  deviceFingerprint?: string;
 }
 
 interface InstalledGameEntry {
@@ -30,6 +31,19 @@ interface InstalledGameEntry {
 }
 
 const STORE_FILENAME = "boilerdeck-config.json";
+
+/** Only these keys may be read/written via IPC. */
+export const STORE_KEY_WHITELIST = new Set([
+  "refreshToken",
+  "installDir",
+  "installedGames",
+  "settings",
+  "deviceFingerprint",
+]);
+
+export function isAllowedStoreKey(key: string): boolean {
+  return STORE_KEY_WHITELIST.has(key);
+}
 
 let data: StoreData = {};
 let storePath: string;

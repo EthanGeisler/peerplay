@@ -10,6 +10,11 @@ declare global {
         getVersion: () => Promise<string>;
         getInstallDir: () => Promise<string>;
       };
+      updater: {
+        onUpdateDownloaded: (callback: (data: { version: string }) => void) => void;
+        removeUpdateListener: () => void;
+        restartForUpdate: () => Promise<void>;
+      };
       store: {
         get: (key: string) => Promise<unknown>;
         set: (key: string, value: unknown) => Promise<boolean>;

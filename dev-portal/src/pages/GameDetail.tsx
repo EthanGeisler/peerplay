@@ -58,6 +58,11 @@ export function GameDetail() {
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
+  // Cover upload state
+  const [coverUploading, setCoverUploading] = useState(false);
+  const [coverPercent, setCoverPercent] = useState(0);
+  const [coverError, setCoverError] = useState<string | null>(null);
+
   // New version form + upload
   const [showVersionForm, setShowVersionForm] = useState(false);
   const [newVersion, setNewVersion] = useState("");
@@ -76,6 +81,38 @@ export function GameDetail() {
   useEffect(() => {
     loadGame();
   }, [id]);
+
+  const handleCoverUpload = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/jpeg,image/png,image/webp";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      if (file.size > 10 * 1024 * 1024) {
+        setCoverError("File exceeds 10 MB limit");
+        return;
+      }
+      setCoverUploading(true);
+      setCoverPercent(0);
+      setCoverError(null);
+      const fd = new FormData();
+      fd.append("coverImage", file);
+      try {
+        await apiUpload(
+          `/developer/games/${id}/cover`,
+          fd,
+          (percent) => setCoverPercent(percent),
+        );
+        setCoverUploading(false);
+        loadGame();
+      } catch (err: unknown) {
+        setCoverUploading(false);
+        setCoverError(err instanceof Error ? err.message : "Cover upload failed");
+      }
+    };
+    input.click();
+  };
 
   const handlePublish = async () => {
     setActionLoading(true);
@@ -198,19 +235,69 @@ export function GameDetail() {
           marginBottom: 32,
         }}
       >
-        <div
-          style={{
-            width: 160,
-            height: 75,
-            borderRadius: "var(--radius)",
-            backgroundColor: "var(--bg-tertiary)",
-            backgroundImage: game.coverImageUrl ? `url(${game.coverImageUrl})` : undefined,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            flexShrink: 0,
-            border: "1px solid var(--border)",
-          }}
-        />
+        <div style={{ flexShrink: 0, position: "relative" }}>
+          <div
+            style={{
+              width: 160,
+              height: 75,
+              borderRadius: "var(--radius)",
+              backgroundColor: "var(--bg-tertiary)",
+              backgroundImage: game.coverImageUrl ? `url(${game.coverImageUrl})` : undefined,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              border: "1px solid var(--border)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {!game.coverImageUrl && (
+              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>No cover</span>
+            )}
+          </div>
+          {coverUploading ? (
+            <div style={{ marginTop: 4 }}>
+              <div
+                style={{
+                  height: 4,
+                  backgroundColor: "var(--bg-secondary)",
+                  borderRadius: 2,
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${coverPercent}%`,
+                    backgroundColor: "var(--accent-blue)",
+                    borderRadius: 2,
+                    transition: "width 0.3s ease",
+                  }}
+                />
+              </div>
+              <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>{coverPercent}%</div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={handleCoverUpload}
+              style={{
+                marginTop: 4,
+                fontSize: 11,
+                padding: "3px 8px",
+                borderRadius: 4,
+                backgroundColor: "var(--bg-tertiary)",
+                color: "var(--text-secondary)",
+                width: "100%",
+              }}
+            >
+              {game.coverImageUrl ? "Change Cover" : "Upload Cover"}
+            </button>
+          )}
+          {coverError && (
+            <div style={{ fontSize: 10, color: "var(--accent)", marginTop: 2 }}>{coverError}</div>
+          )}
+        </div>
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
             <h1 style={{ fontSize: 24, fontWeight: 700 }}>{game.title}</h1>

@@ -1,5 +1,16 @@
-import WebTorrent, { type Torrent } from "webtorrent";
 import type { BrowserWindow } from "electron";
+
+// Lazy-import WebTorrent to avoid top-level-await ESM issues when loaded
+// via require() (e.g., Playwright's Electron launcher injects a -r flag).
+let WebTorrent: any;
+
+async function ensureWebTorrent(): Promise<any> {
+  if (!WebTorrent) {
+    const mod = await import("webtorrent");
+    WebTorrent = mod.default;
+  }
+  return WebTorrent;
+}
 
 interface ActiveDownload {
   gameId: string;
@@ -8,15 +19,16 @@ interface ActiveDownload {
   downloadPath: string;
 }
 
-let client: InstanceType<typeof WebTorrent> | null = null;
+let client: any | null = null;
 let progressInterval: ReturnType<typeof setInterval> | null = null;
 let mainWindowRef: BrowserWindow | null = null;
 
 const activeDownloads = new Map<string, ActiveDownload>();
 
-function getClient(): InstanceType<typeof WebTorrent> {
+async function getClient(): Promise<any> {
   if (!client) {
-    client = new WebTorrent();
+    const WT = await ensureWebTorrent();
+    client = new WT();
     client.on("error", (err: Error) => {
       console.error("[torrent] Client error:", err.message);
     });
@@ -30,10 +42,10 @@ export function setMainWindow(win: BrowserWindow): void {
 
 function startProgressBroadcast(): void {
   if (progressInterval) return;
-  progressInterval = setInterval(() => {
+  progressInterval = setInterval(async () => {
     if (!mainWindowRef || mainWindowRef.isDestroyed()) return;
-    const wt = getClient();
-    const progress = wt.torrents.map((t: Torrent) => {
+    const wt = await getClient();
+    const progress = wt.torrents.map((t: any) => {
       const meta = activeDownloads.get(t.infoHash);
       return {
         gameId: meta?.gameId ?? t.infoHash,
@@ -67,10 +79,10 @@ export interface StartDownloadOpts {
   downloadPath: string;
 }
 
-export function startDownload(opts: StartDownloadOpts): Promise<{ success: boolean; infoHash: string }> {
-  return new Promise((resolve, reject) => {
-    const wt = getClient();
+export async function startDownload(opts: StartDownloadOpts): Promise<{ success: boolean; infoHash: string }> {
+  const wt = await getClient();
 
+  return new Promise((resolve, reject) => {
     // Prefer .torrent buffer over magnet URI (avoids metadata download stall)
     const source = opts.torrentFileBase64
       ? Buffer.from(opts.torrentFileBase64, "base64")
@@ -109,9 +121,9 @@ export function startDownload(opts: StartDownloadOpts): Promise<{ success: boole
   });
 }
 
-export function pauseDownload(infoHash: string): { success: boolean } {
-  const wt = getClient();
-  const torrent = wt.torrents.find((t: Torrent) => t.infoHash === infoHash);
+export async function pauseDownload(infoHash: string): Promise<{ success: boolean }> {
+  const wt = await getClient();
+  const torrent = wt.torrents.find((t: any) => t.infoHash === infoHash);
   if (torrent) {
     torrent.pause();
     return { success: true };
@@ -119,9 +131,9 @@ export function pauseDownload(infoHash: string): { success: boolean } {
   return { success: false };
 }
 
-export function resumeDownload(infoHash: string): { success: boolean } {
-  const wt = getClient();
-  const torrent = wt.torrents.find((t: Torrent) => t.infoHash === infoHash);
+export async function resumeDownload(infoHash: string): Promise<{ success: boolean }> {
+  const wt = await getClient();
+  const torrent = wt.torrents.find((t: any) => t.infoHash === infoHash);
   if (torrent) {
     torrent.resume();
     return { success: true };
@@ -129,25 +141,24 @@ export function resumeDownload(infoHash: string): { success: boolean } {
   return { success: false };
 }
 
-export function cancelDownload(infoHash: string): Promise<{ success: boolean }> {
-  return new Promise((resolve) => {
-    const wt = getClient();
-    const torrent = wt.torrents.find((t: Torrent) => t.infoHash === infoHash);
-    if (torrent) {
-      activeDownloads.delete(infoHash);
+export async function cancelDownload(infoHash: string): Promise<{ success: boolean }> {
+  const wt = await getClient();
+  const torrent = wt.torrents.find((t: any) => t.infoHash === infoHash);
+  if (torrent) {
+    activeDownloads.delete(infoHash);
+    return new Promise((resolve) => {
       torrent.destroy({ destroyStore: true }, () => {
         if (wt.torrents.length === 0) stopProgressBroadcast();
         resolve({ success: true });
       });
-    } else {
-      resolve({ success: false });
-    }
-  });
+    });
+  }
+  return { success: false };
 }
 
-export function getProgress(): unknown[] {
-  const wt = getClient();
-  return wt.torrents.map((t) => {
+export async function getProgress(): Promise<unknown[]> {
+  const wt = await getClient();
+  return wt.torrents.map((t: any) => {
     const meta = activeDownloads.get(t.infoHash);
     return {
       gameId: meta?.gameId ?? t.infoHash,

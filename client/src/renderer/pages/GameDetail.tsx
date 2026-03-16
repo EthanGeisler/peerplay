@@ -4,6 +4,7 @@ import { useGameStore } from "../stores/gameStore";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useDownloadStore } from "../stores/downloadStore";
 import { useAuthStore } from "../stores/authStore";
+import { fetchTorrentFileBase64 } from "../api";
 import { formatPrice, formatSize, PLACEHOLDER_COVER } from "../utils";
 
 const DRM_LABELS: Record<string, string> = {
@@ -161,8 +162,19 @@ export function GameDetail() {
       const torrent = await useLibraryStore.getState().fetchTorrent(game.id);
       const installDir = await window.boilerdeck.platform.getInstallDir();
       const downloadPath = `${installDir}/${game.slug}`;
+
+      // Fetch .torrent file for faster start (skip metadata download phase)
+      // Falls back to magnet URI if fetch fails
+      let torrentFileBase64: string | undefined;
+      try {
+        torrentFileBase64 = await fetchTorrentFileBase64(game.id);
+      } catch (err) {
+        console.warn("[download] Failed to fetch .torrent file, falling back to magnet URI:", err);
+      }
+
       await useDownloadStore.getState().startDownload({
         magnetUri: torrent.magnetUri,
+        torrentFileBase64,
         gameId: game.id,
         title: game.title,
         downloadPath,

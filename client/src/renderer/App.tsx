@@ -7,6 +7,7 @@ import { Settings } from "./pages/Settings";
 import { Login } from "./pages/Login";
 import { GameDetail } from "./pages/GameDetail";
 import { useAuthStore } from "./stores/authStore";
+import { UpdateBanner } from "./components/UpdateBanner";
 
 const NAV_ITEMS = [
   { label: "Store", path: "/" },
@@ -18,7 +19,8 @@ const NAV_ITEMS = [
 const styles = {
   container: {
     display: "flex",
-    height: "100vh",
+    flex: 1,
+    minHeight: 0,
     backgroundColor: "#1a1a2e",
     color: "#e0e0e0",
   } as React.CSSProperties,
@@ -103,7 +105,9 @@ export function App() {
   }, [loadSession]);
 
   return (
-    <div style={styles.container}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
+      <UpdateBanner />
+      <div style={styles.container}>
       <div style={styles.sidebar}>
         <div style={styles.logo}>BOILERDECK</div>
         {NAV_ITEMS.map((item) => (
@@ -166,7 +170,25 @@ export function App() {
           <Route path="/downloads" element={<Downloads />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/login" element={<Login />} />
+          <Route
+            path="*"
+            element={
+              <div style={{ textAlign: "center", marginTop: 80 }}>
+                <h1 style={{ fontSize: 28, marginBottom: 12 }}>Page not found</h1>
+                <p style={{ color: "#888", marginBottom: 20 }}>
+                  The page you're looking for doesn't exist.
+                </p>
+                <a
+                  href="#/"
+                  style={{ color: "#e94560", textDecoration: "underline" }}
+                >
+                  Back to Store
+                </a>
+              </div>
+            }
+          />
         </Routes>
+      </div>
       </div>
     </div>
   );
