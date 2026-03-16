@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { apiFetch, setAccessToken, ApiError } from "../api";
+import { apiFetch, setAccessToken, refreshAccessToken, ApiError } from "../api";
 import type { ApiUser, ApiAuthResponse } from "../types";
 
 interface AuthState {
@@ -58,7 +58,11 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   logout: async () => {
     try {
-      await apiFetch("/auth/logout", { method: "POST" });
+      const refreshToken = localStorage.getItem("pp_refresh_token");
+      await apiFetch("/auth/logout", {
+        method: "POST",
+        body: JSON.stringify({ refreshToken }),
+      });
     } catch {
       // Logout best-effort
     }
@@ -68,28 +72,18 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   loadSession: async () => {
-    const refreshToken = localStorage.getItem("pp_refresh_token");
-    if (!refreshToken) {
+    const token = localStorage.getItem("pp_refresh_token");
+    if (!token) {
       set({ loading: false });
       return;
     }
 
     try {
-      const res = await fetch("/api/auth/refresh", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken }),
-      });
-
-      if (!res.ok) {
-        localStorage.removeItem("pp_refresh_token");
+      const newToken = await refreshAccessToken();
+      if (!newToken) {
         set({ loading: false });
         return;
       }
-
-      const data = await res.json();
-      setAccessToken(data.accessToken);
-      localStorage.setItem("pp_refresh_token", data.refreshToken);
 
       const user = await apiFetch<ApiUser>("/auth/me");
       set({ user, loading: false });

@@ -10,7 +10,7 @@ export function getAccessToken() {
   return accessToken;
 }
 
-async function refreshAccessToken(): Promise<string | null> {
+export async function refreshAccessToken(): Promise<string | null> {
   const refreshToken = localStorage.getItem("pp_refresh_token");
   if (!refreshToken) return null;
 
@@ -63,6 +63,8 @@ export async function apiFetch<T = unknown>(
     const body = await res.json().catch(() => ({ message: res.statusText }));
     throw new ApiError(res.status, body.message || res.statusText, body.code);
   }
+
+  if (res.status === 204) return undefined as T;
 
   return res.json() as Promise<T>;
 }

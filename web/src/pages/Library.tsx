@@ -2,8 +2,7 @@ import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../stores/authStore";
 import { useLibraryStore } from "../stores/libraryStore";
-
-const PLACEHOLDER_COVER = "https://placehold.co/120x56/0d1117/58a6ff?text=No+Cover&font=raleway";
+import { PLACEHOLDER_COVER } from "../utils";
 
 export function Library() {
   const navigate = useNavigate();
@@ -76,7 +75,10 @@ export function Library() {
           {activeLicenses.map((license) => (
             <div
               key={license.id}
+              role="link"
+              tabIndex={0}
               onClick={() => navigate(`/game/${license.game.slug}`)}
+              onKeyDown={(e) => { if (e.key === "Enter") navigate(`/game/${license.game.slug}`); }}
               style={{
                 display: "flex",
                 alignItems: "center",

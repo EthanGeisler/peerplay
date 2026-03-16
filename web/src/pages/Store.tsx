@@ -3,12 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { useGameStore } from "../stores/gameStore";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useAuthStore } from "../stores/authStore";
+import { formatPrice, PLACEHOLDER_COVER } from "../utils";
 import type { ApiGame } from "../types";
-
-function formatPrice(cents: number): string {
-  if (cents === 0) return "Free";
-  return `$${(cents / 100).toFixed(2)}`;
-}
 
 function getDrmBadge(tier: ApiGame["drmTier"]): {
   label: string;
@@ -25,11 +21,11 @@ function getDrmBadge(tier: ApiGame["drmTier"]): {
   }
 }
 
-const PLACEHOLDER_COVER = "https://placehold.co/460x215/0d1117/58a6ff?text=No+Cover&font=raleway";
-
 export function Store() {
   const navigate = useNavigate();
-  const { games, loading, fetchGames } = useGameStore();
+  const games = useGameStore((s) => s.games);
+  const loading = useGameStore((s) => s.loading);
+  const fetchGames = useGameStore((s) => s.fetchGames);
   const licenses = useLibraryStore((s) => s.licenses);
   const fetchLicenses = useLibraryStore((s) => s.fetchLicenses);
   const user = useAuthStore((s) => s.user);
@@ -57,7 +53,10 @@ export function Store() {
       {/* Featured game hero */}
       {featured && (
         <div
+          role="link"
+          tabIndex={0}
           onClick={() => navigate(`/game/${featured.slug}`)}
+          onKeyDown={(e) => { if (e.key === "Enter") navigate(`/game/${featured.slug}`); }}
           style={{
             background: "linear-gradient(135deg, #1a0028 0%, #0d1117 50%, #001a1a 100%)",
             borderRadius: "var(--radius-lg)",
@@ -144,7 +143,10 @@ export function Store() {
           return (
             <div
               key={game.id}
+              role="link"
+              tabIndex={0}
               onClick={() => navigate(`/game/${game.slug}`)}
+              onKeyDown={(e) => { if (e.key === "Enter") navigate(`/game/${game.slug}`); }}
               style={{
                 backgroundColor: "var(--bg-card)",
                 borderRadius: "var(--radius-lg)",

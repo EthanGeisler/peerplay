@@ -78,8 +78,9 @@ export function Login() {
       <form onSubmit={handleSubmit}>
         {tab === "register" && (
           <div style={{ marginBottom: 16 }}>
-            <label style={labelStyle}>Display Name</label>
+            <label htmlFor="displayName" style={labelStyle}>Display Name</label>
             <input
+              id="displayName"
               type="text"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
@@ -90,8 +91,9 @@ export function Login() {
           </div>
         )}
         <div style={{ marginBottom: 16 }}>
-          <label style={labelStyle}>Email</label>
+          <label htmlFor="email" style={labelStyle}>Email</label>
           <input
+            id="email"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -101,8 +103,9 @@ export function Login() {
           />
         </div>
         <div style={{ marginBottom: 24 }}>
-          <label style={labelStyle}>Password</label>
+          <label htmlFor="password" style={labelStyle}>Password</label>
           <input
+            id="password"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}

@@ -3,19 +3,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useGameStore } from "../stores/gameStore";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useAuthStore } from "../stores/authStore";
+import { formatPrice, formatSize, PLACEHOLDER_COVER } from "../utils";
 import type { ApiTorrent } from "../types";
-
-function formatPrice(cents: number): string {
-  if (cents === 0) return "Free";
-  return `$${(cents / 100).toFixed(2)}`;
-}
-
-function formatSize(bytes: number | string): string {
-  const n = typeof bytes === "string" ? Number(bytes) : bytes;
-  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}GB`;
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(0)}MB`;
-  return `${(n / 1_000).toFixed(0)}KB`;
-}
 
 function drmDescription(tier: string): string {
   switch (tier) {
@@ -29,8 +18,6 @@ function drmDescription(tier: string): string {
       return tier;
   }
 }
-
-const PLACEHOLDER_COVER = "https://placehold.co/460x215/0d1117/58a6ff?text=No+Cover&font=raleway";
 
 export function GameDetail() {
   const { slug } = useParams<{ slug: string }>();
@@ -152,7 +139,7 @@ export function GameDetail() {
             <div style={{ display: "flex", gap: 8, marginTop: 12, overflowX: "auto" }}>
               {game.screenshots.map((ss, i) => (
                 <img
-                  key={i}
+                  key={ss}
                   src={ss}
                   alt={`Screenshot ${i + 1}`}
                   style={{
