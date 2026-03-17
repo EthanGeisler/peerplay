@@ -414,8 +414,20 @@ export async function detectExecutable(dirname: string) {
     throw new NotFoundError("Game directory");
   }
 
-  const files = await fs.readdir(dirPath);
-  const exeFiles = files.filter((f) => f.endsWith(".exe"));
+  // Recursively find all .exe files (uploads may nest files in subdirectories)
+  const exeFiles: string[] = [];
+  async function walk(dir: string, prefix: string) {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        await walk(path.join(dir, entry.name), rel);
+      } else if (entry.name.endsWith(".exe")) {
+        exeFiles.push(rel);
+      }
+    }
+  }
+  await walk(dirPath, "");
 
   // Prefer non-console executables
   const mainExe = exeFiles.find((f) => !f.includes(".console.")) ?? exeFiles[0] ?? null;
@@ -587,24 +599,23 @@ async function addToTransmission(torrentBuffer: Buffer): Promise<void> {
     },
   });
 
-  let sessionId = "";
+  console.log(`[transmission] Adding torrent to ${rpcUrl}, download-dir: ${gamesDir}`);
 
   // First attempt — will get 409 with session ID
   const first = await fetch(rpcUrl, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(sessionId ? { "X-Transmission-Session-Id": sessionId } : {}),
-    },
+    headers: { "Content-Type": "application/json" },
     body,
   });
 
+  let response: Response;
+
   if (first.status === 409) {
-    sessionId = first.headers.get("X-Transmission-Session-Id") ?? "";
+    const sessionId = first.headers.get("X-Transmission-Session-Id") ?? "";
     if (!sessionId) throw new Error("Transmission returned 409 but no session ID");
 
     // Retry with session ID
-    const second = await fetch(rpcUrl, {
+    response = await fetch(rpcUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -612,13 +623,19 @@ async function addToTransmission(torrentBuffer: Buffer): Promise<void> {
       },
       body,
     });
-
-    if (!second.ok) {
-      const text = await second.text();
-      throw new Error(`Transmission RPC error ${second.status}: ${text}`);
-    }
-  } else if (!first.ok) {
-    const text = await first.text();
-    throw new Error(`Transmission RPC error ${first.status}: ${text}`);
+  } else {
+    response = first;
   }
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Transmission RPC HTTP ${response.status}: ${text}`);
+  }
+
+  const result = await response.json() as { result: string; arguments?: Record<string, unknown> };
+  if (result.result !== "success") {
+    throw new Error(`Transmission RPC failed: ${result.result}`);
+  }
+
+  console.log("[transmission] Torrent added successfully:", JSON.stringify(result.arguments));
 }

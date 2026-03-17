@@ -10,7 +10,21 @@ export function getAccessToken() {
   return accessToken;
 }
 
+// Serialize concurrent refresh calls — only one in-flight at a time
+let refreshPromise: Promise<string | null> | null = null;
+
 export async function refreshAccessToken(): Promise<string | null> {
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = doRefresh();
+  try {
+    return await refreshPromise;
+  } finally {
+    refreshPromise = null;
+  }
+}
+
+async function doRefresh(): Promise<string | null> {
   const refreshToken = localStorage.getItem("pp_refresh_token");
   if (!refreshToken) return null;
 

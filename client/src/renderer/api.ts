@@ -10,7 +10,22 @@ export function getAccessToken() {
   return accessToken;
 }
 
+// Serialize concurrent refresh calls — only one in-flight at a time
+let refreshPromise: Promise<string | null> | null = null;
+
 export async function refreshAccessToken(): Promise<string | null> {
+  // If a refresh is already in progress, wait for it instead of firing another
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = doRefresh();
+  try {
+    return await refreshPromise;
+  } finally {
+    refreshPromise = null;
+  }
+}
+
+async function doRefresh(): Promise<string | null> {
   const refreshToken = (await window.boilerdeck.store.get("refreshToken")) as
     | string
     | null;
