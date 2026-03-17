@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGameStore } from "../stores/gameStore";
-import { formatPrice, PLACEHOLDER_COVER } from "../utils";
+import { formatPrice, PLACEHOLDER_COVER, resolveCoverUrl } from "../utils";
 
 const DRM_COLORS: Record<string, string> = {
   NONE: "#4ade80",
@@ -121,7 +121,7 @@ export function Store() {
             >
               <img
                 style={styles.cardImg}
-                src={game.coverImageUrl || PLACEHOLDER_COVER}
+                src={resolveCoverUrl(game.coverImageUrl)}
                 alt={game.title}
                 onError={(e) => {
                   (e.target as HTMLImageElement).src = PLACEHOLDER_COVER;

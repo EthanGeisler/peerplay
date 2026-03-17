@@ -208,6 +208,21 @@ export function SetupDeveloper() {
             Create Developer Profile
           </button>
         </form>
+
+        <div style={{ textAlign: "center", marginTop: 16 }}>
+          <a
+            href="/"
+            style={{
+              fontSize: 13,
+              color: "var(--text-muted)",
+              textDecoration: "none",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-secondary)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; }}
+          >
+            Not a developer? Return to Store
+          </a>
+        </div>
       </div>
     </div>
   );

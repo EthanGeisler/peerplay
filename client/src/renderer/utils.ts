@@ -12,3 +12,14 @@ export function formatSize(bytes: number | string): string {
 
 export const PLACEHOLDER_COVER =
   "https://placehold.co/460x215/0d1117/58a6ff?text=No+Cover&font=raleway";
+
+const ORIGIN = import.meta.env.VITE_API_BASE_URL
+  ? new URL(import.meta.env.VITE_API_BASE_URL).origin
+  : "https://boilerdeck.com";
+
+/** Resolve a server-relative image URL (e.g. /api/covers/...) to a full URL */
+export function resolveCoverUrl(url: string | null): string {
+  if (!url) return PLACEHOLDER_COVER;
+  if (url.startsWith("http")) return url;
+  return `${ORIGIN}${url}`;
+}

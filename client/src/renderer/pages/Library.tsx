@@ -6,7 +6,7 @@ import { useInstalledStore } from "../stores/installedStore";
 import { useDownloadStore } from "../stores/downloadStore";
 import { useGameStore } from "../stores/gameStore";
 import { fetchTorrentFileBase64 } from "../api";
-import { PLACEHOLDER_COVER } from "../utils";
+import { PLACEHOLDER_COVER, resolveCoverUrl } from "../utils";
 import type { ApiLicense } from "../types";
 
 const styles = {
@@ -163,7 +163,7 @@ function LibraryCard({ license }: { license: ApiLicense }) {
     <div style={styles.card}>
       <img
         style={styles.cardImg}
-        src={game.coverImageUrl || PLACEHOLDER_COVER}
+        src={resolveCoverUrl(game.coverImageUrl)}
         alt={game.title}
         onError={(e) => {
           (e.target as HTMLImageElement).src = PLACEHOLDER_COVER;

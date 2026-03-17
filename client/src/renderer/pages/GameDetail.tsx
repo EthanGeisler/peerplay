@@ -5,7 +5,7 @@ import { useLibraryStore } from "../stores/libraryStore";
 import { useDownloadStore } from "../stores/downloadStore";
 import { useAuthStore } from "../stores/authStore";
 import { fetchTorrentFileBase64 } from "../api";
-import { formatPrice, formatSize, PLACEHOLDER_COVER } from "../utils";
+import { formatPrice, formatSize, PLACEHOLDER_COVER, resolveCoverUrl } from "../utils";
 
 const DRM_LABELS: Record<string, string> = {
   NONE: "DRM-Free",
@@ -223,7 +223,7 @@ export function GameDetail() {
 
       <img
         style={styles.cover}
-        src={game.coverImageUrl || PLACEHOLDER_COVER}
+        src={resolveCoverUrl(game.coverImageUrl)}
         alt={game.title}
         onError={(e) => {
           (e.target as HTMLImageElement).src = PLACEHOLDER_COVER;
