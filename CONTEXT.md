@@ -530,6 +530,64 @@ ssh root@204.168.133.38 "cd /opt/boilerdeck && git pull origin main && npx vite 
 
 ---
 
+## Decentralization Initiative — Current Status
+
+> **Master plan:** `DECENTRALIZATION_PLAN.md` (8 phases, full sub-task breakdown)
+> **Verification:** `VERIFICATION_CHECKS.md` (pass/fail checks per sub-task, gate checks between phases)
+> **Verify agent:** `.claude/agents/verify.md` — run `@verify <sub-task-id>` to check implementation
+
+### Progress
+
+| Sub-task | Description | Status | Commit |
+|----------|-------------|--------|--------|
+| 1.1 | Add crypto dependencies | DONE | `cc37ab3` |
+| 1.2 | Crypto utility module | **NEXT** | — |
+| 1.3–1.12 | Remaining Phase 1 | Not started | — |
+
+### Implementation Workflow
+
+For each sub-task, follow this exact sequence:
+
+```
+1. Implement the sub-task
+2. @verify <sub-task-id>     ← runs checks from VERIFICATION_CHECKS.md
+3. Fix any failures, re-verify
+4. /commit-push-pr           ← commit and push
+5. @deploy                   ← deploy to VPS
+```
+
+### Workflow Gotchas (learned from 1.1)
+
+- **Verification checks can be stale.** `@noble/hashes` v2 renamed `sha512` to `sha2.js` — the check was written for v1. When a check fails, determine whether the *code* or the *check* is wrong. Fix whichever is incorrect.
+- **Cross-phase invariants that need a running server are skipped** when no DB is available. These become critical starting at sub-task 1.3 (database migration).
+- **The verify agent is read-only.** It reports failures but does not fix them. Control returns to the implementing agent/conversation.
+- **Deploy is optional for non-runtime changes** (e.g., 1.1 only added deps). But running it validates the pipeline.
+
+### Key Libraries Installed (Phase 1.1)
+
+These are in `server/packages/auth/package.json`:
+- `@noble/ed25519` ^3.0.1 — Ed25519 keypair generation and signing (pure JS, ESM)
+- `@noble/hashes` ^2.0.1 — SHA-256/SHA-512 (import from `@noble/hashes/sha2.js`, NOT `sha512`)
+- `@scure/bip39` ^2.0.1 — BIP39 mnemonic generation (12-word recovery phrases)
+- `@scure/base` ^2.0.0 — Hex/base encoding utilities
+
+### What 1.2 Needs to Do
+
+Create `server/packages/auth/src/crypto.ts` with these functions:
+- `generateMnemonic()` → 12-word BIP39 mnemonic
+- `mnemonicToKeypair(mnemonic)` → `{ publicKey, privateKey }` (Uint8Array)
+- `generateKeypair()` → calls both above, returns mnemonic + keypair
+- `encryptPrivateKey(privateKey, password)` → hex string (AES-256-GCM via Node crypto.scryptSync)
+- `decryptPrivateKey(encrypted, password)` → Uint8Array
+- `signMessage(privateKey, message)` → Uint8Array (Ed25519 signature)
+- `verifySignature(publicKey, message, signature)` → boolean
+- `pubkeyHex(publicKey)` → 64-char lowercase hex string
+
+Encryption format: `salt(32B) || nonce(12B) || tag(16B) || ciphertext` as single hex string.
+Use `@noble/ed25519` with `@noble/hashes/sha2.js` for SHA-512 context.
+
+---
+
 ## What's Next (Not Yet Built)
 
 Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full roadmap. Key next steps:

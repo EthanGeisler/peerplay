@@ -2,6 +2,7 @@
 
 > **Status:** Planning complete, Phase 1 implementation not yet started (as of 2026-03-17)
 > **Guiding principle:** Centralized UX, decentralized plumbing. The gateway is a convenience layer, not a chokepoint.
+> **Reviewed by:** Grok (2026-03-17) — critical curve fix (secp256k1), identity immutability, password change flow, self-custody registration path applied.
 
 ## Quick Start for New Sessions
 
@@ -18,6 +19,7 @@
 - Power users can opt into full sovereignty (self-custody keys, direct relay access, Tor)
 - If the gateway goes down, the network survives on relays + BitTorrent swarms
 - **Payments:** Stripe stays as default. Crypto/Lightning added as a future phase (after Phase 8)
+- **Cryptographic identity:** secp256k1 keypairs (Nostr-compatible, NIP-01/NIP-06), Schnorr signatures
 
 ---
 
@@ -113,80 +115,133 @@ Client also has: InstalledGame, DownloadProgress, Dev* types
 
 ## Phase 1: Keypair Identity System
 
-**Goal:** Replace email/password as the *underlying* identity while keeping it as the UX surface. Every account gets backed by an Ed25519 keypair. Users don't notice unless they want to.
+**Goal:** Replace email/password as the *underlying* identity while keeping it as the UX surface. Every account gets backed by a **secp256k1 keypair** (Nostr-compatible). Users don't notice unless they want to.
+
+**Crypto stack:** `@noble/curves` (secp256k1 + Schnorr), `@noble/hashes` (SHA-256), `@scure/bip39` (mnemonics), `@scure/bip32` (NIP-06 key derivation), `@scure/base` (hex/bech32 encoding)
 
 ### 1.1 — Add crypto dependencies
 - **File:** `server/packages/auth/package.json`
-- Add to dependencies: `@noble/ed25519`, `@noble/hashes`, `@scure/bip39`, `@scure/base`
+- Add to dependencies:
+  - `@noble/curves` ^2.0.0 (secp256k1 + Schnorr signatures)
+  - `@noble/hashes` ^2.0.0 (SHA-256 for event hashing)
+  - `@scure/bip39` ^2.0.0 (BIP39 mnemonic generation)
+  - `@scure/bip32` ^2.0.1 (BIP32 HD key derivation for NIP-06)
+  - `@scure/base` ^1.2.0 (hex, bech32 encoding for npub/nsec)
 - Run `npm install` from repo root
 - **Test:** `npm install` succeeds, no version conflicts
+- **Note:** Do NOT use `@noble/ed25519` — Nostr requires secp256k1, not Ed25519
 
 ### 1.2 — Crypto utility module
 - **File:** `server/packages/auth/src/crypto.ts` (NEW)
 - Functions needed:
-  - `generateMnemonic()` → 12-word BIP39 mnemonic
+  - `generateMnemonic()` → 12-word BIP39 mnemonic (english wordlist)
   - `mnemonicToKeypair(mnemonic: string)` → `{ publicKey: Uint8Array, privateKey: Uint8Array }`
-  - `generateKeypair()` → calls generateMnemonic + mnemonicToKeypair, returns both
+    - Derivation path: `m/44'/1237'/0'/0/0` (NIP-06 standard for Nostr)
+    - privateKey = 32-byte secp256k1 scalar
+    - publicKey = 32-byte x-only pubkey (Schnorr format, NOT compressed 33-byte)
+  - `generateKeypair()` → calls generateMnemonic + mnemonicToKeypair, returns `{ mnemonic, publicKey, privateKey }`
   - `encryptPrivateKey(privateKey: Uint8Array, password: string)` → hex string (AES-256-GCM via Node `crypto.scryptSync`)
   - `decryptPrivateKey(encrypted: string, password: string)` → Uint8Array
-  - `signMessage(privateKey: Uint8Array, message: Uint8Array)` → Uint8Array (Ed25519 signature)
-  - `verifySignature(publicKey: Uint8Array, message: Uint8Array, signature: Uint8Array)` → boolean
-  - `pubkeyHex(publicKey: Uint8Array)` → lowercase hex string (32 bytes = 64 hex chars)
-- Encryption format: `salt(32B) || nonce(12B) || tag(16B) || ciphertext` all as single hex string
-- Use `@noble/ed25519` with `@noble/hashes/sha512` for the SHA-512 context (noble/ed25519 needs it)
-- **Test:** Round-trip: generate → encrypt → decrypt → sign → verify
+  - `encryptMnemonic(mnemonic: string, password: string)` → hex string (same AES-256-GCM scheme)
+  - `decryptMnemonic(encrypted: string, password: string)` → string
+  - `schnorrSign(privateKey: Uint8Array, messageHash: Uint8Array)` → Uint8Array (64-byte Schnorr signature)
+  - `schnorrVerify(publicKey: Uint8Array, messageHash: Uint8Array, signature: Uint8Array)` → boolean
+  - `pubkeyHex(publicKey: Uint8Array)` → lowercase hex string (32 bytes = 64 hex chars, x-only)
+  - `pubkeyToNpub(publicKey: Uint8Array)` → bech32 `npub1...` string
+  - `privkeyToNsec(privateKey: Uint8Array)` → bech32 `nsec1...` string
+- Encryption format: `v1:salt(32B):nonce(12B):tag(16B):ciphertext` as colon-separated hex segments
+  - Version prefix `v1:` allows future format upgrades without breaking existing data
+- Use `@noble/curves/secp256k1.js` for `schnorr` property (sign/verify) — note the `.js` extension (ESM exports)
+- Use `@noble/hashes/sha2.js` for `sha256` — NOT `@noble/hashes/sha256` (doesn't exist)
+- Use `@scure/bip32` HDKey for NIP-06 derivation path
+- **Test:** Round-trip: generate → encrypt → decrypt → sign → verify. Also: verify npub/nsec bech32 encoding matches known test vectors from NIP-06/NIP-19
 
 ### 1.3 — Database migration: add keypair columns to User
 - **File:** `server/prisma/schema.prisma`
+- Add Prisma enum:
+  ```prisma
+  enum CustodyMode {
+    CUSTODIAL
+    SELF_CUSTODY
+    @@map("custody_mode")
+  }
+  ```
 - Add to User model:
   ```prisma
-  pubkey            String?   @unique
-  encryptedPrivateKey String? @map("encrypted_private_key")
-  custodyMode       String    @default("CUSTODIAL") @map("custody_mode")
+  nostrPubkey           String?      @unique @map("nostr_pubkey")
+  encryptedNsec         String?      @map("encrypted_nsec")
+  encryptedMnemonic     String?      @map("encrypted_mnemonic")
+  custodyMode           CustodyMode  @default(CUSTODIAL) @map("custody_mode")
   ```
-- All nullable for backwards compat with existing users
+- `nostrPubkey`: 64-char hex (x-only secp256k1 pubkey). Nullable for backwards compat.
+- `encryptedNsec`: private key encrypted with user's password. Nullable (null = self-custody or pre-migration).
+- `encryptedMnemonic`: 12-word mnemonic encrypted with user's password. Stored so user can re-display recovery phrase. Nullable (null = self-custody or pre-migration).
+- `custodyMode`: Prisma enum, not String. CUSTODIAL = server holds encrypted key. SELF_CUSTODY = user holds key, server only has pubkey.
 - Run: `npx prisma migrate dev --name add_keypair_identity`
 - **Test:** Migration applies, existing data untouched
 
-### 1.4 — Generate keypair on registration
+### 1.4 — Generate keypair on registration (custodial path)
 - **File:** `server/packages/auth/src/service.ts`
 - In `register()`, after `db.user.create()`:
   1. `generateKeypair()` → get mnemonic + keypair
-  2. `encryptPrivateKey(privateKey, input.password)` → encrypted hex
-  3. `db.user.update()` with `pubkey` (hex) and `encryptedPrivateKey`
-  4. Add `mnemonic` to return value (one-time display, never stored)
-- Return shape changes: `{ user: { ...existing, pubkey }, accessToken, refreshToken, mnemonic }`
-- **Test:** Register user, verify pubkey set, mnemonic is 12 words
+  2. `encryptPrivateKey(privateKey, input.password)` → encrypted nsec hex
+  3. `encryptMnemonic(mnemonic, input.password)` → encrypted mnemonic hex
+  4. `db.user.update()` with `nostrPubkey` (hex), `encryptedNsec`, `encryptedMnemonic`
+  5. Add `mnemonic` to return value (one-time display, never stored in plaintext)
+- **File:** `server/packages/auth/src/schemas.ts`
+- Update `registerSchema` to accept optional `pubkey` field:
+  ```ts
+  registerSchema = z.object({
+    email: z.string().email(),
+    password: z.string().min(8),
+    displayName: z.string().min(2).max(50),
+    pubkey: z.string().length(64).regex(/^[0-9a-f]+$/).optional(),
+  })
+  ```
+- In `register()`, if `input.pubkey` is provided (self-custody path):
+  - Skip server-side keygen entirely
+  - Store `nostrPubkey = input.pubkey`, `encryptedNsec = null`, `encryptedMnemonic = null`
+  - Set `custodyMode = SELF_CUSTODY`
+  - No mnemonic in response (client generated it)
+- Return shape: `{ user: { ...existing, nostrPubkey }, accessToken, refreshToken, mnemonic? }`
+- **Test:** Register custodial user → pubkey set, mnemonic is 12 words. Register self-custody user with pubkey → no mnemonic, custody mode correct.
 
 ### 1.5 — Cache signing key on login
 - **File:** `server/packages/auth/src/service.ts`
 - In `login()`, after password verification:
-  1. If user has `encryptedPrivateKey`, decrypt it with `input.password`
-  2. Store in Redis: `signing_key:{userId}` → hex of private key, TTL = refresh token expiry
+  1. If user has `encryptedNsec` (custodial), decrypt it with `input.password`
+  2. Store in Redis: `signing_key:{userId}` → AES-256-GCM encrypted with `SIGNING_CACHE_KEY` env var, TTL = refresh token expiry
+  3. **Security note:** Redis value is encrypted at rest with a server runtime key (`SIGNING_CACHE_KEY`), not stored as raw hex. If Redis is compromised, attacker still needs the server's memory/env to decrypt.
+- **File:** `server/packages/shared/src/config.ts`
+- Add `SIGNING_CACHE_KEY` to config (required, 32-byte hex, generated on first deploy)
 - **File:** `server/packages/shared/src/middleware.ts`
 - Add `pubkey` to JwtPayload interface
-- In `generateAccessToken()`, add `pubkey: user.pubkey` to JWT payload
-- **Test:** Login, verify Redis key exists, JWT contains pubkey
+- In `generateAccessToken()`, add `pubkey: user.nostrPubkey` to JWT payload
+- **Test:** Login, verify Redis key exists (encrypted), JWT contains pubkey
 
 ### 1.6 — Lazy keypair migration for existing users
 - **File:** `server/packages/auth/src/service.ts`
-- In `login()`, if user has no `pubkey`:
-  1. Generate keypair, encrypt with password, store in DB
-  2. Add `mnemonic` to login response (one-time)
+- In `login()`, if user has no `nostrPubkey`:
+  1. Generate keypair + mnemonic
+  2. Encrypt privkey and mnemonic with password, store in DB
+  3. Add `mnemonic` to login response (one-time)
 - **File:** `server/packages/auth/src/routes.ts`
-- New route: `POST /api/auth/migrate-keys` (authenticated, requires password in body)
-  - For users who dismissed the mnemonic prompt and need it again
-  - Re-generates keypair or re-derives mnemonic? No — mnemonic can't be re-derived from encrypted key
-  - This route generates a NEW keypair, replaces old, returns new mnemonic
-- **Test:** Login with pre-migration user, keypair generated, mnemonic returned
+- New route: `POST /api/auth/recover-mnemonic` (authenticated, requires password in body)
+  - For users who dismissed the mnemonic modal and need to see it again
+  - Decrypts `encryptedMnemonic` with provided password, returns the original 12 words
+  - Does NOT generate a new keypair — the pubkey is immutable
+  - If `encryptedMnemonic` is null (self-custody user), return 400 with message explaining self-custody users manage their own keys
+- **Important:** There is no "regenerate keys" flow. Nostr identities are immutable. Once a pubkey is assigned, it cannot be changed. All signed events are tied to that pubkey forever.
+- **Test:** Login with pre-migration user → keypair generated, mnemonic returned. Call recover-mnemonic → same 12 words returned.
 
 ### 1.7 — Challenge-based login (sovereign mode)
 - **File:** `server/packages/auth/src/routes.ts`
 - `GET /api/auth/challenge` → random 32-byte hex, stored in Redis `challenge:{hex}` with 5min TTL
+  - **Rate limit:** 10 requests per IP per minute (use express-rate-limit middleware on this route)
 - `POST /api/auth/login/pubkey` → body: `{ pubkey, challenge, signature }`
   - Verify challenge exists in Redis and hasn't expired
-  - Verify signature over challenge bytes using pubkey
-  - Look up user by pubkey
+  - Verify Schnorr signature over SHA-256(challenge bytes) using pubkey
+  - Look up user by `nostrPubkey`
   - Issue JWT + refresh token (same as normal login, no password needed)
   - Delete challenge from Redis
 - **Test:** Generate keypair locally, request challenge, sign it, get tokens back
@@ -195,21 +250,25 @@ Client also has: InstalledGame, DownloadProgress, Dev* types
 - **File:** `server/packages/auth/src/routes.ts`
 - `POST /api/auth/export-keys` (authenticated)
   - Body: `{ password }` — re-auth
-  - Decrypt privkey, return `{ privateKey: hex, pubkey: hex }`
+  - Decrypt privkey, return `{ privateKey: hex, nsec: bech32, pubkey: hex, npub: bech32 }`
+  - Only works for custodial users (self-custody users already have their keys)
 - `POST /api/auth/switch-custody` (authenticated)
   - Body: `{ mode: "SELF_CUSTODY", password }` — re-auth
-  - Update `custodyMode` to "SELF_CUSTODY"
-  - Delete `encryptedPrivateKey` from DB
+  - Update `custodyMode` to `SELF_CUSTODY`
+  - Delete `encryptedNsec` and `encryptedMnemonic` from DB (set to null)
   - Delete `signing_key:{userId}` from Redis
-- **Test:** Export keys, switch custody, verify privkey deleted from DB
+  - **Warning:** This is a one-way operation. User must have exported their keys first. Confirm via response that keys are gone.
+- **Test:** Export keys, switch custody, verify privkey and mnemonic deleted from DB
 
 ### 1.9 — Frontend: mnemonic display on registration (web)
 - **Files:** `web/src/stores/authStore.ts`, `web/src/types.ts`, registration page
 - Update `ApiAuthResponse` to include optional `mnemonic?: string`
+- Update `ApiUser` to include optional `nostrPubkey?: string`
 - On register success, if `mnemonic` present, show modal:
   - "Save your recovery phrase" with 12 words in a grid
   - Copy button, confirmation checkbox "I have saved my recovery phrase"
   - Cannot dismiss without checking the box
+  - Escape hatch: "I'll do this later" button that warns "You can recover your phrase from Settings, but if you forget your password, your decentralized identity will be lost"
 - Mnemonic never persisted to localStorage
 
 ### 1.10 — Frontend: mnemonic display on first login migration (web)
@@ -219,13 +278,46 @@ Client also has: InstalledGame, DownloadProgress, Dev* types
 - **Files:** `client/src/renderer/stores/authStore.ts`, `client/src/renderer/types.ts`
 - Mirror web changes
 
-### 1.12 — Electron client: client-side keypair generation
+### 1.12 — Electron client: client-side keypair generation (self-custody registration)
 - **Files:** `client/src/main/index.ts` (IPC handlers), `client/src/main/preload.ts`
-- IPC: `crypto:generate-keypair` → uses same noble/ed25519 in main process
-- IPC: `crypto:sign-message` → signs with locally stored private key
+- Add `@noble/curves`, `@scure/bip39`, `@scure/bip32`, `@scure/base` to client dependencies
+- IPC: `crypto:generate-keypair` → uses `@noble/curves/secp256k1` + NIP-06 derivation in main process, returns `{ mnemonic, pubkeyHex }`
+- IPC: `crypto:sign-challenge` → signs challenge with locally stored private key (Schnorr)
 - Registration toggle: "Generate keys on this device (advanced)"
-- Private key stored in Electron store (encrypted at rest)
-- Server only receives pubkey, no encrypted privkey
+  - When enabled: client generates keypair locally, shows mnemonic, stores encrypted privkey in Electron store
+  - Sends `{ email, password, displayName, pubkey: pubkeyHex }` to server (server stores pubkey only, no encrypted key)
+- Private key stored in Electron store (encrypted at rest via safeStorage)
+- Login flow for self-custody Electron users: use challenge-based login (1.7) instead of password
+
+### 1.13 — Password change flow
+- **File:** `server/packages/auth/src/routes.ts`
+- `POST /api/auth/change-password` (authenticated)
+  - Body: `{ currentPassword, newPassword }`
+  - Verify `currentPassword` against stored bcrypt hash
+  - If user has `encryptedNsec`:
+    1. Decrypt privkey with `currentPassword`
+    2. Re-encrypt privkey with `newPassword`
+    3. Update `encryptedNsec` in DB
+  - If user has `encryptedMnemonic`:
+    1. Decrypt mnemonic with `currentPassword`
+    2. Re-encrypt mnemonic with `newPassword`
+    3. Update `encryptedMnemonic` in DB
+  - Hash `newPassword` with bcrypt, update password in DB
+  - Invalidate all existing refresh tokens (force re-login on all devices)
+  - Delete `signing_key:{userId}` from Redis (will be re-cached on next login)
+- **File:** `server/packages/auth/src/schemas.ts`
+- Add `changePasswordSchema`:
+  ```ts
+  changePasswordSchema = z.object({
+    currentPassword: z.string().min(1),
+    newPassword: z.string().min(8),
+  })
+  ```
+- **Note:** Password reset (forgot password via email) is intentionally NOT supported for custodial users with encrypted keys. If a user forgets their password:
+  - They can recover using their mnemonic phrase (import keys into a new account or self-custody client)
+  - This is the trade-off of cryptographic identity — the platform cannot reset keys it doesn't hold in plaintext
+  - Add a "Forgot password?" link that explains this and offers the mnemonic recovery path
+- **Test:** Change password, verify re-encrypted keys still decrypt correctly. Login with new password works. Old refresh tokens invalidated.
 
 ---
 
@@ -236,6 +328,7 @@ Client also has: InstalledGame, DownloadProgress, Dev* types
 ### Key Design Decisions
 - Event ID = SHA-256 hash of canonical JSON (NIP-01 style)
 - Canonical JSON: `[0, pubkey, created_at, kind, tags, content]`
+- Signatures: Schnorr over secp256k1 (same as Nostr NIP-01)
 - Kind ranges: 0-9999 regular, 10000-19999 replaceable, 30000-39999 parameterized replaceable (by `d` tag)
 - Custom kinds: 30001 (listing), 30002 (version), 31337 (review), 31338 (attestation)
 
@@ -243,9 +336,11 @@ Client also has: InstalledGame, DownloadProgress, Dev* types
 See full plan in transcript. Key new files:
 - `server/packages/shared/src/events.ts` — serializeEvent, hashEvent, createEvent, verifyEvent
 - `server/packages/shared/src/eventStore.ts` — storeEvent, getEvent, queryEvents
-- `server/packages/auth/src/signing.ts` — signEventForUser (loads key from Redis)
+- `server/packages/auth/src/signing.ts` — signEventForUser (loads encrypted key from Redis, decrypts with SIGNING_CACHE_KEY, signs)
 - `server/packages/shared/src/eventRoutes.ts` — POST/GET /api/events
 - `server/packages/shared/src/eventMaterializer.ts` — routes events to DB upserts by kind
+
+**Phase 2 note:** When a sovereign client posts an event directly to a relay (bypassing the gateway), the materializer must handle conflicts with existing DB state. Use `created_at` as tiebreaker — latest event wins. Add a reconciliation script for manual conflict resolution.
 
 ---
 
@@ -254,6 +349,8 @@ See full plan in transcript. Key new files:
 **Goal:** Gateway becomes a Nostr-compatible relay with WebSocket endpoint.
 
 Key new package: `server/packages/relay/` with ws (WebSocket), NIP-01 protocol, federation.
+
+Because we use secp256k1 + Schnorr + NIP-01 canonical JSON, our relay will be fully interoperable with existing Nostr clients (Amethyst, Damus, etc.) for our custom event kinds. Standard Nostr clients can subscribe to and verify our events.
 
 ---
 
@@ -264,7 +361,7 @@ Key new package: `server/packages/relay/` with ws (WebSocket), NIP-01 protocol, 
 | 4: Social Features | Reviews, comments, follows, profiles — all as signed events | 3 |
 | 5: Seeding Reputation | Peer attestation events for BitTorrent seeding | 3 |
 | 6: Privacy Layer | Tor/SOCKS5 in Electron client (no server changes) | Independent |
-| 7: Content Generalization | Game → Listing, support video/software/audio | Independent |
+| 7: Content Generalization | Game → Listing, support video/software/audio. `@@map("games")` keeps DB table — must update every Prisma query and TypeScript type | Independent |
 | 8: Progressive Decentralization | Open relay protocol, federation, sovereign mode | 3, 7 |
 
 ---
@@ -284,10 +381,37 @@ Phase 8 (Decentralization) depends on 3+7
 
 | Risk | Mitigation |
 |------|-----------|
-| Password change breaks encrypted privkey | Re-encrypt privkey during password change flow |
+| Password change breaks encrypted privkey | 1.13 re-encrypts privkey + mnemonic with new password during change flow |
+| Password reset (forgot password) | Not supported for custodial users — mnemonic is the recovery path. Documented in UX. |
+| Redis signing key compromised | Encrypted at rest with SIGNING_CACHE_KEY (runtime env var), not raw hex |
 | Redis signing key expires mid-session | Refresh TTL on every token refresh; clear error prompting re-login |
 | Event table / legacy table drift | DB transactions; reconciliation script |
-| Prisma rename (Game → Listing) in Phase 7 | Dedicated sub-task, find/replace only, `@@map("games")` keeps DB table |
+| Sovereign client event conflicts | Materializer uses `created_at` tiebreaker; reconciliation script for manual cases |
+| Prisma rename (Game → Listing) in Phase 7 | Dedicated sub-task, update all queries + types, `@@map("games")` keeps DB table |
+| Encryption format changes | Version prefix `v1:` in encryption format allows migration to new schemes |
+
+---
+
+## Grok Review Decisions (2026-03-17)
+
+Items from Grok's review and how they were resolved:
+
+| Issue | Resolution |
+|-------|-----------|
+| **CRITICAL: Wrong curve (Ed25519)** | Fixed → secp256k1 + Schnorr via `@noble/curves`. NIP-06 derivation path. Full Nostr compatibility. |
+| **CRITICAL: Pubkey replacement destroys identity** | Fixed → pubkey is immutable. `recover-mnemonic` route decrypts stored mnemonic. No key regeneration. |
+| **CRITICAL: Password change flow missing** | Fixed → added 1.13 with re-encryption of privkey + mnemonic. Password reset intentionally unsupported (mnemonic is recovery). |
+| **CRITICAL: Self-custody registration undefined** | Fixed → `registerSchema` accepts optional `pubkey`. Server skips keygen, stores pubkey only. Electron 1.12 updated. |
+| **MAJOR: Redis plaintext privkeys** | Fixed → encrypted at rest with `SIGNING_CACHE_KEY` env var. Not raw hex. |
+| **MAJOR: Web frontend crypto missing** | Deferred to Phase 8 — web sovereign mode is future. Noble libs work in browser with zero changes when needed. |
+| **MAJOR: Lazy migration two identity classes** | No change needed — new users get keys at registration (1.4), existing users at first login (1.6). Temporary migration period, not a permanent split. |
+| **MEDIUM: Encryption format version byte** | Fixed → format is `v1:salt:nonce:tag:ciphertext` with version prefix. |
+| **MEDIUM: No rate limit on /auth/challenge** | Fixed → 10 req/IP/min via express-rate-limit. |
+| **MEDIUM: custodyMode as String** | Fixed → Prisma enum `CustodyMode`. |
+| **MEDIUM: Phase 2 sovereign event conflicts** | Added note to Phase 2 about materializer conflict resolution. |
+| **MEDIUM: Phase 7 rename scope** | Added note to Phase 7 about updating all queries + types. |
+| **MEDIUM: Shared exports for crypto types** | Will be handled in each sub-task as types are created. |
+| **MEDIUM: Mnemonic modal escape hatch** | Fixed → "I'll do this later" button with warning added to 1.9. |
 
 ---
 

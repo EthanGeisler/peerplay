@@ -10,91 +10,112 @@
 
 ### 1.1 — Add crypto dependencies
 
-- [ ] `[AUTO]` `cd server/packages/auth && node -e "require('@noble/ed25519')"` exits 0
+- [ ] `[AUTO]` `cd server/packages/auth && node -e "import('@noble/curves/secp256k1.js').then(() => process.exit(0))"` exits 0
 - [ ] `[AUTO]` `cd server/packages/auth && node -e "import('@noble/hashes/sha2.js').then(() => process.exit(0))"` exits 0
-- [ ] `[AUTO]` `cd server/packages/auth && node -e "require('@scure/bip39')"` exits 0
-- [ ] `[AUTO]` `cd server/packages/auth && node -e "require('@scure/base')"` exits 0
+- [ ] `[AUTO]` `cd server/packages/auth && node -e "import('@scure/bip39').then(() => process.exit(0))"` exits 0
+- [ ] `[AUTO]` `cd server/packages/auth && node -e "import('@scure/bip32').then(() => process.exit(0))"` exits 0
+- [ ] `[AUTO]` `cd server/packages/auth && node -e "import('@scure/base').then(() => process.exit(0))"` exits 0
 - [ ] `[AUTO]` `npm install` from repo root exits 0 with no version conflicts
-- [ ] `[CODE]` `server/packages/auth/package.json` lists all four packages in `dependencies` (not devDependencies)
+- [ ] `[CODE]` `server/packages/auth/package.json` lists all five packages in `dependencies`: `@noble/curves`, `@noble/hashes`, `@scure/bip39`, `@scure/bip32`, `@scure/base` (not devDependencies)
+- [ ] `[CODE]` `@noble/ed25519` is NOT in dependencies (wrong curve — Nostr uses secp256k1)
 - [ ] `[AUTO]` No other `package.json` files were modified (deps added only to auth package)
 
 ### 1.2 — Crypto utility module
 
-- [ ] `[CODE]` `server/packages/auth/src/crypto.ts` exists and exports: `generateMnemonic`, `mnemonicToKeypair`, `generateKeypair`, `encryptPrivateKey`, `decryptPrivateKey`, `signMessage`, `verifySignature`, `pubkeyHex`
+- [ ] `[CODE]` `server/packages/auth/src/crypto.ts` exists and exports: `generateMnemonic`, `mnemonicToKeypair`, `generateKeypair`, `encryptPrivateKey`, `decryptPrivateKey`, `encryptMnemonic`, `decryptMnemonic`, `schnorrSign`, `schnorrVerify`, `pubkeyHex`, `pubkeyToNpub`, `privkeyToNsec`
 - [ ] `[AUTO]` **Round-trip test:** Generate keypair → encrypt private key with password "test123" → decrypt with same password → recovered key matches original
-- [ ] `[AUTO]` **Sign/verify test:** Generate keypair → sign message "hello" → verify succeeds → tamper with message → verify fails
+- [ ] `[AUTO]` **Schnorr sign/verify test:** Generate keypair → schnorrSign(SHA-256 hash of "hello") → schnorrVerify succeeds → tamper with hash → verify fails
 - [ ] `[AUTO]` **Mnemonic test:** `generateMnemonic()` returns exactly 12 words, all words are valid BIP39 English wordlist entries
 - [ ] `[AUTO]` **Mnemonic determinism test:** `mnemonicToKeypair(mnemonic)` called twice with same mnemonic produces identical keypair
-- [ ] `[AUTO]` **Pubkey format:** `pubkeyHex(publicKey)` returns a 64-character lowercase hex string
+- [ ] `[AUTO]` **NIP-06 derivation:** `mnemonicToKeypair` uses BIP32 derivation path `m/44'/1237'/0'/0/0` (verify by checking against known NIP-06 test vectors)
+- [ ] `[AUTO]` **Pubkey format:** `pubkeyHex(publicKey)` returns a 64-character lowercase hex string (32-byte x-only pubkey)
+- [ ] `[AUTO]` **Bech32 encoding:** `pubkeyToNpub` returns string starting with `npub1`, `privkeyToNsec` returns string starting with `nsec1`
+- [ ] `[AUTO]` **Mnemonic encryption:** `encryptMnemonic("word1 word2 ...", "pass")` → `decryptMnemonic(encrypted, "pass")` → recovers original mnemonic
 - [ ] `[CODE]` Encryption uses AES-256-GCM with `crypto.scryptSync` for key derivation (not a custom KDF)
-- [ ] `[CODE]` Encryption output format is `salt(32B) || nonce(12B) || tag(16B) || ciphertext` as hex string
+- [ ] `[CODE]` Encryption output format is `v1:salt(32B):nonce(12B):tag(16B):ciphertext` as colon-separated hex with version prefix
 - [ ] `[AUTO]` **Wrong password test:** Encrypt with "password1", decrypt with "password2" → throws error (does not return garbage)
+- [ ] `[CODE]` Uses `@noble/curves/secp256k1` schnorr property (NOT Ed25519)
 - [ ] `[AUTO]` TypeScript compiles: `npx tsc --noEmit` from auth package exits 0
 
 ### 1.3 — Database migration: add keypair columns to User
 
 - [ ] `[AUTO]` Migration file exists at `server/prisma/migrations/*_add_keypair_identity/migration.sql`
 - [ ] `[AUTO]` `npx prisma migrate dev` applies without errors
-- [ ] `[CODE]` `schema.prisma` User model has: `pubkey String? @unique`, `encryptedPrivateKey String?`, `custodyMode String @default("CUSTODIAL")`
-- [ ] `[AUTO]` Existing users are not affected: query `SELECT count(*) FROM users WHERE pubkey IS NULL` returns count of all pre-existing users
+- [ ] `[CODE]` `schema.prisma` has `CustodyMode` enum with `CUSTODIAL` and `SELF_CUSTODY` values
+- [ ] `[CODE]` `schema.prisma` User model has: `nostrPubkey String? @unique`, `encryptedNsec String?`, `encryptedMnemonic String?`, `custodyMode CustodyMode @default(CUSTODIAL)`
+- [ ] `[AUTO]` Existing users are not affected: query `SELECT count(*) FROM users WHERE nostr_pubkey IS NULL` returns count of all pre-existing users
 - [ ] `[AUTO]` `npx prisma generate` exits 0 (Prisma client regenerates successfully)
-- [ ] `[CODE]` Column mappings use snake_case: `@map("encrypted_private_key")`, `@map("custody_mode")`
+- [ ] `[CODE]` Column mappings use snake_case: `@map("nostr_pubkey")`, `@map("encrypted_nsec")`, `@map("encrypted_mnemonic")`, `@map("custody_mode")`
 
 ### 1.4 — Generate keypair on registration
 
-- [ ] `[AUTO]` **API test:** `POST /api/auth/register` with valid input returns 201 with body containing `mnemonic` (string, 12 words) and `user.pubkey` (64-char hex)
-- [ ] `[AUTO]` **DB verification:** After registration, `SELECT pubkey, encrypted_private_key, custody_mode FROM users WHERE id = '<new_user_id>'` → pubkey is non-null, encrypted_private_key is non-null, custody_mode = 'CUSTODIAL'
-- [ ] `[AUTO]` **Mnemonic derivation:** The returned mnemonic derives to the same pubkey stored in DB (call `mnemonicToKeypair(mnemonic)` and compare)
-- [ ] `[CODE]` Mnemonic is NOT stored in the database (verify no DB write of mnemonic)
+- [ ] `[AUTO]` **Custodial registration:** `POST /api/auth/register` with `{ email, password, displayName }` returns 201 with `mnemonic` (12 words) and `user.nostrPubkey` (64-char hex)
+- [ ] `[AUTO]` **DB verification (custodial):** After registration, `SELECT nostr_pubkey, encrypted_nsec, encrypted_mnemonic, custody_mode FROM users WHERE id = '<new_user_id>'` → all non-null, custody_mode = 'CUSTODIAL'
+- [ ] `[AUTO]` **Self-custody registration:** `POST /api/auth/register` with `{ email, password, displayName, pubkey: "<64-char hex>" }` returns 201 with NO `mnemonic` and `user.nostrPubkey` matching provided pubkey
+- [ ] `[AUTO]` **DB verification (self-custody):** After self-custody registration, `encrypted_nsec IS NULL`, `encrypted_mnemonic IS NULL`, `custody_mode = 'SELF_CUSTODY'`
+- [ ] `[AUTO]` **Mnemonic derivation:** The returned mnemonic (custodial path) derives to the same pubkey stored in DB via NIP-06 derivation
+- [ ] `[CODE]` Mnemonic is stored encrypted (encryptedMnemonic column), NOT in plaintext
 - [ ] `[AUTO]` **Existing registration fields preserved:** Response still contains `user.id`, `user.email`, `user.displayName`, `user.role`, `accessToken`, `refreshToken`
 - [ ] `[AUTO]` **Idempotent pubkey:** Two different registrations produce different pubkeys
+- [ ] `[CODE]` `registerSchema` accepts optional `pubkey` field (64-char lowercase hex)
 
 ### 1.5 — Cache signing key on login
 
 - [ ] `[AUTO]` **Redis test:** After `POST /api/auth/login`, Redis key `signing_key:<userId>` exists
 - [ ] `[AUTO]` **Redis TTL:** The Redis key has a TTL > 0 (not persistent) and roughly matches refresh token expiry
-- [ ] `[AUTO]` **JWT payload:** Decode the returned `accessToken` JWT — payload contains `pubkey` field matching user's stored pubkey
+- [ ] `[AUTO]` **Redis value encrypted:** The Redis value is NOT raw hex — it's encrypted with `SIGNING_CACHE_KEY` env var
+- [ ] `[AUTO]` **JWT payload:** Decode the returned `accessToken` JWT — payload contains `pubkey` field matching user's stored nostrPubkey
 - [ ] `[CODE]` `JwtPayload` interface in `shared/src/middleware.ts` includes `pubkey?: string`
-- [ ] `[AUTO]` **Redis value usable:** The value stored in Redis can successfully decrypt the user's `encryptedPrivateKey` (sign a test message and verify)
+- [ ] `[CODE]` `SIGNING_CACHE_KEY` added to config in `shared/src/config.ts`
+- [ ] `[AUTO]` **Signing works:** Decrypt Redis value with SIGNING_CACHE_KEY → use it to Schnorr-sign a test message → verify against user's pubkey → passes
 - [ ] `[AUTO]` **No pubkey = no Redis key:** Login with a user who has no pubkey yet → `signing_key:<userId>` does NOT exist in Redis
+- [ ] `[AUTO]` **Self-custody = no Redis key:** Login with self-custody user → `signing_key:<userId>` does NOT exist in Redis
 
 ### 1.6 — Lazy keypair migration for existing users
 
-- [ ] `[AUTO]` **Migration on login:** Create a user without keypair (directly in DB). Login → response includes `mnemonic` (12 words) and `user.pubkey`
-- [ ] `[AUTO]` **DB updated:** After login, user now has `pubkey` and `encrypted_private_key` set
+- [ ] `[AUTO]` **Migration on login:** Create a user without keypair (directly in DB). Login → response includes `mnemonic` (12 words) and `user.nostrPubkey`
+- [ ] `[AUTO]` **DB updated:** After login, user now has `nostr_pubkey`, `encrypted_nsec`, and `encrypted_mnemonic` set
 - [ ] `[AUTO]` **One-time mnemonic:** Login again with same user → response does NOT include `mnemonic`
-- [ ] `[AUTO]` **Migrate-keys endpoint:** `POST /api/auth/migrate-keys` with `{ password }` for a user without pubkey → returns `{ pubkey, mnemonic }`
-- [ ] `[AUTO]` **Migrate-keys guard:** `POST /api/auth/migrate-keys` for a user who already has a pubkey → returns 409 Conflict
-- [ ] `[AUTO]` **Migrate-keys auth:** `POST /api/auth/migrate-keys` without auth token → returns 401
+- [ ] `[AUTO]` **Recover-mnemonic endpoint:** `POST /api/auth/recover-mnemonic` with `{ password }` for a custodial user → returns `{ mnemonic }` (original 12 words)
+- [ ] `[AUTO]` **Recover-mnemonic determinism:** Returned mnemonic derives to the same pubkey as stored in DB
+- [ ] `[AUTO]` **Recover-mnemonic wrong password:** Submit wrong password → returns 401
+- [ ] `[AUTO]` **Recover-mnemonic self-custody:** Call for self-custody user → returns 400 (self-custody users manage their own keys)
+- [ ] `[AUTO]` **Recover-mnemonic auth:** `POST /api/auth/recover-mnemonic` without auth token → returns 401
+- [ ] `[CODE]` **No key regeneration:** There is NO route or logic that generates a new keypair for a user who already has one. Pubkeys are immutable.
 
 ### 1.7 — Challenge-based login (sovereign mode)
 
 - [ ] `[AUTO]` **Challenge endpoint:** `GET /api/auth/challenge` returns `{ challenge, expiresAt }` where challenge is 64-char hex
 - [ ] `[AUTO]` **Challenge stored:** After requesting, Redis key `challenge:<challengeHex>` exists with TTL <= 300s
-- [ ] `[AUTO]` **Pubkey login success:** Sign the challenge bytes with a known keypair → `POST /api/auth/login/pubkey` with `{ pubkey, challenge, signature }` → returns 200 with `accessToken` and `refreshToken`
+- [ ] `[AUTO]` **Rate limiting:** More than 10 requests to `/api/auth/challenge` from same IP within 1 minute → returns 429
+- [ ] `[AUTO]` **Pubkey login success:** Schnorr-sign SHA-256(challenge bytes) with a known keypair → `POST /api/auth/login/pubkey` with `{ pubkey, challenge, signature }` → returns 200 with `accessToken` and `refreshToken`
 - [ ] `[AUTO]` **Challenge consumed:** Same challenge cannot be used twice → second attempt returns 401
 - [ ] `[AUTO]` **Expired challenge:** Wait for challenge to expire (or manually delete from Redis) → returns 401
-- [ ] `[AUTO]` **Invalid signature:** Submit wrong signature → returns 401
+- [ ] `[AUTO]` **Invalid signature:** Submit wrong Schnorr signature → returns 401
 - [ ] `[AUTO]` **Unknown pubkey:** Submit valid signature for a pubkey not in the DB → returns 404
-- [ ] `[CODE]` `pubkeyLoginSchema` exists in `schemas.ts` and validates `pubkey` (hex), `challenge` (hex), `signature` (hex)
+- [ ] `[CODE]` `pubkeyLoginSchema` exists in `schemas.ts` and validates `pubkey` (64-char hex), `challenge` (64-char hex), `signature` (128-char hex, Schnorr)
 
 ### 1.8 — Key export and custody switch
 
-- [ ] `[AUTO]` **Export keys:** `POST /api/auth/export-keys` with correct `{ password }` → returns `{ privateKey, pubkey }` both as hex strings
-- [ ] `[AUTO]` **Export verifiable:** The returned privateKey can sign a message that verifies against the returned pubkey
+- [ ] `[AUTO]` **Export keys:** `POST /api/auth/export-keys` with correct `{ password }` → returns `{ privateKey, nsec, pubkey, npub }` (hex and bech32 formats)
+- [ ] `[AUTO]` **Export verifiable:** The returned privateKey can Schnorr-sign a message that verifies against the returned pubkey
+- [ ] `[AUTO]` **Export bech32:** `nsec` starts with `nsec1`, `npub` starts with `npub1`
 - [ ] `[AUTO]` **Export wrong password:** Submit wrong password → returns 401
+- [ ] `[AUTO]` **Export self-custody:** Call for self-custody user → returns error (no key to export)
 - [ ] `[AUTO]` **Switch custody:** `POST /api/auth/switch-custody` with `{ mode: "SELF_CUSTODY", password }` → returns 200
-- [ ] `[AUTO]` **DB after switch:** User's `encrypted_private_key` is NULL and `custody_mode` is 'SELF_CUSTODY'
+- [ ] `[AUTO]` **DB after switch:** User's `encrypted_nsec` is NULL, `encrypted_mnemonic` is NULL, `custody_mode` is 'SELF_CUSTODY'
 - [ ] `[AUTO]` **Redis after switch:** `signing_key:<userId>` no longer exists in Redis
-- [ ] `[AUTO]` **Export after switch:** `POST /api/auth/export-keys` after switching to self-custody → returns error (no key to export)
+- [ ] `[CODE]` **One-way warning:** Response or documentation notes that switching to self-custody is irreversible
 
 ### 1.9 — Frontend: mnemonic display on registration (web)
 
 - [ ] `[CODE]` `ApiAuthResponse` type in `web/src/types.ts` includes `mnemonic?: string`
+- [ ] `[CODE]` `ApiUser` type in `web/src/types.ts` includes `nostrPubkey?: string`
 - [ ] `[CODE]` Registration flow shows a modal/dialog when `mnemonic` is present in response
 - [ ] `[CODE]` Modal displays exactly 12 words in a readable grid/list layout
 - [ ] `[CODE]` Modal has a "Copy" button for the mnemonic
 - [ ] `[CODE]` Modal has a confirmation checkbox — cannot dismiss without checking it
+- [ ] `[CODE]` Modal has an "I'll do this later" escape hatch with a warning about identity loss
 - [ ] `[CODE]` Mnemonic is NOT written to `localStorage` or any persistent browser storage
 - [ ] `[AUTO]` `npx tsc --noEmit` from `web/` exits 0
 - [ ] `[MANUAL]` Visual: register a new account in browser, mnemonic modal appears and looks correct
@@ -114,23 +135,42 @@
 
 ### 1.12 — Electron client: client-side keypair generation
 
-- [ ] `[CODE]` IPC handler `crypto:generate-keypair` exists in `client/src/main/index.ts`
-- [ ] `[CODE]` IPC handler `crypto:sign-message` exists in `client/src/main/index.ts`
+- [ ] `[CODE]` IPC handler `crypto:generate-keypair` exists in `client/src/main/index.ts` — uses `@noble/curves/secp256k1` + NIP-06 derivation
+- [ ] `[CODE]` IPC handler `crypto:sign-challenge` exists in `client/src/main/index.ts` — Schnorr signs SHA-256(challenge)
 - [ ] `[CODE]` Both channels exposed in `preload.ts` under `window.boilerdeck.crypto`
 - [ ] `[CODE]` Type declarations in `env.d.ts` match preload bridge
+- [ ] `[CODE]` `@noble/curves`, `@scure/bip39`, `@scure/bip32`, `@scure/base` in client dependencies
 - [ ] `[CODE]` Registration page has a toggle "Generate keys on this device (advanced)"
-- [ ] `[AUTO]` **Client-side registration:** Register with client-side key gen → server DB has `pubkey` set but `encrypted_private_key` is NULL and `custody_mode` is 'SELF_CUSTODY'
-- [ ] `[CODE]` Private key stored in Electron store (encrypted at rest)
+- [ ] `[AUTO]` **Client-side registration:** Register with client-side key gen → server DB has `nostr_pubkey` set but `encrypted_nsec` is NULL, `encrypted_mnemonic` is NULL, `custody_mode` is 'SELF_CUSTODY'
+- [ ] `[CODE]` Private key stored in Electron store (encrypted at rest via safeStorage)
+- [ ] `[CODE]` Self-custody Electron login uses challenge-based auth (1.7), not password
 - [ ] `[AUTO]` `npx tsc --noEmit` from `client/` exits 0
+
+### 1.13 — Password change flow
+
+- [ ] `[AUTO]` **Change password:** `POST /api/auth/change-password` with `{ currentPassword, newPassword }` → returns 200
+- [ ] `[AUTO]` **Wrong current password:** Submit wrong `currentPassword` → returns 401
+- [ ] `[AUTO]` **Re-encrypted keys:** After password change, `decryptPrivateKey(user.encryptedNsec, newPassword)` succeeds and produces same key
+- [ ] `[AUTO]` **Re-encrypted mnemonic:** After password change, `decryptMnemonic(user.encryptedMnemonic, newPassword)` succeeds and produces original mnemonic
+- [ ] `[AUTO]` **Old password fails:** After change, `decryptPrivateKey(user.encryptedNsec, oldPassword)` throws error
+- [ ] `[AUTO]` **Refresh tokens invalidated:** All existing refresh tokens for user are deleted after password change
+- [ ] `[AUTO]` **Redis cache cleared:** `signing_key:<userId>` no longer exists after password change
+- [ ] `[AUTO]` **Login with new password:** `POST /api/auth/login` with new password succeeds and re-populates Redis
+- [ ] `[AUTO]` **Self-custody user:** Change password for self-custody user → succeeds (only bcrypt hash changes, no keys to re-encrypt)
+- [ ] `[CODE]` `changePasswordSchema` in `schemas.ts` validates `currentPassword` (min 1) and `newPassword` (min 8)
+- [ ] `[AUTO]` `npx tsc --noEmit` from auth package exits 0
 
 ---
 
 ## Phase 1 — Gate Check (must pass before starting Phase 2)
 
 - [ ] `[AUTO]` All existing auth endpoints still work (register, login, refresh, logout, getMe)
-- [ ] `[AUTO]` Every newly registered user has a pubkey in the DB
-- [ ] `[AUTO]` Login with any user populates `signing_key:<userId>` in Redis
+- [ ] `[AUTO]` Every newly registered user has a `nostr_pubkey` in the DB
+- [ ] `[AUTO]` Login with custodial user populates `signing_key:<userId>` in Redis (encrypted)
+- [ ] `[AUTO]` Login with self-custody user does NOT populate `signing_key:<userId>`
 - [ ] `[AUTO]` JWT tokens contain `pubkey` claim
+- [ ] `[AUTO]` Password change re-encrypts keys and invalidates sessions
+- [ ] `[AUTO]` Recover-mnemonic returns original 12 words for custodial users
 - [ ] `[AUTO]` Full server test suite passes (if one exists) — `npm test` exits 0
 - [ ] `[AUTO]` `npx tsc --noEmit` exits 0 for: server packages, web, client
 
@@ -151,7 +191,7 @@
 
 - [ ] `[CODE]` `server/packages/shared/src/events.ts` exists and exports: `serializeEvent`, `hashEvent`, `createEvent`, `verifyEvent`, and kind constants (`EVENT_KIND_GAME_LISTING`, etc.)
 - [ ] `[CODE]` `serializeEvent` produces NIP-01 canonical JSON: `[0, pubkey, created_at, kind, tags, content]`
-- [ ] `[AUTO]` **Create + verify test:** `createEvent(params)` returns event with valid `id` (SHA-256 of serialized) and valid `sig` (Ed25519)
+- [ ] `[AUTO]` **Create + verify test:** `createEvent(params)` returns event with valid `id` (SHA-256 of serialized) and valid `sig` (Schnorr/secp256k1)
 - [ ] `[AUTO]` **Tamper detection test:** Modify `content` after creation → `verifyEvent()` returns false
 - [ ] `[AUTO]` **Tamper ID test:** Modify `id` after creation → `verifyEvent()` returns false
 - [ ] `[AUTO]` **Tamper sig test:** Modify `sig` after creation → `verifyEvent()` returns false
@@ -252,7 +292,7 @@
 
 ### 3.1 — Event Schema and Crypto Utilities (relay package)
 
-- [ ] `[CODE]` `server/packages/relay/src/crypto.ts` exists with Ed25519 sign/verify functions
+- [ ] `[CODE]` `server/packages/relay/src/crypto.ts` exists with secp256k1 Schnorr sign/verify functions (reuses auth/crypto.ts or shared)
 - [ ] `[CODE]` `server/packages/relay/src/types.ts` defines `RelayEvent`, `EventFilter`, `Subscription` interfaces
 - [ ] `[AUTO]` **Sign + verify round-trip:** Generate keypair → sign event → verify → passes
 - [ ] `[AUTO]` **Tamper detection:** Modify signed event content → verify → fails
@@ -262,7 +302,7 @@
 
 - [ ] `[AUTO]` Migration applies cleanly
 - [ ] `[CODE]` `Event` model has indexes on `kind`, `pubkey`, `createdAt`, `[kind, createdAt]`
-- [ ] `[CODE]` `User` model has `pubkey String? @unique` and `privkey String?` fields
+- [ ] `[CODE]` `User` model has `nostrPubkey String? @unique`, `encryptedNsec String?`, `encryptedMnemonic String?`, `custodyMode CustodyMode` fields
 - [ ] `[AUTO]` Insert a test event via Prisma, query it back — round-trip succeeds
 
 ### 3.3 — Relay Package Skeleton
