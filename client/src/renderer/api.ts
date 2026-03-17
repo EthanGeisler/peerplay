@@ -63,7 +63,9 @@ export async function apiFetch<T = unknown>(
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ message: res.statusText }));
-    throw new ApiError(res.status, body.message || res.statusText, body.code);
+    const message = body.error?.message || body.message || res.statusText;
+    const code = body.error?.code || body.code;
+    throw new ApiError(res.status, message, code);
   }
 
   if (res.status === 204) return undefined as T;
@@ -94,7 +96,9 @@ export async function fetchTorrentFileBase64(gameId: string): Promise<string> {
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ message: res.statusText }));
-    throw new ApiError(res.status, body.message || res.statusText, body.code);
+    const message = body.error?.message || body.message || res.statusText;
+    const code = body.error?.code || body.code;
+    throw new ApiError(res.status, message, code);
   }
 
   const arrayBuffer = await res.arrayBuffer();
