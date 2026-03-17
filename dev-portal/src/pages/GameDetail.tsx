@@ -97,7 +97,7 @@ export function GameDetail() {
       setCoverPercent(0);
       setCoverError(null);
       const fd = new FormData();
-      fd.append("coverImage", file);
+      fd.append("cover", file);
       try {
         await apiUpload(
           `/developer/games/${id}/cover`,
