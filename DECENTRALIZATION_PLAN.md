@@ -6,9 +6,56 @@
 
 ## Quick Start for New Sessions
 
-**Read order:** `CLAUDE.md` → `CONTEXT.md` → this file → then start implementing from Phase 1.1
+**Read order:** `CLAUDE.md` → `CONTEXT.md` → this file → then check `docs/handoff/` for completed sub-task handoffs → start implementing the next sub-task.
 
 **No code has been written for this plan yet.** The existing codebase is a fully functional centralized game distribution platform. This plan transforms it into a hybrid centralized/decentralized media marketplace.
+
+---
+
+## Handoff Documents (Required)
+
+Every sub-task implementation MUST produce a handoff document at `docs/handoff/<sub-task-id>.md` (e.g., `docs/handoff/1.2.md`). This file is the primary way future sessions learn what was built and how to build on top of it.
+
+**Template:**
+
+```markdown
+# Sub-task <id> — <title>
+
+## What was built
+- Bullet list of files created/modified and what each does
+
+## Key decisions made during implementation
+- Why you chose approach X over Y
+- Any deviations from the plan and why
+
+## How it works
+- Brief explanation of the implementation (enough for someone with zero context to understand)
+- Important function signatures, data flows, or architectural patterns introduced
+
+## Gotchas and surprises
+- Anything that didn't work as expected
+- Version quirks, import path issues, API differences from docs
+- Edge cases discovered
+
+## How to use / test
+- How to call the new functions or hit the new endpoints
+- Example inputs/outputs
+- Commands to run verification checks
+
+## What the next sub-task needs to know
+- What this sub-task exposes that downstream tasks depend on
+- Any unresolved TODOs or known limitations
+- Assumptions the next implementer should validate
+```
+
+**Rules:**
+- Write the handoff BEFORE committing — it's part of the deliverable, not an afterthought
+- Be specific: include actual function signatures, actual file paths, actual import statements
+- Include code snippets for anything non-obvious
+- If you hit a gotcha, explain it thoroughly — the next session will hit the same thing
+- Keep it concise but complete — aim for 1-2 pages, not a novel
+
+**Reading handoffs:** Before starting any sub-task, read ALL existing handoff docs in `docs/handoff/` to understand the current state. They accumulate — by sub-task 1.6 you should be reading 1.1 through 1.5's handoffs.
 
 ---
 

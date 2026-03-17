@@ -542,18 +542,20 @@ ssh root@204.168.133.38 "cd /opt/boilerdeck && git pull origin main && npx vite 
 |----------|-------------|--------|--------|
 | 1.1 | Add crypto dependencies | DONE | `cc37ab3` |
 | 1.2 | Crypto utility module | **NEXT** | — |
-| 1.3–1.12 | Remaining Phase 1 | Not started | — |
+| 1.3–1.13 | Remaining Phase 1 | Not started | — |
 
 ### Implementation Workflow
 
 For each sub-task, follow this exact sequence:
 
 ```
-1. Implement the sub-task
-2. @verify <sub-task-id>     ← runs checks from VERIFICATION_CHECKS.md
-3. Fix any failures, re-verify
-4. /commit-push-pr           ← commit and push
-5. @deploy                   ← deploy to VPS
+1. Read ALL existing handoff docs in docs/handoff/
+2. Implement the sub-task
+3. Write handoff doc at docs/handoff/<sub-task-id>.md (see template in DECENTRALIZATION_PLAN.md)
+4. @verify <sub-task-id>     ← runs checks from VERIFICATION_CHECKS.md
+5. Fix any failures, re-verify
+6. /commit-push-pr           ← commit and push (handoff doc included in commit)
+7. @deploy                   ← deploy to VPS
 ```
 
 ### Workflow Gotchas (learned from 1.1)
@@ -565,26 +567,21 @@ For each sub-task, follow this exact sequence:
 
 ### Key Libraries Installed (Phase 1.1)
 
-These are in `server/packages/auth/package.json`:
-- `@noble/ed25519` ^3.0.1 — Ed25519 keypair generation and signing (pure JS, ESM)
-- `@noble/hashes` ^2.0.1 — SHA-256/SHA-512 (import from `@noble/hashes/sha2.js`, NOT `sha512`)
+These are in `server/packages/auth/package.json`. See `docs/handoff/1.1.md` for full details including import path gotchas.
+- `@noble/curves` ^2.0.0 — secp256k1 + Schnorr signatures (import from `@noble/curves/secp256k1.js`)
+- `@noble/hashes` ^2.0.1 — SHA-256 (import from `@noble/hashes/sha2.js`, NOT `sha256`)
+- `@scure/bip32` ^2.0.1 — BIP32 HD key derivation for NIP-06 (`m/44'/1237'/0'/0/0`)
 - `@scure/bip39` ^2.0.1 — BIP39 mnemonic generation (12-word recovery phrases)
-- `@scure/base` ^2.0.0 — Hex/base encoding utilities
+- `@scure/base` ^2.0.0 — Hex/bech32 encoding (npub/nsec)
 
 ### What 1.2 Needs to Do
 
-Create `server/packages/auth/src/crypto.ts` with these functions:
-- `generateMnemonic()` → 12-word BIP39 mnemonic
-- `mnemonicToKeypair(mnemonic)` → `{ publicKey, privateKey }` (Uint8Array)
-- `generateKeypair()` → calls both above, returns mnemonic + keypair
-- `encryptPrivateKey(privateKey, password)` → hex string (AES-256-GCM via Node crypto.scryptSync)
-- `decryptPrivateKey(encrypted, password)` → Uint8Array
-- `signMessage(privateKey, message)` → Uint8Array (Ed25519 signature)
-- `verifySignature(publicKey, message, signature)` → boolean
-- `pubkeyHex(publicKey)` → 64-char lowercase hex string
-
-Encryption format: `salt(32B) || nonce(12B) || tag(16B) || ciphertext` as single hex string.
-Use `@noble/ed25519` with `@noble/hashes/sha2.js` for SHA-512 context.
+See `DECENTRALIZATION_PLAN.md` sub-task 1.2 for full spec. Key points:
+- Create `server/packages/auth/src/crypto.ts` with secp256k1/Schnorr functions
+- Use NIP-06 derivation path, x-only pubkeys (32 bytes), Schnorr signatures
+- Encryption format: `v1:salt:nonce:tag:ciphertext` (versioned, colon-separated hex)
+- Include `encryptMnemonic`/`decryptMnemonic` (mnemonic stored encrypted in DB)
+- Include `pubkeyToNpub`/`privkeyToNsec` (bech32 encoding for Nostr)
 
 ---
 
