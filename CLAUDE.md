@@ -85,6 +85,7 @@ ssh root@204.168.133.38 "systemctl restart boilerdeck"
 | `deploy` | `@deploy` | Handles full deploy to VPS — pre-flight checks, pull, build, restart, health verification |
 | `server-reviewer` | `@server-reviewer` | Reviews recent server code changes for convention compliance, security, and BoilerDeck-specific gotchas |
 | `frontend-reviewer` | `@frontend-reviewer` | Reviews recent frontend changes across web, dev-portal, and client for correctness and patterns |
+| `verify` | `@verify <sub-task-id>` | Runs verification checks from `VERIFICATION_CHECKS.md` for a specific sub-task. Reports pass/fail for each check. Read-only — does not modify code. |
 
 ### Recommended Workflow
 
