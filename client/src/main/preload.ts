@@ -62,17 +62,6 @@ contextBridge.exposeInMainWorld("boilerdeck", {
       ipcRenderer.invoke("games:uninstall", installPath),
   },
 
-  drm: {
-    getFingerprint: (): Promise<string> =>
-      ipcRenderer.invoke("drm:get-fingerprint"),
-    decryptGame: (opts: {
-      installPath: string;
-      key: string;
-      algorithm: string;
-    }): Promise<{ success: boolean; error?: string }> =>
-      ipcRenderer.invoke("drm:decrypt-game", opts),
-  },
-
   downloads: {
     startDownload: (opts: {
       magnetUri: string;
@@ -146,14 +135,6 @@ declare global {
           exePath: string;
         }) => Promise<{ success: boolean; error?: string }>;
         uninstall: (installPath: string) => Promise<{ success: boolean; error?: string }>;
-      };
-      drm: {
-        getFingerprint: () => Promise<string>;
-        decryptGame: (opts: {
-          installPath: string;
-          key: string;
-          algorithm: string;
-        }) => Promise<{ success: boolean; error?: string }>;
       };
       downloads: {
         startDownload: (opts: {

@@ -15,7 +15,6 @@ interface StoreData {
     downloadSpeedLimit?: number;
     uploadSpeedLimit?: number;
   };
-  deviceFingerprint?: string;
 }
 
 interface InstalledGameEntry {
@@ -24,7 +23,6 @@ interface InstalledGameEntry {
   slug: string;
   installPath: string;
   exePath: string | null;
-  drmTier: "NONE" | "LIGHT" | "ENCRYPTED";
   version: string;
   coverImageUrl: string | null;
   installedAt: string;
@@ -38,7 +36,6 @@ export const STORE_KEY_WHITELIST = new Set([
   "installDir",
   "installedGames",
   "settings",
-  "deviceFingerprint",
 ]);
 
 export function isAllowedStoreKey(key: string): boolean {

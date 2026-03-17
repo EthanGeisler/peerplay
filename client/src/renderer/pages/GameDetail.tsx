@@ -7,12 +7,6 @@ import { useAuthStore } from "../stores/authStore";
 import { fetchTorrentFileBase64 } from "../api";
 import { formatPrice, formatSize, PLACEHOLDER_COVER, resolveCoverUrl } from "../utils";
 
-const DRM_LABELS: Record<string, string> = {
-  NONE: "DRM-Free",
-  LIGHT: "Light DRM",
-  ENCRYPTED: "Encrypted DRM",
-};
-
 const styles = {
   back: {
     background: "none",
@@ -203,7 +197,6 @@ export function GameDetail() {
           title: game.title,
           slug: game.slug,
           exePath: game.exePath,
-          drmTier: game.drmTier,
           version: game.latestVersion?.version ?? "unknown",
           coverImageUrl: game.coverImageUrl,
           downloadPath: installPath,
@@ -235,7 +228,6 @@ export function GameDetail() {
       <div style={styles.description}>{game.description}</div>
 
       <div style={styles.infoRow}>
-        <span style={styles.infoBadge}>{DRM_LABELS[game.drmTier] ?? game.drmTier}</span>
         {game.latestVersion && (
           <>
             <span style={styles.infoBadge}>v{game.latestVersion.version}</span>

@@ -35,9 +35,10 @@
 - **Refresh calls must be serialized:** All API clients use a `refreshPromise` lock in `api.ts` so only one `refreshAccessToken()` runs at a time. Concurrent callers await the same promise. Without this, concurrent 401s cause a race that invalidates the session.
 - **Role changes require token refresh:** Any endpoint that upgrades a user's role must be followed by `refreshAccessToken()` on the client. The existing JWT carries the old role claim until refreshed.
 - **`GET /api/licenses` returns `{ licenses: [...] }`** — not a bare array. Always unwrap `data.licenses` and add `Array.isArray()` guard before calling array methods.
+- **No DRM enforcement:** BoilerDeck distributes game builds as-is. There is no DRM system — developers handle their own copy protection before uploading. The license package only tracks ownership (who bought what). See CONTEXT.md "Copy Protection Philosophy" for details.
 
 ## Electron Client Conventions
-- **IPC handlers** go in `client/src/main/index.ts` `setupIpcHandlers()` — namespaced like `store:get`, `downloads:start`, `drm:get-fingerprint`
+- **IPC handlers** go in `client/src/main/index.ts` `setupIpcHandlers()` — namespaced like `store:get`, `downloads:start`, `games:launch`
 - **Preload bridge** at `client/src/main/preload.ts` — every IPC channel must be exposed here under `window.boilerdeck`
 - **Type declarations for `window.boilerdeck`** must be kept in sync in TWO places: `preload.ts` (declare global) and `client/src/renderer/env.d.ts`
 - **Renderer stores** follow the same Zustand patterns as web storefront — select data, compute inline, no function selectors for display state
@@ -49,6 +50,7 @@
 - **Exe path is relative** to the game's torrent root directory (e.g., `PeerPlayBuild/Game.exe`). The client joins `installPath + exePath` to get the full path. Detection is recursive (walks subdirs).
 - **Native deps** (like `utp-native` for WebTorrent): must be in `asarUnpack` in electron-builder config
 - **Dev mode: kill stale Electron processes** — `taskkill //F //IM electron.exe` before relaunching. Zombie processes hold WebTorrent file locks causing EBUSY.
+- **Game launch is direct** — `installedStore.launch()` spawns the exe immediately. No license verification or DRM checks at launch time.
 
 ## Deployment to VPS
 Everything runs on a single Hetzner VPS (`boilerdeck.com` / `204.168.133.38`). HTTPS via Let's Encrypt (auto-renews). Deploy process:
@@ -105,7 +107,7 @@ ssh root@204.168.133.38 "systemctl restart boilerdeck"
 3. **Create manifest** at `game-staging/manifest.json` — array of game objects:
    ```json
    [{ "zipFile": "game.zip", "coverFile": "covers/game.jpg", "title": "Game Name",
-      "description": "...", "version": "1.0.0", "priceCents": 0, "drmTier": "NONE" }]
+      "description": "...", "version": "1.0.0", "priceCents": 0 }]
    ```
 4. **Tell the user to run** (Claude cannot run this — requires credentials):
    ```bash

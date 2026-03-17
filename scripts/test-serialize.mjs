@@ -27,7 +27,6 @@ try {
     title: game.title,
     description: game.description,
     priceCents: game.priceCents,
-    drmTier: game.drmTier,
     coverImageUrl: game.coverImageUrl,
     screenshots: game.screenshots,
     exePath: game.exePath,

@@ -131,7 +131,6 @@ function LibraryCard({ license }: { license: ApiLicense }) {
           title: game.title,
           slug: game.slug,
           exePath: detail?.exePath ?? null,
-          drmTier: game.drmTier,
           version: detail?.latestVersion?.version ?? "unknown",
           coverImageUrl: game.coverImageUrl,
           downloadPath: installPath,

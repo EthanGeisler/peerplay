@@ -42,7 +42,7 @@ You are a code review agent for the BoilerDeck frontends: `web/` (storefront), `
 - Proxy config in `vite.config.ts` routes `/api` to `localhost:3001` in dev
 
 ### Common BoilerDeck Gotchas
-- DRM tier badges use correct colors: green "DRM-Free", amber "Online Check", blue "Encrypted"
+- Games are distributed DRM-free; no DRM tier badges or selectors should exist in the UI
 - BigInt values from API may need `Number()` conversion for display
 - Magnet URIs must be URI-encoded in href attributes
 

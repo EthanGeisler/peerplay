@@ -3,7 +3,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { db, NotFoundError, ForbiddenError, ValidationError, getConfig } from "@boilerdeck/shared";
 import { createGameTorrent } from "@boilerdeck/torrent";
-import type { DrmTier } from "@prisma/client";
 import { Open as unzipOpen } from "unzipper";
 
 function slugify(title: string): string {
@@ -21,7 +20,6 @@ export interface CreateGameInput {
   title: string;
   description?: string;
   priceCents: number;
-  drmTier?: DrmTier;
   exePath?: string;
   savePaths?: string[];
 }
@@ -30,7 +28,6 @@ export interface UpdateGameInput {
   title?: string;
   description?: string;
   priceCents?: number;
-  drmTier?: DrmTier;
   exePath?: string;
   savePaths?: string[];
   coverImageUrl?: string;
@@ -56,7 +53,6 @@ export async function listPublishedGames(page: number, limit: number, search?: s
         title: true,
         description: true,
         priceCents: true,
-        drmTier: true,
         coverImageUrl: true,
         developer: {
           select: { studioName: true },
@@ -76,7 +72,6 @@ export async function listPublishedGames(page: number, limit: number, search?: s
       title: g.title,
       description: g.description,
       priceCents: g.priceCents,
-      drmTier: g.drmTier,
       coverImageUrl: g.coverImageUrl,
       studioName: g.developer.studioName,
     })),
@@ -117,7 +112,6 @@ export async function getGameBySlug(slug: string) {
     title: game.title,
     description: game.description,
     priceCents: game.priceCents,
-    drmTier: game.drmTier,
     coverImageUrl: game.coverImageUrl,
     screenshots: game.screenshots,
     exePath: game.exePath,
@@ -143,7 +137,6 @@ export async function createGame(developerId: string, input: CreateGameInput) {
       title: input.title,
       description: input.description ?? "",
       priceCents: input.priceCents,
-      drmTier: input.drmTier ?? "NONE",
       exePath: input.exePath ?? null,
       savePaths: input.savePaths ?? [],
     },
@@ -171,7 +164,6 @@ export async function updateGame(
       ...(input.title !== undefined && { title: input.title }),
       ...(input.description !== undefined && { description: input.description }),
       ...(input.priceCents !== undefined && { priceCents: input.priceCents }),
-      ...(input.drmTier !== undefined && { drmTier: input.drmTier }),
       ...(input.exePath !== undefined && { exePath: input.exePath }),
       ...(input.savePaths !== undefined && { savePaths: input.savePaths }),
       ...(input.coverImageUrl !== undefined && { coverImageUrl: input.coverImageUrl }),
@@ -249,7 +241,6 @@ export async function listDeveloperGames(developerId: string) {
     title: g.title,
     description: g.description,
     priceCents: g.priceCents,
-    drmTier: g.drmTier,
     status: g.status,
     coverImageUrl: g.coverImageUrl,
     exePath: g.exePath,
@@ -279,9 +270,6 @@ export async function getDeveloperGame(gameId: string, developerId: string) {
           },
         },
       },
-      encryptionKey: {
-        select: { id: true, algorithm: true, createdAt: true },
-      },
       _count: {
         select: { licenses: true, payments: true },
       },
@@ -301,7 +289,6 @@ export async function getDeveloperGame(gameId: string, developerId: string) {
     title: game.title,
     description: game.description,
     priceCents: game.priceCents,
-    drmTier: game.drmTier,
     status: game.status,
     coverImageUrl: game.coverImageUrl,
     screenshots: game.screenshots,
@@ -318,7 +305,6 @@ export async function getDeveloperGame(gameId: string, developerId: string) {
       createdAt: v.createdAt,
       torrent: v.torrent,
     })),
-    encryptionKey: game.encryptionKey,
     licensesCount: game._count.licenses,
     salesCount: game._count.payments,
   };

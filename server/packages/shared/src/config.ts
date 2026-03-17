@@ -22,10 +22,6 @@ const envSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   CORS_ORIGIN: z.string().default("http://localhost:5173"),
   CORS_ADDITIONAL_ORIGINS: z.string().default(""),
-  DRM_MASTER_KEK: z
-    .string()
-    .regex(/^[0-9a-fA-F]{64,}$/, "Must be at least 64 hex characters")
-    .optional(),
   GAMES_DIR: z.string().default("/opt/boilerdeck/games"),
   TRANSMISSION_RPC_URL: z.string().default("http://127.0.0.1:9091/transmission/rpc"),
 });

@@ -9,7 +9,6 @@ interface GameSummary {
   title: string;
   status: string;
   priceCents: number;
-  drmTier: string;
   coverImageUrl: string | null;
   versionsCount: number;
   licensesCount: number;
@@ -24,11 +23,6 @@ const STATUS_COLORS: Record<string, string> = {
   SUSPENDED: "var(--accent)",
 };
 
-const DRM_LABELS: Record<string, { label: string; color: string }> = {
-  NONE: { label: "DRM-Free", color: "var(--accent-green)" },
-  LIGHT: { label: "Online Check", color: "var(--accent-yellow)" },
-  ENCRYPTED: { label: "Encrypted", color: "var(--accent-blue)" },
-};
 
 export function Dashboard() {
   const navigate = useNavigate();
@@ -263,21 +257,6 @@ export function Dashboard() {
                   {game.salesCount} sale{game.salesCount !== 1 ? "s" : ""}
                 </div>
               </div>
-
-              {/* DRM badge */}
-              <span
-                style={{
-                  fontSize: 11,
-                  padding: "4px 8px",
-                  borderRadius: 4,
-                  backgroundColor: "rgba(255,255,255,0.05)",
-                  color: DRM_LABELS[game.drmTier]?.color ?? "var(--text-secondary)",
-                  fontWeight: 600,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {DRM_LABELS[game.drmTier]?.label ?? game.drmTier}
-              </span>
 
               {/* Price */}
               <span style={{ fontSize: 14, fontWeight: 600, whiteSpace: "nowrap", minWidth: 60, textAlign: "right" }}>

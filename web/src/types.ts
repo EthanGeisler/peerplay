@@ -4,7 +4,6 @@ export interface ApiGame {
   title: string;
   description: string;
   priceCents: number;
-  drmTier: "NONE" | "LIGHT" | "ENCRYPTED";
   coverImageUrl: string | null;
   studioName: string;
 }
@@ -45,7 +44,6 @@ export interface ApiLicense {
     slug: string;
     title: string;
     coverImageUrl: string | null;
-    drmTier: "NONE" | "LIGHT" | "ENCRYPTED";
     studioName: string;
   };
 }
@@ -57,8 +55,6 @@ export interface ApiTorrent {
   fileSizeBytes: string | number;
   magnetUri: string;
   infoHash: string;
-  encrypted: boolean;
-  algorithm?: string;
 }
 
 export interface ApiCheckoutResult {

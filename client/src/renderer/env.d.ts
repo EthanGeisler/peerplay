@@ -39,14 +39,6 @@ declare global {
         }) => Promise<{ success: boolean; error?: string }>;
         uninstall: (installPath: string) => Promise<{ success: boolean; error?: string }>;
       };
-      drm: {
-        getFingerprint: () => Promise<string>;
-        decryptGame: (opts: {
-          installPath: string;
-          key: string;
-          algorithm: string;
-        }) => Promise<{ success: boolean; error?: string }>;
-      };
       downloads: {
         startDownload: (opts: {
           magnetUri: string;

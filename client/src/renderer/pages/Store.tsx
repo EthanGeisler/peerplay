@@ -3,18 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { useGameStore } from "../stores/gameStore";
 import { formatPrice, PLACEHOLDER_COVER, resolveCoverUrl } from "../utils";
 
-const DRM_COLORS: Record<string, string> = {
-  NONE: "#4ade80",
-  LIGHT: "#facc15",
-  ENCRYPTED: "#58a6ff",
-};
-
-const DRM_LABELS: Record<string, string> = {
-  NONE: "DRM-Free",
-  LIGHT: "Light DRM",
-  ENCRYPTED: "Encrypted DRM",
-};
-
 const styles = {
   heading: {
     fontSize: 28,
@@ -68,15 +56,6 @@ const styles = {
     fontWeight: 700,
     color: "#e94560",
   } as React.CSSProperties,
-  drmBadge: (tier: string) =>
-    ({
-      fontSize: 11,
-      padding: "2px 8px",
-      borderRadius: 3,
-      color: "#000",
-      backgroundColor: DRM_COLORS[tier] ?? "#888",
-      fontWeight: 600,
-    }) as React.CSSProperties,
   loading: {
     color: "#888",
     fontSize: 16,
@@ -138,9 +117,6 @@ export function Store() {
                 <div style={styles.cardStudio}>{game.studioName}</div>
                 <div style={styles.cardFooter}>
                   <span style={styles.cardPrice}>{formatPrice(game.priceCents)}</span>
-                  <span style={styles.drmBadge(game.drmTier)}>
-                    {DRM_LABELS[game.drmTier] ?? game.drmTier}
-                  </span>
                 </div>
               </div>
             </div>

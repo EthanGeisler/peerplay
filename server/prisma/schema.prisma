@@ -26,12 +26,6 @@ enum VersionStatus {
   FAILED
 }
 
-enum DrmTier {
-  NONE
-  LIGHT
-  ENCRYPTED
-}
-
 enum LicenseStatus {
   ACTIVE
   REVOKED
@@ -99,7 +93,6 @@ model Game {
   title       String
   description String     @default("")
   priceCents  Int        @map("price_cents")
-  drmTier     DrmTier    @default(NONE) @map("drm_tier")
   status      GameStatus @default(DRAFT)
   exePath     String?    @map("exe_path")
   savePaths   String[]   @default([]) @map("save_paths")
@@ -113,7 +106,6 @@ model Game {
   licenses    License[]
   payments    Payment[]
   saveFiles   SaveFile[]
-  encryptionKey EncryptionKey?
 
   @@map("games")
 }
@@ -140,24 +132,11 @@ model Torrent {
   infoHash        String       @unique @map("info_hash")
   magnetUri       String       @map("magnet_uri")
   torrentFile     Bytes        @map("torrent_file")
-  encryptionKeyId String?      @map("encryption_key_id")
   createdAt       DateTime     @default(now()) @map("created_at")
 
   version         GameVersion?
 
   @@map("torrents")
-}
-
-model EncryptionKey {
-  id           String   @id @default(uuid())
-  gameId       String   @unique @map("game_id")
-  masterKeyEnc Bytes    @map("master_key_enc")
-  algorithm    String   @default("aes-256-ctr")
-  createdAt    DateTime @default(now()) @map("created_at")
-
-  game         Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
-
-  @@map("encryption_keys")
 }
 
 model License {
@@ -166,8 +145,6 @@ model License {
   gameId            String        @map("game_id")
   paymentId         String?       @unique @map("payment_id")
   status            LicenseStatus @default(ACTIVE)
-  deviceFingerprints String[]     @default([]) @map("device_fingerprints")
-  decryptionKeyEnc  Bytes?        @map("decryption_key_enc")
   createdAt         DateTime      @default(now()) @map("created_at")
   updatedAt         DateTime      @updatedAt @map("updated_at")
 

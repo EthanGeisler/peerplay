@@ -6,7 +6,6 @@ export interface ApiGame {
   title: string;
   description: string;
   priceCents: number;
-  drmTier: "NONE" | "LIGHT" | "ENCRYPTED";
   coverImageUrl: string | null;
   studioName: string;
 }
@@ -47,7 +46,6 @@ export interface ApiLicense {
     slug: string;
     title: string;
     coverImageUrl: string | null;
-    drmTier: "NONE" | "LIGHT" | "ENCRYPTED";
     studioName: string;
   };
 }
@@ -59,8 +57,6 @@ export interface ApiTorrent {
   fileSizeBytes: string | number;
   magnetUri: string;
   infoHash: string;
-  encrypted: boolean;
-  algorithm?: string;
 }
 
 export interface ApiCheckoutResult {
@@ -95,7 +91,6 @@ export interface DevGameSummary {
   title: string;
   status: string;
   priceCents: number;
-  drmTier: string;
   coverImageUrl: string | null;
   versionsCount: number;
   licensesCount: number;
@@ -124,7 +119,6 @@ export interface DevGameData {
   title: string;
   description: string;
   priceCents: number;
-  drmTier: string;
   status: string;
   coverImageUrl: string | null;
   screenshots: string[];
@@ -133,7 +127,6 @@ export interface DevGameData {
   createdAt: string;
   updatedAt: string;
   versions: DevGameVersion[];
-  encryptionKey: { id: string; algorithm: string; createdAt: string } | null;
   licensesCount: number;
   salesCount: number;
 }
@@ -142,7 +135,6 @@ export interface DevGameForm {
   title: string;
   description: string;
   priceCents: number;
-  drmTier: "NONE" | "LIGHT" | "ENCRYPTED";
   exePath: string;
   coverImageUrl: string;
 }
@@ -166,7 +158,6 @@ export interface InstalledGame {
   slug: string;
   installPath: string;
   exePath: string | null;
-  drmTier: "NONE" | "LIGHT" | "ENCRYPTED";
   version: string;
   coverImageUrl: string | null;
   installedAt: string;

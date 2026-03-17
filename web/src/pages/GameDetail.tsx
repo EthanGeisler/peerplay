@@ -6,19 +6,6 @@ import { useAuthStore } from "../stores/authStore";
 import { formatPrice, formatSize, PLACEHOLDER_COVER } from "../utils";
 import type { ApiTorrent } from "../types";
 
-function drmDescription(tier: string): string {
-  switch (tier) {
-    case "NONE":
-      return "DRM-Free \u2014 play anytime, online or offline";
-    case "LIGHT":
-      return "Online license check at launch \u2014 internet required to start, play offline after";
-    case "ENCRYPTED":
-      return "Encrypted distribution \u2014 files decrypted locally after purchase via BoilerDeck client";
-    default:
-      return tier;
-  }
-}
-
 export function GameDetail() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
@@ -82,7 +69,6 @@ export function GameDetail() {
   }
 
   const displayPrice = game.priceCents;
-  const displayDrmTier = game.drmTier;
   const devShare = displayPrice - Math.ceil(displayPrice / 100);
 
   const handlePurchase = async () => {
@@ -282,46 +268,6 @@ export function GameDetail() {
               </button>
             </div>
           )}
-
-          {/* DRM info */}
-          <div
-            style={{
-              backgroundColor: "var(--bg-tertiary)",
-              borderRadius: "var(--radius)",
-              padding: 12,
-              marginBottom: 16,
-              borderLeft: `3px solid ${
-                displayDrmTier === "NONE"
-                  ? "var(--accent-green)"
-                  : displayDrmTier === "LIGHT"
-                    ? "#d29922"
-                    : "var(--accent-blue)"
-              }`,
-            }}
-          >
-            <div
-              style={{
-                fontSize: 12,
-                fontWeight: 700,
-                marginBottom: 4,
-                color:
-                  displayDrmTier === "NONE"
-                    ? "var(--accent-green)"
-                    : displayDrmTier === "LIGHT"
-                      ? "#d29922"
-                      : "var(--accent-blue)",
-              }}
-            >
-              {displayDrmTier === "NONE"
-                ? "DRM-Free"
-                : displayDrmTier === "LIGHT"
-                  ? "Online Check"
-                  : "Encrypted"}
-            </div>
-            <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-              {drmDescription(displayDrmTier)}
-            </div>
-          </div>
 
           {/* Revenue breakdown */}
           {displayPrice > 0 && (

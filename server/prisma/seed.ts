@@ -64,7 +64,7 @@ async function main() {
       title: "Space Explorer",
       description: "A thrilling space exploration game where you navigate through uncharted galaxies.",
       priceCents: 1999,
-      drmTier: "NONE",
+
       status: "PUBLISHED",
       exePath: "SpaceExplorer.exe",
       coverImageUrl: "https://placehold.co/460x215/1a1a2e/e94560?text=Space+Explorer",
@@ -84,7 +84,7 @@ async function main() {
       title: "Dungeon Crawl",
       description: "Descend into procedurally generated dungeons. Fight monsters, find loot, survive.",
       priceCents: 999,
-      drmTier: "LIGHT",
+
       status: "PUBLISHED",
       exePath: "DungeonCrawl.exe",
       coverImageUrl: "https://placehold.co/460x215/16213e/0f3460?text=Dungeon+Crawl",
@@ -101,7 +101,7 @@ async function main() {
       title: "Pixel Racing",
       description: "Retro-style racing with modern physics. Compete in online tournaments.",
       priceCents: 0,
-      drmTier: "NONE",
+
       status: "PUBLISHED",
       exePath: "PixelRacing.exe",
       coverImageUrl: "https://placehold.co/460x215/0f3460/e94560?text=Pixel+Racing",
@@ -109,7 +109,7 @@ async function main() {
     },
   });
 
-  // Create PC01 Premium Edition (LIGHT DRM, paid)
+  // Create PC01 Premium Edition (paid)
   const game4 = await db.game.upsert({
     where: { slug: "player-character-01-premium" },
     update: {},
@@ -117,9 +117,9 @@ async function main() {
       developerId: developer.id,
       slug: "player-character-01-premium",
       title: "Player Character 01 — Premium Edition",
-      description: "The premium edition of Player Character 01 with online license verification. Same game, DRM-protected distribution for developers who want to see how LIGHT DRM works on BoilerDeck.",
+      description: "The premium edition of Player Character 01.",
       priceCents: 999,
-      drmTier: "LIGHT",
+
       status: "PUBLISHED",
       exePath: "PLAYER_CHARACTER_01PeerPlay.exe",
       coverImageUrl: "https://placehold.co/460x215/0d0d2b/58a6ff?text=PC01+Premium&font=raleway",

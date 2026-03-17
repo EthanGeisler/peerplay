@@ -4,22 +4,6 @@ import { useGameStore } from "../stores/gameStore";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useAuthStore } from "../stores/authStore";
 import { formatPrice, PLACEHOLDER_COVER } from "../utils";
-import type { ApiGame } from "../types";
-
-function getDrmBadge(tier: ApiGame["drmTier"]): {
-  label: string;
-  color: string;
-  bg: string;
-} {
-  switch (tier) {
-    case "NONE":
-      return { label: "DRM-Free", color: "#3fb950", bg: "rgba(63,185,80,0.15)" };
-    case "LIGHT":
-      return { label: "Online Check", color: "#d29922", bg: "rgba(210,153,34,0.15)" };
-    case "ENCRYPTED":
-      return { label: "Encrypted", color: "#58a6ff", bg: "rgba(88,166,255,0.15)" };
-  }
-}
 
 export function Store() {
   const navigate = useNavigate();
@@ -31,7 +15,7 @@ export function Store() {
   const user = useAuthStore((s) => s.user);
 
   const [searchQuery, setSearchQuery] = useState("");
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
     fetchGames();
@@ -229,7 +213,7 @@ export function Store() {
         <div style={{ display: "flex", gap: 12, marginBottom: 32 }}>
           <span style={tagStyle("#3fb950", "rgba(63,185,80,0.15)")}>99/1 Revenue Split</span>
           <span style={tagStyle("#58a6ff", "rgba(88,166,255,0.15)")}>BitTorrent Powered</span>
-          <span style={tagStyle("#d29922", "rgba(210,153,34,0.15)")}>Developer Choice DRM</span>
+          <span style={tagStyle("#d29922", "rgba(210,153,34,0.15)")}>DRM-Free Distribution</span>
         </div>
       )}
 
@@ -246,7 +230,6 @@ export function Store() {
       >
         {games.map((game) => {
           const owned = licenses.some((l) => l.game.id === game.id && l.status === "ACTIVE");
-          const badge = getDrmBadge(game.drmTier);
           return (
             <div
               key={game.id}
@@ -318,20 +301,6 @@ export function Store() {
                     }}
                   >
                     {formatPrice(game.priceCents)}
-                  </span>
-                </div>
-                <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
-                  <span
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 700,
-                      color: badge.color,
-                      backgroundColor: badge.bg,
-                      padding: "2px 8px",
-                      borderRadius: 4,
-                    }}
-                  >
-                    {badge.label}
                   </span>
                 </div>
               </div>

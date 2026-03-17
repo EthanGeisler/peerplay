@@ -4,8 +4,7 @@ import { autoUpdater } from "electron-updater";
 import { initStore, storeGet, storeSet, storeDelete, getDefaultInstallDir, isAllowedStoreKey } from "./store.js";
 import * as torrentManager from "./torrentManager.js";
 import * as gameLauncher from "./gameLauncher.js";
-import { getDeviceFingerprint } from "./fingerprint.js";
-import { decryptGameFiles } from "./decryptor.js";
+
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -99,15 +98,6 @@ function setupIpcHandlers(): void {
 
   ipcMain.handle("games:uninstall", async (_event, installPath: string) => {
     return gameLauncher.uninstallGame(installPath);
-  });
-
-  // --- DRM ---
-  ipcMain.handle("drm:get-fingerprint", () => {
-    return getDeviceFingerprint();
-  });
-
-  ipcMain.handle("drm:decrypt-game", async (_event, opts: { installPath: string; key: string; algorithm: string }) => {
-    return decryptGameFiles(opts);
   });
 
   // --- Downloads (WebTorrent in main process) ---

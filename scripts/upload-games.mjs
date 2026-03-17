@@ -16,8 +16,7 @@
  *     "title": "OpenTTD",
  *     "description": "...",
  *     "version": "15.2.0",             // Must be semver (X.Y.Z)
- *     "priceCents": 0,
- *     "drmTier": "NONE"                // NONE | LIGHT | ENCRYPTED
+ *     "priceCents": 0
  *   }
  * ]
  *
@@ -156,7 +155,6 @@ async function main() {
           title: game.title,
           description: game.description,
           priceCents: game.priceCents,
-          drmTier: game.drmTier,
         }),
       });
       console.log(`  ✓ Game created: ${created.slug}`);

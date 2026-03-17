@@ -76,7 +76,6 @@ const createGameSchema = z.object({
   title: z.string().min(1, "Title is required").max(200),
   description: z.string().max(5000).optional(),
   priceCents: z.number().int().min(0, "Price must be non-negative"),
-  drmTier: z.enum(["NONE", "LIGHT", "ENCRYPTED"]).optional(),
   exePath: z.string().max(500).optional(),
   savePaths: z.array(z.string().max(500)).max(20).optional(),
 });
@@ -85,7 +84,6 @@ const updateGameSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   description: z.string().max(5000).optional(),
   priceCents: z.number().int().min(0).optional(),
-  drmTier: z.enum(["NONE", "LIGHT", "ENCRYPTED"]).optional(),
   exePath: z.string().max(500).optional(),
   savePaths: z.array(z.string().max(500)).max(20).optional(),
   coverImageUrl: z.string().max(500).optional(),

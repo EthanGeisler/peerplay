@@ -5,8 +5,7 @@ export function About() {
 
       <Section title="What is BoilerDeck?">
         BoilerDeck is a decentralized game distribution platform. Think Steam, but powered by
-        BitTorrent. Game files are distributed peer-to-peer, developers keep 99% of revenue,
-        and DRM is optional — chosen by the developer, not the platform.
+        BitTorrent. Game files are distributed peer-to-peer and developers keep 99% of revenue.
       </Section>
 
       <Section title="99/1 Revenue Split">
@@ -32,55 +31,10 @@ export function About() {
         </ol>
       </Section>
 
-      <Section title="DRM Tiers (Developer's Choice)">
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
-          <DrmCard
-            name="None"
-            color="var(--accent-green)"
-            players={[
-              "Download it, keep it forever",
-              "Play anytime \u2014 online or offline",
-              "Share freely, like GOG",
-            ]}
-            developers={[
-              "Maximum player trust",
-              "No server dependency",
-              "Ideal for free / open-source games",
-            ]}
-          />
-          <DrmCard
-            name="Light"
-            color="#d29922"
-            players={[
-              "Quick license check at launch",
-              "Play offline after first activation",
-              "Up to 3 devices per license",
-            ]}
-            developers={[
-              "Prevents casual piracy",
-              "Device fingerprint tracking",
-              "Low friction for legit buyers",
-            ]}
-          />
-          <DrmCard
-            name="Encrypted"
-            color="var(--accent-blue)"
-            players={[
-              "Files decrypted locally after purchase",
-              "Per-user decryption key via client",
-              "Device-locked for security",
-            ]}
-            developers={[
-              "AES-256-CTR encrypted distribution",
-              "Per-user key derivation (HKDF)",
-              "Strongest protection available",
-            ]}
-          />
-        </div>
+      <Section title="Distribution Model">
         <p>
-          Every game on BoilerDeck shows its DRM tier upfront. Developers choose the level
-          of protection that matches their goals \u2014 from fully open to fully encrypted.
-          Players always know what they're buying.
+          BoilerDeck distributes your game builds as-is via BitTorrent. Developers who need
+          copy protection apply it before uploading using their engine's built-in tools.
         </p>
       </Section>
 
@@ -151,47 +105,6 @@ function StatBox({ label, value, color }: { label: string; value: string; color:
     >
       <div style={{ fontSize: 24, fontWeight: 800, color, marginBottom: 4 }}>{value}</div>
       <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{label}</div>
-    </div>
-  );
-}
-
-function DrmCard({
-  name,
-  color,
-  players,
-  developers,
-}: {
-  name: string;
-  color: string;
-  players: string[];
-  developers: string[];
-}) {
-  return (
-    <div
-      style={{
-        padding: 16,
-        backgroundColor: "var(--bg-tertiary)",
-        borderRadius: "var(--radius)",
-        borderTop: `3px solid ${color}`,
-      }}
-    >
-      <div style={{ fontWeight: 800, color, fontSize: 15, marginBottom: 12 }}>{name}</div>
-      <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 700, marginBottom: 6 }}>
-        For Players
-      </div>
-      <ul style={{ paddingLeft: 16, margin: "0 0 12px", fontSize: 12, lineHeight: 1.8 }}>
-        {players.map((p) => (
-          <li key={p}>{p}</li>
-        ))}
-      </ul>
-      <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 700, marginBottom: 6 }}>
-        For Developers
-      </div>
-      <ul style={{ paddingLeft: 16, margin: 0, fontSize: 12, lineHeight: 1.8 }}>
-        {developers.map((d) => (
-          <li key={d}>{d}</li>
-        ))}
-      </ul>
     </div>
   );
 }

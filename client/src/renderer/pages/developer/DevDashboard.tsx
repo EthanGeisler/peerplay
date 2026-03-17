@@ -13,12 +13,6 @@ const STATUS_COLORS: Record<string, string> = {
   SUSPENDED: "#e94560",
 };
 
-const DRM_LABELS: Record<string, { label: string; color: string }> = {
-  NONE: { label: "DRM-Free", color: "#3fb950" },
-  LIGHT: { label: "Online Check", color: "#d29922" },
-  ENCRYPTED: { label: "Encrypted", color: "#58a6ff" },
-};
-
 export function DevDashboard() {
   const navigate = useNavigate();
   const developer = useAuthStore((s) => s.developer);
@@ -266,21 +260,6 @@ export function DevDashboard() {
                   {game.salesCount} sale{game.salesCount !== 1 ? "s" : ""}
                 </div>
               </div>
-
-              {/* DRM badge */}
-              <span
-                style={{
-                  fontSize: 11,
-                  padding: "4px 8px",
-                  borderRadius: 4,
-                  backgroundColor: "rgba(255,255,255,0.05)",
-                  color: DRM_LABELS[game.drmTier]?.color ?? "#aaa",
-                  fontWeight: 600,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {DRM_LABELS[game.drmTier]?.label ?? game.drmTier}
-              </span>
 
               {/* Price */}
               <span style={{ fontSize: 14, fontWeight: 600, whiteSpace: "nowrap", minWidth: 60, textAlign: "right" }}>

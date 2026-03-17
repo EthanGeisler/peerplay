@@ -10,7 +10,7 @@ A **Steam competitor** that uses **BitTorrent for game file distribution** with 
 
 **Key value props:**
 - **99/1 revenue split** (developer/platform) — made possible by zero CDN costs (BitTorrent)
-- **Developer-choice DRM** — None, Light (online check), or Encrypted (AES-256-CTR)
+- **DRM-free distribution** — developers handle their own copy protection before uploading (see "Copy Protection Philosophy" below)
 - **Open-source client** (MIT), proprietary server
 - Future: Steam library integration, cloud saves, Bitcoin Lightning payments
 
@@ -19,6 +19,25 @@ A **Steam competitor** that uses **BitTorrent for game file distribution** with 
 - **Developer Portal:** https://boilerdeck.com/dev/
 - **API:** https://boilerdeck.com/api/health
 - **GitHub Pages (legacy):** https://ethangeisler.github.io/peerplay/ — still auto-deploys but storefront is now served from VPS
+
+---
+
+## Copy Protection Philosophy
+
+BoilerDeck is a **distribution platform, not a DRM provider**. Game builds are distributed as-is via BitTorrent. The platform does not encrypt, wrap, or modify game files in any way.
+
+**Why:** Building and maintaining effective DRM requires ongoing dedicated effort (cat-and-mouse with crackers). Platform-side DRM that lives outside the game binary (in a launcher wrapper) is fundamentally a checkbox — the actual game files are unprotected on disk. Engine-native protection (Godot PCK encryption, Unity IL2CPP, Unreal Pak encryption, tools like Themida/VMProtect) is stronger because it's integrated into the game itself.
+
+**What the platform provides:**
+- License records (who bought what) — needed for payments and library display
+- Purchase flow (Stripe checkout, license grants)
+- BitTorrent distribution
+
+**What developers do themselves (if they want protection):**
+- Apply copy protection before uploading using their engine's built-in tools
+- Both the dev-portal GameEditor and Electron client DevGameEditor show a "Copy Protection" guidance box with engine-specific tips
+
+**History:** BoilerDeck previously had a three-tier DRM system (NONE, LIGHT online-check, ENCRYPTED AES-256-CTR). This was fully removed on 2026-03-17 (migration `remove_drm_system`). The decision was made because: (1) LIGHT DRM only checked at launch via the client wrapper — game files were unprotected on disk and trivially copyable, (2) ENCRYPTED DRM decrypted files to plaintext on first launch — same result, (3) maintaining DRM requires ongoing effort incompatible with a hands-off platform, (4) developers using engine-native tools get better protection with zero platform maintenance.
 
 ---
 
@@ -34,14 +53,14 @@ Fully functional REST API running on port **3001** (port 3000 is used by open-we
 | `shared` | Prisma client, middleware (auth, role check, error handler), config (Zod-validated env), Redis client, error classes, Stripe singleton | `src/db.ts`, `src/middleware.ts`, `src/config.ts`, `src/errors.ts`, `src/redis.ts`, `src/stripe.ts` |
 | `auth` | JWT auth (access 15m + refresh 7d with rotation), bcrypt password hashing, user registration/login, **Stripe Connect onboarding** (account creation + account links, Redis-backed one-time tokens for return/refresh URLs) | `src/service.ts`, `src/routes.ts`, `src/developer.routes.ts` |
 | `catalog` | Game CRUD, slug generation, paginated listing, game detail, **file upload pipeline** (zip extraction, torrent creation, Transmission seeding, exe auto-detection) | `src/service.ts`, `src/routes.ts` |
-| `license` | License listing, verification with device fingerprinting (max 3 devices), decryption key delivery for ENCRYPTED tier, device deregistration. Crypto utils for AES-256-GCM key wrap/unwrap and HKDF per-user key derivation. | `src/service.ts`, `src/routes.ts`, `src/crypto.ts` |
+| `license` | License listing only — `listUserLicenses()` returns owned games for library display. Single endpoint: `GET /licenses`. | `src/service.ts`, `src/routes.ts` |
 | `payment` | **Real Stripe Checkout** — free games: atomic license grant; paid games: Stripe Checkout Session with Connect destination charges, platform fee (1%), webhook handlers for `checkout.session.completed`/`expired`/`account.updated`, idempotent payment+license creation, orphaned payment cleanup on Stripe failure | `src/service.ts`, `src/routes.ts` |
 | `torrent` | Torrent retrieval with license ownership check, **`createGameTorrent()` for generating .torrent files** (used by catalog upload pipeline), **`getLatestTorrentFile()` for raw .torrent bytes** (used by Electron client) | `src/service.ts`, `src/routes.ts`, `src/vendor.d.ts` |
 | `saves` | Cloud save upload/download — **scaffolded but not implemented** | `src/index.ts` |
 
 **Database:** PostgreSQL 16 via Prisma ORM (`server/prisma/schema.prisma`)
-- 10 models: User, RefreshToken, Developer, Game, GameVersion, Torrent, EncryptionKey, License, Payment, SaveFile
-- 6 enums: UserRole, GameStatus, VersionStatus, DrmTier, LicenseStatus, PaymentStatus
+- 8 models: User, RefreshToken, Developer, Game, GameVersion, Torrent, License, Payment, SaveFile
+- 4 enums: UserRole, GameStatus, VersionStatus, LicenseStatus, PaymentStatus
 - All models use `@@map("snake_case")` for DB table names, PascalCase in code
 - BigInt columns (fileSizeBytes, sizeBytes) need `BigInt.prototype.toJSON` patch (in `shared/src/db.ts`)
 
@@ -50,7 +69,7 @@ Fully functional REST API running on port **3001** (port 3000 is used by open-we
 - Developer: `dev@example.com` / `developer123` (studio: "Indie Games Studio")
 - Player: `player@example.com` / `player123456`
 - 3 sample games (Space Explorer $19.99, Dungeon Crawl $9.99, Pixel Racing Free)
-- Player Character 01 — Premium Edition ($9.99, LIGHT DRM)
+- Player Character 01 — Premium Edition ($9.99)
 
 > **DB is currently wiped** (as of 2026-03-17) — all seed data removed, no users, games, or licenses. Real data uploaded through dev portal. Do not run `npm run db:seed` against VPS without confirming it's intentional.
 
@@ -65,11 +84,9 @@ Fully functional REST API running on port **3001** (port 3000 is used by open-we
 - `POST /api/developer/games`, `PUT /api/developer/games/:id`
 - `POST /api/developer/games/:id/versions`
 - `POST /api/developer/games/:id/versions/:versionId/upload` (multipart, `gameZip` field, 2GB limit, 30min timeout)
-- `GET /api/licenses`, `POST /api/licenses/:gameId/verify` (with device fingerprinting)
-- `POST /api/licenses/:gameId/key` (ENCRYPTED DRM — decryption key delivery)
-- `DELETE /api/licenses/:gameId/devices/:fingerprint` (device deregistration)
+- `GET /api/licenses` (returns `{ licenses: [...] }` — ownership list for library)
 - `POST /api/payments/checkout`, `POST /api/payments/webhook`
-- `GET /api/torrents/:gameId/latest` (includes `encrypted` flag + `algorithm` for encrypted games)
+- `GET /api/torrents/:gameId/latest` (torrent metadata: gameId, versionId, version, fileSizeBytes, magnetUri, infoHash)
 - `GET /api/torrents/:gameId/latest/file` (raw `.torrent` bytes, `application/x-bittorrent`, authenticated + license check)
 - `GET /api/health`
 
@@ -78,11 +95,11 @@ Fully functional REST API running on port **3001** (port 3000 is used by open-we
 SPA served from VPS at `/`. Uses **HashRouter**. Talks to the **real API** (not mock data). Also still deploys to GitHub Pages via Actions but the primary URL is now the VPS. Header includes a "Developer Portal" link to `/dev/`.
 
 **Pages** (`web/src/pages/`):
-- `Store.tsx` — Featured hero (first game in DB) + game grid cards with DRM tier badges. Fetches real games from `GET /api/games`.
-- `GameDetail.tsx` — Full detail page with DRM info card, purchase button (real checkout via `POST /api/payments/checkout`), torrent download link after purchase (via `GET /api/torrents/:gameId/latest`), revenue split breakdown, version info
+- `Store.tsx` — Featured hero (first game in DB) + game grid cards. Fetches real games from `GET /api/games`. Search with debounce.
+- `GameDetail.tsx` — Full detail page with purchase button (real checkout via `POST /api/payments/checkout`), torrent download link after purchase (via `GET /api/torrents/:gameId/latest`), revenue split breakdown, version info
 - `Library.tsx` — Owned games from real licenses (`GET /api/licenses`). Links to `/login` for unauthenticated users.
 - `Login.tsx` — Login/Register form with tabs. JWT auth via `POST /api/auth/login|register`.
-- `About.tsx` — Platform explainer (revenue split, BitTorrent, 3-column DRM tier comparison cards, tech stack)
+- `About.tsx` — Platform explainer (revenue split, BitTorrent distribution model, tech stack)
 - `CheckoutSuccess.tsx` — Post-purchase page. Polls `fetchLicenses()` until new license appears (webhook latency). Handles unauthenticated users with sign-in prompt.
 - `CheckoutCancel.tsx` — Shown when user cancels Stripe Checkout. Links back to store.
 
@@ -98,7 +115,7 @@ SPA served from VPS at `/`. Uses **HashRouter**. Talks to the **real API** (not 
 **Shared utils:** `web/src/utils.ts` — `formatPrice()`, `formatSize()`, `PLACEHOLDER_COVER` constant. Used by Store, GameDetail, Library.
 
 **Key differences from mock era:**
-- No more `editions` concept (DB has single `priceCents`/`drmTier` per game, no edition picker)
+- No more `editions` concept (DB has single `priceCents` per game, no edition picker)
 - No more `tags` (DB Game model has no tags column)
 - No more `featured` flag (first game in listing is used as hero)
 - No more `releaseDate`, `fileSizeMB`, `version` on listing cards (only available in detail endpoint via `latestVersion`)
@@ -125,7 +142,7 @@ SPA served from VPS at `/dev/`. Talks to the real API. Login with developer cred
 - `SetupDeveloper.tsx` — First-time developer profile creation + Stripe Connect onboarding prompt (uses shared `redirectToStripeOnboard()`)
 - `Dashboard.tsx` — Lists developer's games with version/license counts. Shows Stripe onboarding banner if not connected, payouts-pending notice if connected but payouts disabled, "Stripe Connected" badge when fully set up.
 - `GameDetail.tsx` — Full game management: publish/unpublish, version list with torrent info, **file upload** (drag-and-drop zip → progress bar → processing → READY)
-- `GameEditor.tsx` — Create/edit game form. **Creating a game requires uploading a zip** (version + zip fields). Exe auto-detected from upload.
+- `GameEditor.tsx` — Create/edit game form with copy protection guidance info box. **Creating a game requires uploading a zip** (version + zip fields). Exe auto-detected from upload.
 
 **Upload flow (end-to-end):**
 1. Frontend: `POST /developer/games` → creates game
@@ -142,7 +159,7 @@ SPA served from VPS at `/dev/`. Talks to the real API. Login with developer cred
 
 ### Electron Client — functional (`client/`)
 
-Full desktop client: browse store, purchase games (Stripe Checkout in system browser), download via BitTorrent, DRM enforcement, game launch, install management.
+Full desktop client: browse store, purchase games (Stripe Checkout in system browser), download via BitTorrent, game launch, install management.
 
 **Architecture — critical decisions:**
 - **WebTorrent runs in the Node.js main process** (NOT a hidden renderer). This enables TCP/UDP peering with the Transmission seeder on the VPS. A hidden renderer would only support WebRTC, which Transmission can't connect to.
@@ -155,12 +172,10 @@ Full desktop client: browse store, purchase games (Stripe Checkout in system bro
 | File | Purpose |
 |------|---------|
 | `index.ts` | Electron app lifecycle, all IPC handler registration, torrent client init/destroy, auto-updater setup (check/download/progress/error events forwarded to renderer) |
-| `preload.ts` | `contextBridge.exposeInMainWorld("boilerdeck", {...})` — sections: platform, updater, store, shell, dialog, games, drm, downloads |
-| `store.ts` | JSON file persistence at `app.getPath("userData")/boilerdeck-config.json`. Keys: refreshToken, installDir, installedGames, settings, deviceFingerprint |
+| `preload.ts` | `contextBridge.exposeInMainWorld("boilerdeck", {...})` — sections: platform, updater, store, shell, dialog, games, downloads |
+| `store.ts` | JSON file persistence at `app.getPath("userData")/boilerdeck-config.json`. Keys: refreshToken, installDir, installedGames, settings |
 | `torrentManager.ts` | WebTorrent singleton. `startDownload()` prefers .torrent buffer over magnet. Broadcasts progress every 1s via `mainWindow.webContents.send("downloads:progress-update")`. Sends `downloads:complete` with gameId/title/infoHash/downloadPath on torrent done. |
 | `gameLauncher.ts` | `child_process.spawn(exe, [], { detached: true, stdio: "ignore" })` + `child.unref()`. Tracks running games in a Map. `uninstallGame()` uses `fs.promises.rm(path, { recursive: true, force: true })`. |
-| `fingerprint.ts` | SHA-256 of `hostname|cpuModel|arch|platform|totalMem`. Cached in memory + persisted to store. |
-| `decryptor.ts` | Finds all `.enc` files recursively, reads 16-byte IV prefix, AES-256-CTR decrypt, writes original, deletes `.enc`. |
 | `vendor.d.ts` | Type declarations for `webtorrent` module |
 
 **Renderer (`client/src/renderer/`):**
@@ -179,22 +194,15 @@ Full desktop client: browse store, purchase games (Stripe Checkout in system bro
 | `gameStore.ts` | `fetchGames(page?)`, `fetchGameBySlug(slug)`, `clearCurrentGame()` |
 | `libraryStore.ts` | `fetchLicenses()`, `checkout(gameId)`, `fetchTorrent(gameId)` |
 | `downloadStore.ts` | `startDownload()`, pause/resume/cancel. `initListeners()` subscribes to progress + completion events. Module-level `downloadMeta` Map stores game metadata keyed by gameId. |
-| `installedStore.ts` | `loadInstalled()` (from persistent store), `markInstalled(game)`, `uninstall(gameId)`, `launch(gameId)` (includes DRM verify for LIGHT/ENCRYPTED). |
+| `installedStore.ts` | `loadInstalled()` (from persistent store), `markInstalled(game)`, `uninstall(gameId)`, `launch(gameId)` — launches exe directly, no verification. |
 
 **Download → Install pipeline (the most complex flow):**
 1. User clicks Download → `downloadStore.startDownload()` stores metadata in `downloadMeta` Map, calls IPC `downloads:start`
 2. Main process adds torrent to WebTorrent, begins downloading
 3. Main process pushes `downloads:progress-update` every 1s → renderer updates progress bars
 4. Torrent completes → main sends `downloads:complete` IPC event
-5. `downloadStore` completion listener fires:
-   - If `drmTier === "ENCRYPTED"`: fetch fingerprint → `POST /licenses/:gameId/key` → `drm.decryptGame()` (main process decrypts all `.enc` files)
-   - Calls `installedStore.markInstalled()` with full metadata → persisted to JSON store
+5. `downloadStore` completion listener fires → calls `installedStore.markInstalled()` with full metadata → persisted to JSON store
 6. Game appears in Library with Launch button
-
-**DRM enforcement at launch:**
-- `installedStore.launch()` checks `drmTier`
-- LIGHT or ENCRYPTED: `POST /licenses/:gameId/verify` with device fingerprint before spawning exe
-- Failure returns user-friendly error (device limit reached, no internet, etc.)
 
 **Stripe checkout in client:**
 - Free games: `checkout()` returns immediately, `fetchLicenses()` called inline
@@ -216,8 +224,6 @@ Full desktop client: browse store, purchase games (Stripe Checkout in system bro
 | `create-game-torrent.mjs` | Creates .torrent file from a game directory |
 | `parse-torrent.mjs` | Parses .torrent to extract info hash + magnet URI |
 | `publish-game.mjs` | Publishes a game in the DB (sets PUBLISHED, creates Torrent + GameVersion records) |
-| `encrypt-game.mjs` | Encrypts game files with AES-256-CTR, wraps master key with DRM_MASTER_KEK, outputs wrapped key hex + manifest |
-| `publish-game-encrypted.mjs` | Publishes an encrypted game (creates EncryptionKey record, sets drmTier ENCRYPTED, creates Torrent + GameVersion) |
 | `player-character-01.torrent` | Generated torrent file for PC01 (8KB) |
 | `player-character-01.magnet.txt` | Magnet URI for quick reference |
 
@@ -308,7 +314,7 @@ npm run dev:server    # runs on port 3001
 npm run dev:web       # runs on port 5173
 ```
 
-**Environment:** `server/.env` — contains DATABASE_URL, REDIS_URL, JWT secrets, Stripe keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PLATFORM_FEE_PERCENT`), `CORS_ORIGIN`, `CORS_ADDITIONAL_ORIGINS` (comma-separated extra origins, e.g. for Electron dev), port config, optional `DRM_MASTER_KEK` (64+ hex chars, required for ENCRYPTED DRM tier). Not committed to git. Separate `.env` exists on VPS at `/opt/boilerdeck/server/.env`.
+**Environment:** `server/.env` — contains DATABASE_URL, REDIS_URL, JWT secrets, Stripe keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PLATFORM_FEE_PERCENT`), `CORS_ORIGIN`, `CORS_ADDITIONAL_ORIGINS` (comma-separated extra origins, e.g. for Electron dev), port config. Not committed to git. Separate `.env` exists on VPS at `/opt/boilerdeck/server/.env`.
 
 **VPS `.env` note:** `CORS_ADDITIONAL_ORIGINS="http://localhost:5173"` is set on the VPS to allow Electron dev mode (renderer runs on localhost:5173 in dev, not `file://`).
 
@@ -316,14 +322,14 @@ npm run dev:web       # runs on port 5173
 
 ## Games on the Platform
 
-**8 published games** as of 2026-03-17. All seeded from VPS Transmission daemon on `204.168.133.38:6881`.
+**8 published games** as of 2026-03-17. All seeded from VPS Transmission daemon on `204.168.133.38:6881`. All games are distributed DRM-free.
 
 ### Original Games
 
 #### PlayerCharacter01 (Web Build) — legacy, not launchable
 - **DB slug:** `playercharacter01-fb92`
 - **Info hash:** `9d8949a375b3cede3495e4e56622cb5bc75d791d`
-- **DRM:** NONE, Price: $1.00
+- **Price:** $1.00
 - **Issue:** This is a Godot web export (index.html + index.wasm). No exe — cannot be launched from the Electron client. Uploaded before we identified the web vs desktop build distinction.
 
 #### PlayerCharacter01 Windows — the working game
@@ -331,7 +337,7 @@ npm run dev:web       # runs on port 5173
 - **Info hash:** `cf3e503bb6e88f4fcdf2572629173884ec4c4994`
 - **Exe path:** `PeerPlayBuild/PLAYER_CHARACTER_01PeerPlay.exe` (set in DB)
 - **Size:** ~101MB (3 files: exe, console exe, pck)
-- **DRM:** NONE, Price: $1.00
+- **Price:** $1.00
 - **Source:** `C:\Users\eface\player-character-01\build\PeerPlayBuild\`
 - **End-to-end verified:** Upload via dev portal → purchase → BitTorrent download → launch ✓ (2026-03-17)
 
@@ -348,7 +354,7 @@ npm run dev:web       # runs on port 5173
 | Veloren | `veloren-6d44` | `cfcdd8ad...` | 999 MB | Voxel RPG | GPLv3 |
 | SuperTuxKart | `supertuxkart-4728` | `739de815...` | 1.59 GB | Kart Racing | GPLv3 |
 
-All have cover images uploaded. All are free ($0), DRM: NONE.
+All have cover images uploaded. All are free ($0).
 
 > **Note:** There are also 6 DRAFT duplicate games from an accidental double-run of the upload script. These are invisible to users (only PUBLISHED games appear in the store) but should be cleaned up via the dev portal.
 
@@ -378,42 +384,42 @@ All have cover images uploaded. All are free ($0), DRM: NONE.
 9. **ioredis ESM import** — Use `const RedisClient = IORedis.default ?? IORedis;` for ESM compatibility.
 10. **Zustand selector trap** — Never select a *function* from a Zustand store (e.g. `useStore(s => s.isOwned)`) and call it during render to derive display state. The function reference is stable, so the component won't re-render when the underlying data changes. Instead, select the *data* (e.g. `useStore(s => s.licenses)`) and compute inline. This bit us with ownership badges not updating after license fetch.
 11. **Refresh token localStorage shared across SPAs** — Both web storefront and dev-portal use `pp_refresh_token` key in localStorage on the same origin. This is intentional SSO. Don't change the key in one without the other.
-13. **Vite `base` must match nginx path** — If a frontend is served under a subpath (e.g. `/dev/`), Vite's `base` in `vite.config.ts` must match (e.g. `base: "/dev/"`), otherwise asset URLs resolve to `/assets/...` instead of `/dev/assets/...` and you get a blank page.
-14. **nginx `default_server`** — The boilerdeck site config uses `listen 80 default_server;` to override nginx's built-in welcome page. Without this, requests may hit the default nginx page instead.
-15. **Multer temp dir** — The upload route auto-creates `/opt/boilerdeck/games/.tmp/` via `fs.mkdirSync(tmpDir, { recursive: true })` in the multer destination callback. Don't rely on it pre-existing.
-16. **Upload pipeline proxy timeout** — nginx default `proxy_read_timeout` is 60s. Large uploads may need `proxy_read_timeout 1800;` in the `/api/` block if server-side processing (zip extraction + torrent creation) takes longer than 60s after upload completes.
-17. **VPS deploy — Rollup Linux binding** — `package-lock.json` generated on Windows won't include `@rollup/rollup-linux-x64-gnu`. After `npm install` on VPS, may need `npm install @rollup/rollup-linux-x64-gnu` explicitly, or do a clean `rm -rf node_modules && npm install` on the VPS.
-18. **VPS deploy — Prisma client regeneration** — After wiping `node_modules` on VPS, must run `npx prisma generate` before starting the server, otherwise Prisma client will be missing.
-19. **Stripe Connect onboard tokens** — The return/refresh URLs for Stripe Connect use Redis-backed one-time-use tokens (`crypto.randomBytes(32)`, stored as `stripe_onboard:{token}` with 1-hour TTL). Tokens are consumed on use (deleted from Redis). Never pass raw Stripe account IDs in query params.
-20. **Stripe webhook idempotency** — All webhook handlers (`handleCheckoutCompleted`, `handleCheckoutExpired`, `handleAccountUpdated`) check current state before mutating. `handleCheckoutExpired` won't overwrite a COMPLETED payment. `handleCheckoutCompleted` won't create duplicate licenses.
-21. **CORS `origin: "null"` from Electron** — Electron `file://` sends `Origin: null` as a literal string, not absent. The CORS callback in `server/src/index.ts` handles three cases: `!origin` (no header, e.g. curl), `origin === "null"` (Electron file://), and origins in the allow list. Rejected origins get `callback(null, false)` (silent rejection, no 500).
-22. **WebTorrent must run in main process** — If you put WebTorrent in a hidden BrowserWindow (renderer), it can only use WebRTC — standard BitTorrent clients (Transmission, qBittorrent) can't connect. The main process uses Node.js TCP/UDP sockets, enabling real BitTorrent peering. This is the single most important Electron architecture decision.
-23. **Download completion requires IPC event** — The renderer has no way to know when a torrent finishes unless the main process explicitly sends a `downloads:complete` event. Without this, `markInstalled()` never fires and games don't appear in the Library after downloading. The event carries `{ gameId, title, infoHash, downloadPath }`.
-24. **`downloadMeta` Map is module-level, not in Zustand** — The metadata needed to register an installed game (slug, exePath, drmTier, version, coverImageUrl) is stored in a plain `Map<string, DownloadMeta>` outside the Zustand store in `downloadStore.ts`. This is intentional — it doesn't need to be reactive, and putting it in Zustand would cause unnecessary re-renders.
-25. **`tsconfig.main.json` needs `composite: true`** — Because `tsconfig.json` references it. Without this, you get `TS6306: Referenced project must have setting "composite": true`.
-26. **Electron client renderer types** — `window.boilerdeck` types are declared in two places: `client/src/main/preload.ts` (the runtime `declare global`) and `client/src/renderer/env.d.ts` (for the renderer's tsconfig). Both must stay in sync. The renderer file also needs `/// <reference types="vite/client" />` for `import.meta.env`.
-27. **electron-builder workspace hoisting** — npm workspaces hoist `electron` to root `node_modules/`, but electron-builder expects it in `client/node_modules/`. Fix: `electronVersion` is pinned to `"35.7.5"` in `client/package.json` build config so electron-builder downloads its own copy. If you upgrade Electron, update both `devDependencies.electron` and `build.electronVersion`.
-28. **electron-builder native module rebuild fails (Python 3.12)** — `node-gyp` v9.x uses `distutils.version.StrictVersion` which was removed in Python 3.12. `npmRebuild: false` in the build config skips this. Native modules (`bufferutil`, `utf-8-validate`, `utp-native`) use prebuilt binaries via `prebuild-install` so compilation is unnecessary.
-29. **electron-builder winCodeSign symlink error** — The winCodeSign tool archive contains macOS symlinks that can't be created on Windows without Developer Mode or admin privileges. `signAndEditExecutable: false` in the win config skips the winCodeSign download entirely. Without a code signing certificate this is the correct setting. Side effect: the raw `BoilerDeck.exe` won't show the custom icon in Explorer (but the NSIS installer itself works fine).
-30. **Electron icon must be 256x256+** — electron-builder rejects icons smaller than 256x256. The placeholder icon is at `client/resources/icon.ico` (256x256 BMP-in-ICO). Replace with real branding when available.
-31. **Windows SmartScreen warning** — The installer is not code-signed, so Windows SmartScreen will show "Windows protected your PC." Users click "More info" → "Run anyway." This is expected until an EV code signing certificate is purchased.
-32. **`release/` directory** — electron-builder outputs to `client/release/`. This is gitignored. Never commit build artifacts.
-33. **Helmet CORP blocks Electron** — Default `helmet()` sets `Cross-Origin-Resource-Policy: same-origin`, which blocks API responses in Electron's `file://` origin even when CORS headers are correct. Fix: `helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } })` in `server/src/index.ts`. This is NOT a CORS issue — it's a separate header enforced by the browser/Electron renderer before the response body is handed to JS.
-34. **Server error response shape** — The server returns `{ error: { code, message } }`, not `{ message }`. All API clients must check `body.error?.message || body.message || res.statusText` in that order. The `|| body.message` fallback exists for backward compatibility; prefer `body.error?.message` for new code.
-35. **Licenses endpoint wraps array** — `GET /api/licenses` returns `{ licenses: [...] }`, not a bare array. Code consuming this endpoint must unwrap: `const licenses = data.licenses`. `Array.isArray()` guards are advisable before calling array methods.
-36. **JWT stale after server-side role change** — When the server upgrades a user's role (e.g., `POST /developer/register`), the existing JWT still carries the old role claim. Subsequent requests guarded by `requireRole("DEVELOPER")` will return 403. Fix: call `refreshAccessToken()` immediately after any role-changing operation on the client.
-37. **React StrictMode double-fires effects** — In development, React 18+ runs effects twice. Any effect that makes a mutating API call (e.g., token rotation using `delete` by ID) will race and crash on the second call if the first already consumed the resource. Fix: use `deleteMany` instead of `delete` for idempotent operations, or guard with a ref flag.
-38. **Transmission cleared, fresh torrents only** — As of 2026-03-17, Transmission was cleared of old test torrents. Only torrents added via the upload pipeline are present. If re-seeding manually, use the upload pipeline or `transmission-remote --add` with the .torrent file from the DB.
-39. **Transmission doesn't persist torrents across restarts** — The manually-started `transmission-daemon` (PID-based, not systemd — systemd service times out) does NOT reliably persist added torrents. After any Transmission restart, torrents must be re-added. The upload pipeline's `addToTransmission()` is fire-and-forget (errors logged but non-fatal), so uploads succeed even if Transmission is down. **To re-add a torrent:** extract base64 from DB (`SELECT encode(torrent_file, 'base64') FROM torrents WHERE id = '...'`), then POST to Transmission RPC with `download-dir: /opt/boilerdeck/games` (NOT `/opt/boilerdeck/games/<slug>` — the torrent's internal root folder provides the slug directory). See re-seeding script below.
-40. **WebTorrent download path — do NOT append game slug** — `wt.add(source, { path })` creates the torrent's internal root folder (named after the game slug) inside `path`. If you pass `installDir/slug` as path, you get `installDir/slug/slug/...` (double nesting). Pass `installDir` as the WebTorrent download path; the install path (for the game registry) is `installDir/slug`.
-41. **WebTorrent must be destroyed after download completes** — `torrent.destroy({ destroyStore: false })` releases file handles without deleting downloaded files. Without this, the exe stays locked (EBUSY) and the game can't be launched. The client no longer seeds after download — acceptable for a game distribution client.
-42. **Stale Electron processes on Windows** — Closing the Electron window doesn't always kill the main process (especially in dev mode). Multiple zombie Electron processes accumulate, each holding WebTorrent file locks. Before debugging EBUSY errors, run `tasklist //FI "IMAGENAME eq electron.exe"` and kill all instances with `taskkill //F //IM electron.exe`.
-43. **Exe auto-detection is recursive** — `detectExecutable()` in `catalog/service.ts` walks subdirectories to find `.exe` files. Game uploads often nest files (e.g., `PeerPlayBuild/Game.exe`). The detected path is stored relative to the game's root directory (e.g., `PeerPlayBuild/Game.exe`), and the client joins it with the install path at launch time.
-44. **Refresh token race condition (client-side)** — All API clients (client, web, dev-portal) use a `refreshPromise` lock to serialize concurrent refresh calls. Without this, two simultaneous 401 responses both trigger `refreshAccessToken()`, the second one sends the already-rotated token, gets 401, and **deletes the new token** stored by the first call — logging the user out. This is different from gotcha #37 (server-side `deleteMany`).
-45. **Publish endpoint is PATCH, not POST** — `PATCH /developer/games/:id/publish` and `PATCH /developer/games/:id/unpublish`. Using POST returns 404 with an HTML error page ("Cannot POST ...").
-46. **addToTransmission silently fails for large torrents** — The upload pipeline's `addToTransmission()` sends base64-encoded torrent data via curl. For large games (hundreds of MB), the base64 string can exceed bash's argument length limit (~2 MB). The upload succeeds (game + torrent in DB) but Transmission never receives the torrent. **Always run `scripts/reseed-torrents.sh` after uploading games.** The reseed script works around this by writing base64 to a temp file and using `curl -d @file`.
-47. **Games created in DRAFT status** — The `POST /developer/games` endpoint creates games with status `DRAFT`. They must be explicitly published via `PATCH /developer/games/:id/publish` to appear in the store listing. The `upload-games.mjs` script handles this automatically.
-48. **Updater IPC events must use ref guard** — The Settings page update UI subscribes to 5 IPC events (`update-available`, `update-not-available`, `update-progress`, `update-downloaded`, `update-error`). React StrictMode double-fires effects, which would register duplicate listeners. The `listenersAttached` ref flag prevents this. Cleanup calls `removeUpdateListeners()` which removes all 5 at once.
+12. **Vite `base` must match nginx path** — If a frontend is served under a subpath (e.g. `/dev/`), Vite's `base` in `vite.config.ts` must match (e.g. `base: "/dev/"`), otherwise asset URLs resolve to `/assets/...` instead of `/dev/assets/...` and you get a blank page.
+13. **nginx `default_server`** — The boilerdeck site config uses `listen 80 default_server;` to override nginx's built-in welcome page. Without this, requests may hit the default nginx page instead.
+14. **Multer temp dir** — The upload route auto-creates `/opt/boilerdeck/games/.tmp/` via `fs.mkdirSync(tmpDir, { recursive: true })` in the multer destination callback. Don't rely on it pre-existing.
+15. **Upload pipeline proxy timeout** — nginx default `proxy_read_timeout` is 60s. Large uploads may need `proxy_read_timeout 1800;` in the `/api/` block if server-side processing (zip extraction + torrent creation) takes longer than 60s after upload completes.
+16. **VPS deploy — Rollup Linux binding** — `package-lock.json` generated on Windows won't include `@rollup/rollup-linux-x64-gnu`. After `npm install` on VPS, may need `npm install @rollup/rollup-linux-x64-gnu` explicitly, or do a clean `rm -rf node_modules && npm install` on the VPS.
+17. **VPS deploy — Prisma client regeneration** — After wiping `node_modules` on VPS, must run `npx prisma generate` before starting the server, otherwise Prisma client will be missing.
+18. **Stripe Connect onboard tokens** — The return/refresh URLs for Stripe Connect use Redis-backed one-time-use tokens (`crypto.randomBytes(32)`, stored as `stripe_onboard:{token}` with 1-hour TTL). Tokens are consumed on use (deleted from Redis). Never pass raw Stripe account IDs in query params.
+19. **Stripe webhook idempotency** — All webhook handlers (`handleCheckoutCompleted`, `handleCheckoutExpired`, `handleAccountUpdated`) check current state before mutating. `handleCheckoutExpired` won't overwrite a COMPLETED payment. `handleCheckoutCompleted` won't create duplicate licenses.
+20. **CORS `origin: "null"` from Electron** — Electron `file://` sends `Origin: null` as a literal string, not absent. The CORS callback in `server/src/index.ts` handles three cases: `!origin` (no header, e.g. curl), `origin === "null"` (Electron file://), and origins in the allow list. Rejected origins get `callback(null, false)` (silent rejection, no 500).
+21. **WebTorrent must run in main process** — If you put WebTorrent in a hidden BrowserWindow (renderer), it can only use WebRTC — standard BitTorrent clients (Transmission, qBittorrent) can't connect. The main process uses Node.js TCP/UDP sockets, enabling real BitTorrent peering. This is the single most important Electron architecture decision.
+22. **Download completion requires IPC event** — The renderer has no way to know when a torrent finishes unless the main process explicitly sends a `downloads:complete` event. Without this, `markInstalled()` never fires and games don't appear in the Library after downloading. The event carries `{ gameId, title, infoHash, downloadPath }`.
+23. **`downloadMeta` Map is module-level, not in Zustand** — The metadata needed to register an installed game (slug, exePath, version, coverImageUrl) is stored in a plain `Map<string, DownloadMeta>` outside the Zustand store in `downloadStore.ts`. This is intentional — it doesn't need to be reactive, and putting it in Zustand would cause unnecessary re-renders.
+24. **`tsconfig.main.json` needs `composite: true`** — Because `tsconfig.json` references it. Without this, you get `TS6306: Referenced project must have setting "composite": true`.
+25. **Electron client renderer types** — `window.boilerdeck` types are declared in two places: `client/src/main/preload.ts` (the runtime `declare global`) and `client/src/renderer/env.d.ts` (for the renderer's tsconfig). Both must stay in sync. The renderer file also needs `/// <reference types="vite/client" />` for `import.meta.env`.
+26. **electron-builder workspace hoisting** — npm workspaces hoist `electron` to root `node_modules/`, but electron-builder expects it in `client/node_modules/`. Fix: `electronVersion` is pinned to `"35.7.5"` in `client/package.json` build config so electron-builder downloads its own copy. If you upgrade Electron, update both `devDependencies.electron` and `build.electronVersion`.
+27. **electron-builder native module rebuild fails (Python 3.12)** — `node-gyp` v9.x uses `distutils.version.StrictVersion` which was removed in Python 3.12. `npmRebuild: false` in the build config skips this. Native modules (`bufferutil`, `utf-8-validate`, `utp-native`) use prebuilt binaries via `prebuild-install` so compilation is unnecessary.
+28. **electron-builder winCodeSign symlink error** — The winCodeSign tool archive contains macOS symlinks that can't be created on Windows without Developer Mode or admin privileges. `signAndEditExecutable: false` in the win config skips the winCodeSign download entirely. Without a code signing certificate this is the correct setting. Side effect: the raw `BoilerDeck.exe` won't show the custom icon in Explorer (but the NSIS installer itself works fine).
+29. **Electron icon must be 256x256+** — electron-builder rejects icons smaller than 256x256. The placeholder icon is at `client/resources/icon.ico` (256x256 BMP-in-ICO). Replace with real branding when available.
+30. **Windows SmartScreen warning** — The installer is not code-signed, so Windows SmartScreen will show "Windows protected your PC." Users click "More info" → "Run anyway." This is expected until an EV code signing certificate is purchased.
+31. **`release/` directory** — electron-builder outputs to `client/release/`. This is gitignored. Never commit build artifacts.
+32. **Helmet CORP blocks Electron** — Default `helmet()` sets `Cross-Origin-Resource-Policy: same-origin`, which blocks API responses in Electron's `file://` origin even when CORS headers are correct. Fix: `helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } })` in `server/src/index.ts`. This is NOT a CORS issue — it's a separate header enforced by the browser/Electron renderer before the response body is handed to JS.
+33. **Server error response shape** — The server returns `{ error: { code, message } }`, not `{ message }`. All API clients must check `body.error?.message || body.message || res.statusText` in that order. The `|| body.message` fallback exists for backward compatibility; prefer `body.error?.message` for new code.
+34. **Licenses endpoint wraps array** — `GET /api/licenses` returns `{ licenses: [...] }`, not a bare array. Code consuming this endpoint must unwrap: `const licenses = data.licenses`. `Array.isArray()` guards are advisable before calling array methods.
+35. **JWT stale after server-side role change** — When the server upgrades a user's role (e.g., `POST /developer/register`), the existing JWT still carries the old role claim. Subsequent requests guarded by `requireRole("DEVELOPER")` will return 403. Fix: call `refreshAccessToken()` immediately after any role-changing operation on the client.
+36. **React StrictMode double-fires effects** — In development, React 18+ runs effects twice. Any effect that makes a mutating API call (e.g., token rotation using `delete` by ID) will race and crash on the second call if the first already consumed the resource. Fix: use `deleteMany` instead of `delete` for idempotent operations, or guard with a ref flag.
+37. **Transmission cleared, fresh torrents only** — As of 2026-03-17, Transmission was cleared of old test torrents. Only torrents added via the upload pipeline are present. If re-seeding manually, use the upload pipeline or `transmission-remote --add` with the .torrent file from the DB.
+38. **Transmission doesn't persist torrents across restarts** — The manually-started `transmission-daemon` (PID-based, not systemd — systemd service times out) does NOT reliably persist added torrents. After any Transmission restart, torrents must be re-added. The upload pipeline's `addToTransmission()` is fire-and-forget (errors logged but non-fatal), so uploads succeed even if Transmission is down. **To re-add a torrent:** extract base64 from DB (`SELECT encode(torrent_file, 'base64') FROM torrents WHERE id = '...'`), then POST to Transmission RPC with `download-dir: /opt/boilerdeck/games` (NOT `/opt/boilerdeck/games/<slug>` — the torrent's internal root folder provides the slug directory). See re-seeding script below.
+39. **WebTorrent download path — do NOT append game slug** — `wt.add(source, { path })` creates the torrent's internal root folder (named after the game slug) inside `path`. If you pass `installDir/slug` as path, you get `installDir/slug/slug/...` (double nesting). Pass `installDir` as the WebTorrent download path; the install path (for the game registry) is `installDir/slug`.
+40. **WebTorrent must be destroyed after download completes** — `torrent.destroy({ destroyStore: false })` releases file handles without deleting downloaded files. Without this, the exe stays locked (EBUSY) and the game can't be launched. The client no longer seeds after download — acceptable for a game distribution client.
+41. **Stale Electron processes on Windows** — Closing the Electron window doesn't always kill the main process (especially in dev mode). Multiple zombie Electron processes accumulate, each holding WebTorrent file locks. Before debugging EBUSY errors, run `tasklist //FI "IMAGENAME eq electron.exe"` and kill all instances with `taskkill //F //IM electron.exe`.
+42. **Exe auto-detection is recursive** — `detectExecutable()` in `catalog/service.ts` walks subdirectories to find `.exe` files. Game uploads often nest files (e.g., `PeerPlayBuild/Game.exe`). The detected path is stored relative to the game's root directory (e.g., `PeerPlayBuild/Game.exe`), and the client joins it with the install path at launch time.
+43. **Refresh token race condition (client-side)** — All API clients (client, web, dev-portal) use a `refreshPromise` lock to serialize concurrent refresh calls. Without this, two simultaneous 401 responses both trigger `refreshAccessToken()`, the second one sends the already-rotated token, gets 401, and **deletes the new token** stored by the first call — logging the user out. This is different from gotcha #36 (server-side `deleteMany`).
+44. **Publish endpoint is PATCH, not POST** — `PATCH /developer/games/:id/publish` and `PATCH /developer/games/:id/unpublish`. Using POST returns 404 with an HTML error page ("Cannot POST ...").
+45. **addToTransmission silently fails for large torrents** — The upload pipeline's `addToTransmission()` sends base64-encoded torrent data via curl. For large games (hundreds of MB), the base64 string can exceed bash's argument length limit (~2 MB). The upload succeeds (game + torrent in DB) but Transmission never receives the torrent. **Always run `scripts/reseed-torrents.sh` after uploading games.** The reseed script works around this by writing base64 to a temp file and using `curl -d @file`.
+46. **Games created in DRAFT status** — The `POST /developer/games` endpoint creates games with status `DRAFT`. They must be explicitly published via `PATCH /developer/games/:id/publish` to appear in the store listing. The `upload-games.mjs` script handles this automatically.
+47. **Updater IPC events must use ref guard** — The Settings page update UI subscribes to 5 IPC events (`update-available`, `update-not-available`, `update-progress`, `update-downloaded`, `update-error`). React StrictMode double-fires effects, which would register duplicate listeners. The `listenersAttached` ref flag prevents this. Cleanup calls `removeUpdateListeners()` which removes all 5 at once.
 
 ---
 
@@ -508,20 +514,19 @@ ssh root@204.168.133.38 "cd /opt/boilerdeck && git pull origin main && npx vite 
 
 - **Repo:** https://github.com/EthanGeisler/peerplay (rename pending — GitHub repo still named `peerplay`)
 - **Branch:** `main` (only branch)
-- **40 commits** as of 2026-03-17 (latest first):
+- **40+ commits** as of 2026-03-17 (latest first):
   1. `440a016` `Fix review issues: token race condition, error handling, DRM badges`
   2. `b063233` `Fix cover images in Electron client and add store link to dev portal setup`
   3. `6082929` `Fix cover image upload field name mismatch`
   4. `f8346ca` `Update docs with v0.2.0 release, auto-update details, and release process`
   5. `912f091` `Bump client version to 0.2.0 and update download links`
-  6. `bb26191` `Update CONTEXT.md and CLAUDE.md with session learnings`
-  7. `8039e85` `Fix download path double-nesting and post-download file locking`
-  8. `3ac80b2` `Fix token refresh race condition and upload pipeline issues`
-  9+ (earlier commits omitted — see `git log` for full history)
+  6+ (earlier commits omitted — see `git log` for full history)
 - **Git identity:** `EthanGeisler` / `25466222+EthanGeisler@users.noreply.github.com`
 - **Tags:** `v0.1.0` (first release), `v0.2.0` (current release — auto-update, bug fixes)
 
-> **Important:** Commits 1–3 above are AFTER the v0.2.0 tag. The v0.2.0 release does NOT include cover image fixes or the Settings page update UI. A v0.2.1 release is needed to ship these to users via auto-update. The user has a local build with these fixes (built via `npm run build:electron && electron-builder` on 2026-03-17) but it's still versioned as 0.2.0.
+> **Important:** Commits 1–3 above are AFTER the v0.2.0 tag. The v0.2.0 release does NOT include cover image fixes or the Settings page update UI. A v0.2.1 release is needed to ship these to users via auto-update. The DRM removal changes are also uncommitted/post-tag and will need to be included in the next release.
+
+> **Uncommitted changes (as of 2026-03-17):** Full DRM system removal — migration `remove_drm_system` applied locally, all server/client/frontend code updated. Needs: commit, push, deploy to VPS (run migration, remove `DRM_MASTER_KEK` from VPS `.env`, rebuild frontends, restart server).
 
 ---
 
@@ -532,17 +537,16 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 ### Short-term
 - [x] Connect web storefront to real API (replace mock data with fetch calls) — done 2026-03-16
 - [x] Stripe Connect integration (real payments via Stripe Checkout + Connect destination charges) — done 2026-03-16
-- [x] Electron client — full build: store browsing, purchase, BitTorrent downloads, DRM enforcement (LIGHT verify + ENCRYPTED decrypt), game launch, install management, settings
-- [x] DRM Tier 1 (LIGHT) — server + client: device fingerprinting, max 3 devices, verify before launch
-- [x] DRM Tier 2 (ENCRYPTED) — server + client: crypto utils, key delivery, decrypt after download
-- [x] DRM storefront UI — DRM badges on game cards, DRM info card on detail page, 3-column comparison on About page
+- [x] Electron client — full build: store browsing, purchase, BitTorrent downloads, game launch, install management, settings
 - [x] Developer portal SPA (`dev-portal/`) — manage games, file upload pipeline, version management
 - [x] Consolidated hosting — storefront + dev portal + API all on VPS
 - [x] Electron build pipeline — NSIS installer + portable exe, GitHub Actions CI, v0.1.0 published
 - [x] Download button on web storefront — header button + Store page banner, now served directly from VPS `/downloads/`
 - [x] Open-source game library — 6 free GPL games uploaded, cover images added, seeding on VPS (2026-03-17)
 - [x] Settings page manual update UI — check for updates button, progress bar, restart button (2026-03-17, in local build, needs v0.2.1 release)
-- [ ] Cut v0.2.1 release — includes cover image fixes, Settings update UI, and other post-v0.2.0 fixes. Bump version, tag, CI build, SCP to VPS.
+- [x] DRM system removed — platform distributes builds as-is, developers handle copy protection (2026-03-17)
+- [ ] Commit + deploy DRM removal to VPS (run migration, remove `DRM_MASTER_KEK` from .env, rebuild frontends, restart)
+- [ ] Cut v0.2.1 release — includes cover image fixes, Settings update UI, DRM removal, and other post-v0.2.0 fixes. Bump version, tag, CI build, SCP to VPS.
 - [ ] Clean up 6 DRAFT duplicate games from accidental double-upload (delete via dev portal)
 - [ ] Real cover art / screenshots for Player Character 01 (currently using placehold.co)
 - [ ] Real app icon for Electron client (currently a placeholder — `client/resources/icon.ico`)

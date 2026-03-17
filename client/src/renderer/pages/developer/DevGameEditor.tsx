@@ -9,7 +9,6 @@ const EMPTY_FORM: DevGameForm = {
   title: "",
   description: "",
   priceCents: 0,
-  drmTier: "NONE",
   exePath: "",
   coverImageUrl: "",
 };
@@ -78,7 +77,6 @@ export function DevGameEditor() {
           title: game.title,
           description: game.description,
           priceCents: game.priceCents,
-          drmTier: game.drmTier,
           exePath: game.exePath || "",
           coverImageUrl: game.coverImageUrl || "",
         });
@@ -177,7 +175,6 @@ export function DevGameEditor() {
         title: form.title,
         description: form.description,
         priceCents: form.priceCents,
-        drmTier: form.drmTier,
       };
       if (form.exePath) body.exePath = form.exePath;
       if (form.coverImageUrl) body.coverImageUrl = form.coverImageUrl;
@@ -314,39 +311,76 @@ export function DevGameEditor() {
           />
         </div>
 
-        {/* Price + DRM row */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-          <div>
-            <label style={labelStyle}>Price (USD)</label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={(form.priceCents / 100).toFixed(2)}
-              onChange={(e) => update("priceCents", Math.round(parseFloat(e.target.value || "0") * 100))}
-              style={inputStyle}
-            />
-            <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>
-              Set to 0 for free
+        {/* Price */}
+        <div>
+          <label style={labelStyle}>Price (USD)</label>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={(form.priceCents / 100).toFixed(2)}
+            onChange={(e) => update("priceCents", Math.round(parseFloat(e.target.value || "0") * 100))}
+            style={inputStyle}
+          />
+          <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>
+            Set to 0 for free
+          </div>
+        </div>
+
+        {/* Copy Protection Guidance */}
+        <div
+          style={{
+            padding: "14px 16px",
+            borderRadius: 8,
+            backgroundColor: "rgba(88, 166, 255, 0.08)",
+            border: "1px solid rgba(88, 166, 255, 0.2)",
+            fontSize: 13,
+            color: "#aaa",
+            lineHeight: 1.6,
+          }}
+        >
+          <div style={{ fontWeight: 600, color: "#58a6ff", marginBottom: 8 }}>
+            Copy Protection
+          </div>
+          <div style={{ marginBottom: 10 }}>
+            BoilerDeck distributes your game build exactly as you upload it via BitTorrent.
+            We do not modify, encrypt, or wrap your files in any way. If your game needs
+            copy protection, apply it before uploading using your engine's built-in tools.
+          </div>
+          <div style={{ marginBottom: 10 }}>
+            <strong style={{ color: "#ccc" }}>Why we don't handle DRM:</strong>{" "}
+            Platform-side DRM that wraps your game from the outside (like a launcher check)
+            doesn't actually protect your files — they still sit unencrypted on the user's disk.
+            Engine-native protection is integrated into your game binary itself, which is
+            significantly harder to bypass and requires zero maintenance from us.
+          </div>
+          <div style={{ fontWeight: 600, color: "#58a6ff", marginBottom: 6, fontSize: 13 }}>
+            Engine-Specific Options
+          </div>
+          <div style={{ fontSize: 12, color: "#888", lineHeight: 1.8 }}>
+            <div style={{ marginBottom: 4 }}>
+              <strong style={{ color: "#aaa" }}>Godot</strong> — Enable PCK encryption in Export &gt; Options. Uses AES-256-CBC with a key
+              embedded in a custom export template. Protects all game assets and scripts in the .pck file.
+            </div>
+            <div style={{ marginBottom: 4 }}>
+              <strong style={{ color: "#aaa" }}>Unity</strong> — Use the IL2CPP scripting backend (converts C# to native code, much harder
+              to reverse than Mono/.NET). Enable "Strip Engine Code" to remove unused modules.
+              Consider Asset Bundle encryption for premium content.
+            </div>
+            <div style={{ marginBottom: 4 }}>
+              <strong style={{ color: "#aaa" }}>Unreal Engine</strong> — Enable Pak file encryption in Project Settings &gt; Packaging.
+              Uses AES-256 to encrypt all packaged assets. The key is embedded in the executable.
+            </div>
+            <div>
+              <strong style={{ color: "#aaa" }}>Any Engine</strong> — Third-party tools like Themida, VMProtect, or Enigma Protector
+              can wrap any Windows executable with anti-tampering and code virtualization,
+              making reverse engineering significantly harder.
             </div>
           </div>
-
-          <div>
-            <label style={labelStyle}>DRM Tier</label>
-            <select
-              value={form.drmTier}
-              onChange={(e) => update("drmTier", e.target.value as DevGameForm["drmTier"])}
-              style={inputStyle}
-            >
-              <option value="NONE">DRM-Free</option>
-              <option value="LIGHT">Light (Online Check)</option>
-              <option value="ENCRYPTED">Encrypted (AES-256)</option>
-            </select>
-            <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>
-              {form.drmTier === "NONE" && "No copy protection. Players own their files."}
-              {form.drmTier === "LIGHT" && "Online license check at launch, max 3 devices."}
-              {form.drmTier === "ENCRYPTED" && "Game files encrypted, key delivered per-user."}
-            </div>
+          <div style={{ fontSize: 12, color: "#888", lineHeight: 1.6, marginTop: 10, borderTop: "1px solid rgba(88, 166, 255, 0.15)", paddingTop: 10 }}>
+            <strong style={{ color: "#aaa" }}>What BoilerDeck provides:</strong> License tracking (who bought your game),
+            Stripe payments with 99/1 revenue split, and BitTorrent distribution.
+            Your game's library page shows ownership status — the rest is up to you.
           </div>
         </div>
 

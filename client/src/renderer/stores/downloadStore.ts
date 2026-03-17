@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { apiFetch } from "../api";
 import { useInstalledStore } from "./installedStore";
 import type { DownloadProgress, InstalledGame } from "../types";
 
@@ -9,7 +8,6 @@ interface DownloadMeta {
   title: string;
   slug: string;
   exePath: string | null;
-  drmTier: "NONE" | "LIGHT" | "ENCRYPTED";
   version: string;
   coverImageUrl: string | null;
   downloadPath: string;
@@ -93,35 +91,10 @@ export const useDownloadStore = create<DownloadState>((set, get) => ({
       set({ downloads });
     });
 
-    // Download completion — decrypt if needed, then register as installed
+    // Download completion — register as installed
     window.boilerdeck.downloads.onComplete(async (data) => {
       const meta = downloadMeta.get(data.gameId);
       if (!meta) return;
-
-      // ENCRYPTED DRM: fetch key and decrypt before registering
-      if (meta.drmTier === "ENCRYPTED") {
-        try {
-          const fingerprint = await window.boilerdeck.drm.getFingerprint();
-          const keyResult = await apiFetch<{ key: string; algorithm: string }>(
-            `/licenses/${meta.gameId}/key`,
-            {
-              method: "POST",
-              body: JSON.stringify({ deviceFingerprint: fingerprint }),
-            },
-          );
-          const decryptResult = await window.boilerdeck.drm.decryptGame({
-            installPath: meta.downloadPath,
-            key: keyResult.key,
-            algorithm: keyResult.algorithm,
-          });
-          if (!decryptResult.success) {
-            console.error("[download] Decryption failed:", decryptResult.error);
-            // Still register as installed so user can retry
-          }
-        } catch (err) {
-          console.error("[download] Failed to decrypt:", err);
-        }
-      }
 
       const installed: InstalledGame = {
         gameId: meta.gameId,
@@ -129,7 +102,6 @@ export const useDownloadStore = create<DownloadState>((set, get) => ({
         slug: meta.slug,
         installPath: meta.downloadPath,
         exePath: meta.exePath,
-        drmTier: meta.drmTier,
         version: meta.version,
         coverImageUrl: meta.coverImageUrl,
         installedAt: new Date().toISOString(),

@@ -344,10 +344,9 @@ export function DevGameDetail() {
       </div>
 
       {/* Stats row */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 32 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 32 }}>
         {[
           { label: "Price", value: game.priceCents === 0 ? "Free" : `$${(game.priceCents / 100).toFixed(2)}` },
-          { label: "DRM", value: game.drmTier === "NONE" ? "DRM-Free" : game.drmTier === "LIGHT" ? "Online Check" : "Encrypted" },
           { label: "Licenses", value: game.licensesCount },
           { label: "Sales", value: game.salesCount },
         ].map((stat) => (
@@ -382,41 +381,6 @@ export function DevGameDetail() {
           </div>
         )}
       </Section>
-
-      {/* DRM & Encryption section */}
-      {game.drmTier !== "NONE" && (
-        <Section title="DRM & Encryption">
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            <DetailRow label="DRM Tier" value={game.drmTier === "LIGHT" ? "Light (Online Check)" : "Encrypted (AES-256)"} />
-            {game.encryptionKey && (
-              <>
-                <DetailRow label="Encryption Algorithm" value={game.encryptionKey.algorithm} />
-                <DetailRow label="Key Created" value={formatDate(game.encryptionKey.createdAt)} />
-              </>
-            )}
-          </div>
-          {game.drmTier === "LIGHT" && (
-            <div style={{ marginTop: 12, fontSize: 13, color: "#888" }}>
-              Players must verify their license online at launch. Max 3 devices per license.
-            </div>
-          )}
-          {game.drmTier === "ENCRYPTED" && !game.encryptionKey && (
-            <div
-              style={{
-                marginTop: 12,
-                padding: "10px 14px",
-                borderRadius: 8,
-                backgroundColor: "rgba(210, 153, 34, 0.1)",
-                border: "1px solid rgba(210, 153, 34, 0.3)",
-                color: "#d29922",
-                fontSize: 13,
-              }}
-            >
-              No encryption key found. Use the publish-game-encrypted script to set up encryption.
-            </div>
-          )}
-        </Section>
-      )}
 
       {/* Versions section */}
       <Section
