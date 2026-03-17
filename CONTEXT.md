@@ -52,6 +52,8 @@ Fully functional REST API running on port **3001** (port 3000 is used by open-we
 - 3 sample games (Space Explorer $19.99, Dungeon Crawl $9.99, Pixel Racing Free)
 - Player Character 01 — Premium Edition ($9.99, LIGHT DRM)
 
+> **DB is currently wiped** (as of 2026-03-17) — all seed data removed, no users, games, or licenses. Real data uploaded through dev portal. Do not run `npm run db:seed` against VPS without confirming it's intentional.
+
 **Player Character 01** was also published to the DB via `scripts/publish-game.mjs`:
 - Game slug in DB: `player-character-01-43dc` (the hex suffix is random, will differ after re-seed)
 - Has a GameVersion (v0.1.0, 96MB) + Torrent record with magnet URI
@@ -225,7 +227,7 @@ The production environment runs on a Hetzner VPS. All services auto-start on boo
 
 | Service | Details |
 |---------|---------|
-| **Nginx** | Ports 80 (→301 HTTPS) + 443 (SSL). `/` → `web/dist`, `/dev/` → `dev-portal/dist`, `/api/` → proxy to Node 3001. `client_max_body_size 2g` on `/api/`. |
+| **Nginx** | Ports 80 (→301 HTTPS) + 443 (SSL). `/` → `web/dist`, `/dev/` → `dev-portal/dist`, `/api/` → proxy to Node 3001. `/downloads/` → `/opt/boilerdeck/downloads/` (with `Content-Disposition: attachment`). `client_max_body_size 2g` on `/api/`. |
 | **BoilerDeck API** | systemd service `boilerdeck`, Node/tsx on port 3001 |
 | **PostgreSQL 16** | User: `peerplay`, DB: `peerplay`, localhost:5432 |
 | **Redis 7** | localhost:6379 |
@@ -236,6 +238,7 @@ The production environment runs on a Hetzner VPS. All services auto-start on boo
 **Project location on VPS:** `/opt/boilerdeck/`
 **Game files on VPS:** `/opt/boilerdeck/games/<game-slug>/` (created automatically by upload pipeline)
 **Upload temp dir:** `/opt/boilerdeck/games/.tmp/` (auto-created by multer on first upload)
+**Downloads dir:** `/opt/boilerdeck/downloads/` — contains `BoilerDeck Setup 0.1.0.exe` (91MB installer, served at `/downloads/`)
 **Torrent file on VPS:** Stored in DB as `Torrent.torrentFile` (Bytes column), no longer loose files
 **Nginx config:** `/etc/nginx/sites-available/boilerdeck`
 **Note:** PostgreSQL DB/user are still named `peerplay` — renaming would require a migration.
@@ -283,6 +286,8 @@ npm run dev:web       # runs on port 5173
 ```
 
 **Environment:** `server/.env` — contains DATABASE_URL, REDIS_URL, JWT secrets, Stripe keys (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PLATFORM_FEE_PERCENT`), `CORS_ORIGIN`, `CORS_ADDITIONAL_ORIGINS` (comma-separated extra origins, e.g. for Electron dev), port config, optional `DRM_MASTER_KEK` (64+ hex chars, required for ENCRYPTED DRM tier). Not committed to git. Separate `.env` exists on VPS at `/opt/boilerdeck/server/.env`.
+
+**VPS `.env` note:** `CORS_ADDITIONAL_ORIGINS="http://localhost:5173"` is set on the VPS to allow Electron dev mode (renderer runs on localhost:5173 in dev, not `file://`).
 
 ---
 
@@ -343,6 +348,12 @@ magnet:?xt=urn:btih:bf69c35df8f0d24cdacfdf3f10c7afdc4513b09e&dn=player-character
 30. **Electron icon must be 256x256+** — electron-builder rejects icons smaller than 256x256. The placeholder icon is at `client/resources/icon.ico` (256x256 BMP-in-ICO). Replace with real branding when available.
 31. **Windows SmartScreen warning** — The installer is not code-signed, so Windows SmartScreen will show "Windows protected your PC." Users click "More info" → "Run anyway." This is expected until an EV code signing certificate is purchased.
 32. **`release/` directory** — electron-builder outputs to `client/release/`. This is gitignored. Never commit build artifacts.
+33. **Helmet CORP blocks Electron** — Default `helmet()` sets `Cross-Origin-Resource-Policy: same-origin`, which blocks API responses in Electron's `file://` origin even when CORS headers are correct. Fix: `helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } })` in `server/src/index.ts`. This is NOT a CORS issue — it's a separate header enforced by the browser/Electron renderer before the response body is handed to JS.
+34. **Server error response shape** — The server returns `{ error: { code, message } }`, not `{ message }`. All API clients must check `body.error?.message || body.message || res.statusText` in that order. The `|| body.message` fallback exists for backward compatibility; prefer `body.error?.message` for new code.
+35. **Licenses endpoint wraps array** — `GET /api/licenses` returns `{ licenses: [...] }`, not a bare array. Code consuming this endpoint must unwrap: `const licenses = data.licenses`. `Array.isArray()` guards are advisable before calling array methods.
+36. **JWT stale after server-side role change** — When the server upgrades a user's role (e.g., `POST /developer/register`), the existing JWT still carries the old role claim. Subsequent requests guarded by `requireRole("DEVELOPER")` will return 403. Fix: call `refreshAccessToken()` immediately after any role-changing operation on the client.
+37. **React StrictMode double-fires effects** — In development, React 18+ runs effects twice. Any effect that makes a mutating API call (e.g., token rotation using `delete` by ID) will race and crash on the second call if the first already consumed the resource. Fix: use `deleteMany` instead of `delete` for idempotent operations, or guard with a ref flag.
+38. **Transmission cleared, fresh torrents only** — As of 2026-03-17, Transmission was cleared of old test torrents. Only torrents added via the upload pipeline are present. If re-seeding manually, use the upload pipeline or `transmission-remote --add` with the .torrent file from the DB.
 
 ---
 
@@ -398,7 +409,8 @@ The version in `client/package.json` (`"version": "0.1.0"`) controls the install
 ### Download Buttons (Web Storefront)
 - **Header button** (`web/src/App.tsx`): Green "Download for Windows" button, text hidden below 768px via CSS `.download-label` class
 - **Store page banner** (`web/src/pages/Store.tsx`): Full-width CTA banner below search bar, hidden during search, wraps on mobile via `flexWrap`
-- Both link to `https://github.com/EthanGeisler/peerplay/releases/latest` — auto-resolves to newest release
+- Both link to `/downloads/BoilerDeck%20Setup%200.1.0.exe` — served directly from VPS (commit e132213). **No longer linking to GitHub Releases.** nginx serves this from `/opt/boilerdeck/downloads/` with `Content-Disposition: attachment`.
+- To update to a new installer version: build the installer, scp to VPS, update the link in both `App.tsx` and `Store.tsx`.
 
 ---
 
@@ -406,31 +418,37 @@ The version in `client/package.json` (`"version": "0.1.0"`) controls the install
 
 - **Repo:** https://github.com/EthanGeisler/peerplay (rename pending — GitHub repo still named `peerplay`)
 - **Branch:** `main` (only branch)
-- **24 commits** as of 2026-03-16 (latest first):
-  1. `459ec60` `Fix review issues: CI workflow, accessibility, and responsive layout`
-  2. `51503c6` `Add Windows download button and Electron build pipeline`
-  3. `bd09ef5` `Add storefront search, cover image uploads, Electron improvements, and e2e tests`
-  4. `015ebfd` `Update CONTEXT.md and CLAUDE.md with full Electron client architecture documentation`
-  5. `ac3ae87` `Update CLAUDE.md and CONTEXT.md with Stripe Connect integration details`
-  6. `dd4f235` `Build functional Electron desktop client with BitTorrent downloads, DRM, and game launching`
-  7. `dfd977a` `Fix review issues: Stripe security, webhook idempotency, frontend cleanup`
-  8. `3e6f71d` `Fix Stripe Connect return endpoint and Dashboard error logging`
-  9. `cd78e5c` `Rebrand Peerplay to BoilerDeck and set up boilerdeck.com domain`
-  10. `5550a92` `Update CONTEXT.md and CLAUDE.md for storefront API integration`
-  11. `148e5ec` `Fix review issues: logout token revocation, 204 handling, accessibility, dedup`
-  12. `6f6caac` `Connect web storefront to real API, replacing all mock data`
-  13. `695459d` `Update CONTEXT.md and CLAUDE.md with upload pipeline and VPS consolidation`
-  14. `47a4b29` `Move web storefront to VPS and add Developer Portal link`
-  15. `f1a267c` `Auto-create upload temp directory if missing`
-  16. `7122663` `Require game build upload when creating a new game`
-  17. `7164553` `Set base path for dev portal served under /dev/`
-  18. `aee5333` `Add game file upload pipeline with automatic torrent creation`
-  19. `b147608` `Deploy to Hetzner VPS with standard BitTorrent seeding`
-  20. `bbc01e1` `Implement LIGHT and ENCRYPTED DRM tiers across server and storefront`
-  21. `a1b1673` `Add CONTEXT.md for session continuity between Claude instances`
-  22. `87ffa4f` `Update Player Character 01 magnet URI to match active WebTorrent seeder`
-  23. `d01f51f` `Add Player Character 01 as first game on the platform`
-  24. `f71401e` `Initial commit: Peerplay MVP`
+- **30 commits** as of 2026-03-17 (latest first):
+  1. `05d0d3d` `Fix refresh token race condition causing 500 on concurrent requests`
+  2. `9df49bd` `Fix API error message parsing across all clients`
+  3. `d2e9e71` `Remove account registration from dev portal login`
+  4. `6f01f8b` `Fix dev portal role escalation and client license deserialization bugs`
+  5. `3eba50c` `Fix blank game detail screen in Electron client`
+  6. `e132213` `Serve installer download directly from VPS instead of GitHub Releases`
+  7. `e15f2e4` `Update CONTEXT.md and CLAUDE.md with Electron build pipeline documentation`
+  8. `459ec60` `Fix review issues: CI workflow, accessibility, and responsive layout`
+  9. `51503c6` `Add Windows download button and Electron build pipeline`
+  10. `bd09ef5` `Add storefront search, cover image uploads, Electron improvements, and e2e tests`
+  11. `015ebfd` `Update CONTEXT.md and CLAUDE.md with full Electron client architecture documentation`
+  12. `ac3ae87` `Update CLAUDE.md and CONTEXT.md with Stripe Connect integration details`
+  13. `dd4f235` `Build functional Electron desktop client with BitTorrent downloads, DRM, and game launching`
+  14. `dfd977a` `Fix review issues: Stripe security, webhook idempotency, frontend cleanup`
+  15. `3e6f71d` `Fix Stripe Connect return endpoint and Dashboard error logging`
+  16. `cd78e5c` `Rebrand Peerplay to BoilerDeck and set up boilerdeck.com domain`
+  17. `5550a92` `Update CONTEXT.md and CLAUDE.md for storefront API integration`
+  18. `148e5ec` `Fix review issues: logout token revocation, 204 handling, accessibility, dedup`
+  19. `6f6caac` `Connect web storefront to real API, replacing all mock data`
+  20. `695459d` `Update CONTEXT.md and CLAUDE.md with upload pipeline and VPS consolidation`
+  21. `47a4b29` `Move web storefront to VPS and add Developer Portal link`
+  22. `f1a267c` `Auto-create upload temp directory if missing`
+  23. `7122663` `Require game build upload when creating a new game`
+  24. `7164553` `Set base path for dev portal served under /dev/`
+  25. `aee5333` `Add game file upload pipeline with automatic torrent creation`
+  26. `b147608` `Deploy to Hetzner VPS with standard BitTorrent seeding`
+  27. `bbc01e1` `Implement LIGHT and ENCRYPTED DRM tiers across server and storefront`
+  28. `a1b1673` `Add CONTEXT.md for session continuity between Claude instances`
+  29. `87ffa4f` `Update Player Character 01 magnet URI to match active WebTorrent seeder`
+  30. `d01f51f` `Add Player Character 01 as first game on the platform` (+ `f71401e` initial commit)
 - **Git identity:** `EthanGeisler` / `25466222+EthanGeisler@users.noreply.github.com`
 - **Tags:** `v0.1.0` (first Electron client release)
 
@@ -450,7 +468,7 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 - [x] Developer portal SPA (`dev-portal/`) — manage games, file upload pipeline, version management
 - [x] Consolidated hosting — storefront + dev portal + API all on VPS
 - [x] Electron build pipeline — NSIS installer + portable exe, GitHub Actions CI, v0.1.0 published
-- [x] Download button on web storefront — header button + Store page banner, links to GitHub Releases
+- [x] Download button on web storefront — header button + Store page banner, now served directly from VPS `/downloads/`
 - [ ] Real cover art / screenshots for Player Character 01 (currently using placehold.co)
 - [ ] Real app icon for Electron client (currently a placeholder — `client/resources/icon.ico`)
 - [ ] Electron client: fetch `.torrent` file from `/api/torrents/:gameId/latest/file` instead of using magnet URI (faster metadata, endpoint exists but client doesn't use it yet)
@@ -542,5 +560,6 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 | Upload temp (VPS) | `/opt/boilerdeck/games/.tmp/` |
 | Torrent scripts | `scripts/` |
 | Transmission config | `/root/.config/transmission-daemon/settings.json` (on VPS) |
-| Dev portal login | `dev@example.com` / `developer123` |
-| Storefront player login | `player@example.com` / `player123456` |
+| Downloads dir (VPS) | `/opt/boilerdeck/downloads/` (installer served at `/downloads/`) |
+| Dev portal login | `dev@example.com` / `developer123` (seed data — **DB wiped 2026-03-17, these no longer exist on VPS**) |
+| Storefront player login | `player@example.com` / `player123456` (seed data — **DB wiped 2026-03-17, these no longer exist on VPS**) |

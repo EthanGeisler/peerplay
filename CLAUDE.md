@@ -29,6 +29,11 @@
 - Error classes: AppError, NotFoundError, UnauthorizedError, ForbiddenError, ConflictError, ValidationError
 - Stripe: import `getStripe` from `@boilerdeck/shared` (singleton in `shared/src/stripe.ts`) — never instantiate Stripe directly in packages
 - Prisma models are PascalCase, DB tables are snake_case (via `@@map`)
+- **Server error shape:** Server returns `{ error: { code, message } }`. All API clients parse errors as `body.error?.message || body.message || res.statusText`. Never assume `body.message` at the top level.
+- **Helmet CORP:** Always initialize Helmet with `crossOriginResourcePolicy: { policy: "cross-origin" }` in `server/src/index.ts`. The default `same-origin` breaks Electron's `file://` renderer even when CORS is configured correctly.
+- **Token rotation must be idempotent:** Use `deleteMany` instead of `delete` when rotating refresh tokens — React StrictMode double-fires effects and concurrent requests will both find the same token. `deleteMany` on an already-deleted token is a no-op; `delete` throws Prisma P2025.
+- **Role changes require token refresh:** Any endpoint that upgrades a user's role must be followed by `refreshAccessToken()` on the client. The existing JWT carries the old role claim until refreshed.
+- **`GET /api/licenses` returns `{ licenses: [...] }`** — not a bare array. Always unwrap `data.licenses` and add `Array.isArray()` guard before calling array methods.
 
 ## Electron Client Conventions
 - **IPC handlers** go in `client/src/main/index.ts` `setupIpcHandlers()` — namespaced like `store:get`, `downloads:start`, `drm:get-fingerprint`
@@ -59,6 +64,8 @@ ssh root@204.168.133.38 "systemctl restart boilerdeck"
 **Gotcha:** If VPS has local changes, `git pull` will fail — use `git stash --include-untracked` first.
 **Gotcha:** `package-lock.json` from Windows may lack `@rollup/rollup-linux-x64-gnu`. If Vite build fails on VPS, run `npm install @rollup/rollup-linux-x64-gnu` or do a clean `rm -rf node_modules && npm install`.
 **Gotcha:** After wiping `node_modules` on VPS, run `npx prisma generate` before `systemctl restart boilerdeck`.
+**Gotcha:** Electron dev mode runs the renderer on `http://localhost:5173` (Vite), not `file://`. VPS `.env` must include `CORS_ADDITIONAL_ORIGINS="http://localhost:5173"` or API calls will be blocked in dev mode.
+**Nginx downloads block:** The `/downloads/` location in `/etc/nginx/sites-available/boilerdeck` serves from `/opt/boilerdeck/downloads/` with `Content-Disposition: attachment`. When releasing a new installer version, scp the file to that directory and update the link in `web/src/App.tsx` and `web/src/pages/Store.tsx`.
 
 ## Agents (`.claude/agents/`)
 
