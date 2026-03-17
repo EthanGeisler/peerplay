@@ -249,11 +249,11 @@ export function Library() {
     );
   }
 
-  if (licensesLoading && licenses.length === 0) {
+  if (licensesLoading && (!Array.isArray(licenses) || licenses.length === 0)) {
     return <p style={styles.empty}>Loading library...</p>;
   }
 
-  const activeLicenses = licenses.filter((l) => l.status === "ACTIVE");
+  const activeLicenses = Array.isArray(licenses) ? licenses.filter((l) => l.status === "ACTIVE") : [];
 
   return (
     <div>
