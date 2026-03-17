@@ -428,19 +428,48 @@ git tag v0.x.x && git push origin v0.x.x
 - **Auth:** Uses built-in `GITHUB_TOKEN` (no custom secrets needed)
 
 ### Version Bumping
-The version in `client/package.json` (`"version": "0.1.0"`) controls the installer filename and auto-update version comparison. The git tag should match (e.g., `v0.1.0`). Bump both together.
+The version in `client/package.json` (`"version": "0.2.0"`) controls the installer filename and auto-update version comparison. The git tag should match (e.g., `v0.2.0`). Bump both together.
 
 ### Current Release
-- **v0.1.0** — https://github.com/EthanGeisler/peerplay/releases/tag/v0.1.0
-- Published 2026-03-16, built locally and uploaded via `gh release create`
-- NSIS installer (91MB) + portable exe (90MB)
+- **v0.2.0** — https://github.com/EthanGeisler/peerplay/releases/tag/v0.2.0
+- Published 2026-03-17, built via CI (GitHub Actions on `v0.2.0` tag push)
+- NSIS installer (90MB) + portable exe (89MB) + blockmap (delta updates)
 - Not code-signed (SmartScreen warning expected)
+- **v0.1.0** — https://github.com/EthanGeisler/peerplay/releases/tag/v0.1.0 (superseded, auto-update prompts users to v0.2.0)
+
+### Auto-Update (electron-updater) — fully working
+- **Main process** (`client/src/main/index.ts` `setupAutoUpdater()`): checks GitHub Releases on startup, auto-downloads in background, sends `app:update-downloaded` IPC event when ready
+- **Preload bridge** (`client/src/main/preload.ts`): exposes `updater.onUpdateDownloaded()`, `removeUpdateListener()`, `restartForUpdate()`
+- **UI** (`client/src/renderer/components/UpdateBanner.tsx`): banner appears at top of window with version number + "Restart to Update" button → calls `autoUpdater.quitAndInstall()`
+- **Config:** `autoDownload: true` (silent), `autoInstallOnAppQuit: true`
+- **Skipped in:** dev mode and E2E tests (`isDev || process.env.ELECTRON_E2E`)
+- **Delta updates:** `.blockmap` files enable partial downloads — only changed blocks are fetched, not the full installer
 
 ### Download Buttons (Web Storefront)
 - **Header button** (`web/src/App.tsx`): Green "Download for Windows" button, text hidden below 768px via CSS `.download-label` class
 - **Store page banner** (`web/src/pages/Store.tsx`): Full-width CTA banner below search bar, hidden during search, wraps on mobile via `flexWrap`
-- Both link to `/downloads/BoilerDeck%20Setup%200.1.0.exe` — served directly from VPS (commit e132213). **No longer linking to GitHub Releases.** nginx serves this from `/opt/boilerdeck/downloads/` with `Content-Disposition: attachment`.
-- To update to a new installer version: build the installer, scp to VPS, update the link in both `App.tsx` and `Store.tsx`.
+- Both link to `/downloads/BoilerDeck%20Setup%200.2.0.exe` — served directly from VPS. nginx serves from `/opt/boilerdeck/downloads/` with `Content-Disposition: attachment`.
+
+### Releasing a New Client Version (full process)
+```bash
+# 1. Bump version in client/package.json (e.g., 0.2.0 → 0.3.0)
+# 2. Update download links in web/src/App.tsx and web/src/pages/Store.tsx
+# 3. Commit + push + tag
+git add client/package.json web/src/App.tsx web/src/pages/Store.tsx
+git commit -m "Bump client version to 0.3.0 and update download links"
+git push origin main
+git tag v0.3.0 && git push origin v0.3.0
+# 4. CI builds and publishes to GitHub Releases (~5-10 min)
+gh run list --limit 1   # monitor progress
+# 5. Download installer from GitHub Release
+gh release download v0.3.0 -p "BoilerDeck-Setup-0.3.0.exe" -D /tmp
+# 6. Upload to VPS (NOTE: GitHub uses hyphens, VPS needs spaces to match URL-encoded links)
+scp /tmp/BoilerDeck-Setup-0.3.0.exe "root@204.168.133.38:/opt/boilerdeck/downloads/BoilerDeck Setup 0.3.0.exe"
+# 7. Deploy updated web storefront
+ssh root@204.168.133.38 "cd /opt/boilerdeck && git pull origin main && npx vite build web"
+```
+**Gotcha:** GitHub Release assets use hyphens (`BoilerDeck-Setup-0.2.0.exe`) but the VPS download links use spaces (`BoilerDeck%20Setup%200.2.0.exe`). Must rename when SCP-ing to VPS.
+**Gotcha:** The `/opt/boilerdeck/downloads/` directory may not exist after VPS rebuild — create with `mkdir -p` before SCP.
 
 ---
 
@@ -448,43 +477,32 @@ The version in `client/package.json` (`"version": "0.1.0"`) controls the install
 
 - **Repo:** https://github.com/EthanGeisler/peerplay (rename pending — GitHub repo still named `peerplay`)
 - **Branch:** `main` (only branch)
-- **34 commits** as of 2026-03-17 (latest first):
-  1. `8039e85` `Fix download path double-nesting and post-download file locking`
-  2. `3ac80b2` `Fix token refresh race condition and upload pipeline issues`
-  3. `a275593` `Add Array.isArray guards to Library page and libraryStore`
-  4. `eb93713` `Update CONTEXT.md and CLAUDE.md with session fixes and infrastructure changes`
-  5. `05d0d3d` `Fix refresh token race condition causing 500 on concurrent requests`
-  6. `9df49bd` `Fix API error message parsing across all clients`
-  3. `d2e9e71` `Remove account registration from dev portal login`
-  4. `6f01f8b` `Fix dev portal role escalation and client license deserialization bugs`
-  5. `3eba50c` `Fix blank game detail screen in Electron client`
-  6. `e132213` `Serve installer download directly from VPS instead of GitHub Releases`
-  7. `e15f2e4` `Update CONTEXT.md and CLAUDE.md with Electron build pipeline documentation`
-  8. `459ec60` `Fix review issues: CI workflow, accessibility, and responsive layout`
-  9. `51503c6` `Add Windows download button and Electron build pipeline`
-  10. `bd09ef5` `Add storefront search, cover image uploads, Electron improvements, and e2e tests`
-  11. `015ebfd` `Update CONTEXT.md and CLAUDE.md with full Electron client architecture documentation`
-  12. `ac3ae87` `Update CLAUDE.md and CONTEXT.md with Stripe Connect integration details`
-  13. `dd4f235` `Build functional Electron desktop client with BitTorrent downloads, DRM, and game launching`
-  14. `dfd977a` `Fix review issues: Stripe security, webhook idempotency, frontend cleanup`
-  15. `3e6f71d` `Fix Stripe Connect return endpoint and Dashboard error logging`
-  16. `cd78e5c` `Rebrand Peerplay to BoilerDeck and set up boilerdeck.com domain`
-  17. `5550a92` `Update CONTEXT.md and CLAUDE.md for storefront API integration`
-  18. `148e5ec` `Fix review issues: logout token revocation, 204 handling, accessibility, dedup`
-  19. `6f6caac` `Connect web storefront to real API, replacing all mock data`
-  20. `695459d` `Update CONTEXT.md and CLAUDE.md with upload pipeline and VPS consolidation`
-  21. `47a4b29` `Move web storefront to VPS and add Developer Portal link`
-  22. `f1a267c` `Auto-create upload temp directory if missing`
-  23. `7122663` `Require game build upload when creating a new game`
-  24. `7164553` `Set base path for dev portal served under /dev/`
-  25. `aee5333` `Add game file upload pipeline with automatic torrent creation`
-  26. `b147608` `Deploy to Hetzner VPS with standard BitTorrent seeding`
-  27. `bbc01e1` `Implement LIGHT and ENCRYPTED DRM tiers across server and storefront`
-  28. `a1b1673` `Add CONTEXT.md for session continuity between Claude instances`
-  29. `87ffa4f` `Update Player Character 01 magnet URI to match active WebTorrent seeder`
-  30. `d01f51f` `Add Player Character 01 as first game on the platform` (+ `f71401e` initial commit)
+- **36 commits** as of 2026-03-17 (latest first):
+  1. `912f091` `Bump client version to 0.2.0 and update download links`
+  2. `bb26191` `Update CONTEXT.md and CLAUDE.md with session learnings`
+  3. `8039e85` `Fix download path double-nesting and post-download file locking`
+  4. `3ac80b2` `Fix token refresh race condition and upload pipeline issues`
+  5. `a275593` `Add Array.isArray guards to Library page and libraryStore`
+  6. `eb93713` `Update CONTEXT.md and CLAUDE.md with session fixes and infrastructure changes`
+  7. `05d0d3d` `Fix refresh token race condition causing 500 on concurrent requests`
+  8. `9df49bd` `Fix API error message parsing across all clients`
+  9. `d2e9e71` `Remove account registration from dev portal login`
+  10. `6f01f8b` `Fix dev portal role escalation and client license deserialization bugs`
+  11. `3eba50c` `Fix blank game detail screen in Electron client`
+  12. `e132213` `Serve installer download directly from VPS instead of GitHub Releases`
+  13. `e15f2e4` `Update CONTEXT.md and CLAUDE.md with Electron build pipeline documentation`
+  14. `459ec60` `Fix review issues: CI workflow, accessibility, and responsive layout`
+  15. `51503c6` `Add Windows download button and Electron build pipeline`
+  16. `bd09ef5` `Add storefront search, cover image uploads, Electron improvements, and e2e tests`
+  17. `015ebfd` `Update CONTEXT.md and CLAUDE.md with full Electron client architecture documentation`
+  18. `ac3ae87` `Update CLAUDE.md and CONTEXT.md with Stripe Connect integration details`
+  19. `dd4f235` `Build functional Electron desktop client with BitTorrent downloads, DRM, and game launching`
+  20. `dfd977a` `Fix review issues: Stripe security, webhook idempotency, frontend cleanup`
+  21. `3e6f71d` `Fix Stripe Connect return endpoint and Dashboard error logging`
+  22. `cd78e5c` `Rebrand Peerplay to BoilerDeck and set up boilerdeck.com domain`
+  23+ (earlier commits omitted for brevity — see `git log` for full history)
 - **Git identity:** `EthanGeisler` / `25466222+EthanGeisler@users.noreply.github.com`
-- **Tags:** `v0.1.0` (first Electron client release)
+- **Tags:** `v0.1.0` (first release), `v0.2.0` (current release — auto-update, bug fixes)
 
 ---
 
@@ -507,7 +525,7 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 - [ ] Real app icon for Electron client (currently a placeholder — `client/resources/icon.ico`)
 - [x] Electron client: fetch `.torrent` file from `/api/torrents/:gameId/latest/file` instead of using magnet URI — done 2026-03-17 (client fetches .torrent bytes, falls back to magnet)
 - [x] Electron client: end-to-end verified — upload via dev portal, purchase, download via BitTorrent, launch game — done 2026-03-17
-- [ ] Electron client: catch-all route for 404s
+- [x] Electron client: catch-all route for 404s — done (App.tsx has `<Route path="*">` with back-to-store link)
 - [ ] Electron client: handle duplicate torrent gracefully (currently errors on re-add of same info hash)
 - [ ] Electron client: store key whitelist (currently accepts any key — not a security issue since it's local-only, but good hygiene)
 - [ ] Electron client: first real end-to-end test (start app, browse store, download a game)
@@ -515,7 +533,7 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 ### Medium-term
 - [ ] Steam shortcuts.vdf integration (games appear in Steam library)
 - [ ] Cloud save sync (Backblaze B2)
-- [ ] Client auto-update (electron-updater) — `latest.yml` already published with v0.1.0, just needs testing
+- [x] Client auto-update (electron-updater) — fully working as of v0.2.0. Silent background download + UpdateBanner UI + restart-to-install. See "Auto-Update" section above.
 - [ ] Search / categories / reviews
 - [ ] Private opentracker instance + seed boxes
 - [ ] Code signing certificate for Windows installer (removes SmartScreen warning)
@@ -583,7 +601,9 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 | Build workflow (Electron) | `.github/workflows/build-client.yml` |
 | Electron build config | `client/package.json` (`"build"` field) |
 | Electron app icon | `client/resources/icon.ico` (placeholder — replace with real branding) |
-| GitHub Release (v0.1.0) | https://github.com/EthanGeisler/peerplay/releases/tag/v0.1.0 |
+| GitHub Release (current) | https://github.com/EthanGeisler/peerplay/releases/tag/v0.2.0 |
+| Auto-update UI component | `client/src/renderer/components/UpdateBanner.tsx` |
+| Auto-update main process | `client/src/main/index.ts` (`setupAutoUpdater()`) |
 | Electron client API client | `client/src/renderer/api.ts` |
 | Electron client types | `client/src/renderer/types.ts` |
 | Electron client preload bridge | `client/src/main/preload.ts` |

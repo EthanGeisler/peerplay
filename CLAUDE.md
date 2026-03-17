@@ -70,7 +70,10 @@ ssh root@204.168.133.38 "systemctl restart boilerdeck"
 **Gotcha:** `package-lock.json` from Windows may lack `@rollup/rollup-linux-x64-gnu`. If Vite build fails on VPS, run `npm install @rollup/rollup-linux-x64-gnu` or do a clean `rm -rf node_modules && npm install`.
 **Gotcha:** After wiping `node_modules` on VPS, run `npx prisma generate` before `systemctl restart boilerdeck`.
 **Gotcha:** Electron dev mode runs the renderer on `http://localhost:5173` (Vite), not `file://`. VPS `.env` must include `CORS_ADDITIONAL_ORIGINS="http://localhost:5173"` or API calls will be blocked in dev mode.
-**Nginx downloads block:** The `/downloads/` location in `/etc/nginx/sites-available/boilerdeck` serves from `/opt/boilerdeck/downloads/` with `Content-Disposition: attachment`. When releasing a new installer version, scp the file to that directory and update the link in `web/src/App.tsx` and `web/src/pages/Store.tsx`.
+**Nginx downloads block:** The `/downloads/` location in `/etc/nginx/sites-available/boilerdeck` serves from `/opt/boilerdeck/downloads/` with `Content-Disposition: attachment`.
+**Gotcha:** `/opt/boilerdeck/downloads/` may not exist after VPS rebuild — `mkdir -p` before SCP.
+**Gotcha:** GitHub Release assets use hyphens (`BoilerDeck-Setup-0.2.0.exe`) but the VPS download links use URL-encoded spaces (`BoilerDeck%20Setup%200.2.0.exe`). Must rename when SCP-ing: `scp /tmp/BoilerDeck-Setup-X.Y.Z.exe "root@204.168.133.38:/opt/boilerdeck/downloads/BoilerDeck Setup X.Y.Z.exe"`
+**Release process:** See CONTEXT.md "Releasing a New Client Version" for the full step-by-step (bump version → commit → tag → CI → download → SCP → rebuild web).
 
 ## Agents (`.claude/agents/`)
 
