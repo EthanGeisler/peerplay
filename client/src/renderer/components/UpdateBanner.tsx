@@ -35,7 +35,7 @@ export function UpdateBanner() {
       setUpdateVersion(data.version);
     });
     return () => {
-      window.boilerdeck.updater.removeUpdateListener();
+      window.boilerdeck.updater.removeUpdateListeners();
     };
   }, []);
 

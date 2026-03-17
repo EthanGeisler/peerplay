@@ -135,6 +135,20 @@ function setupIpcHandlers(): void {
   ipcMain.handle("app:restart-for-update", () => {
     autoUpdater.quitAndInstall();
   });
+
+  ipcMain.handle("app:check-for-update", async () => {
+    if (isDev || process.env.ELECTRON_E2E) {
+      return { updateAvailable: false };
+    }
+    try {
+      const result = await autoUpdater.checkForUpdates();
+      return { updateAvailable: !!result?.updateInfo };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[updater] Check failed:", message);
+      return { updateAvailable: false, error: message };
+    }
+  });
 }
 
 function setupAutoUpdater(): void {
@@ -146,6 +160,23 @@ function setupAutoUpdater(): void {
 
   autoUpdater.on("update-available", (info) => {
     console.log("[updater] Update available:", info.version);
+    mainWindow?.webContents.send("app:update-available", {
+      version: info.version,
+    });
+  });
+
+  autoUpdater.on("update-not-available", () => {
+    console.log("[updater] No update available");
+    mainWindow?.webContents.send("app:update-not-available");
+  });
+
+  autoUpdater.on("download-progress", (progress) => {
+    mainWindow?.webContents.send("app:update-progress", {
+      percent: progress.percent,
+      bytesPerSecond: progress.bytesPerSecond,
+      transferred: progress.transferred,
+      total: progress.total,
+    });
   });
 
   autoUpdater.on("update-downloaded", (info) => {
@@ -157,6 +188,9 @@ function setupAutoUpdater(): void {
 
   autoUpdater.on("error", (err) => {
     console.error("[updater] Error:", err.message);
+    mainWindow?.webContents.send("app:update-error", {
+      message: err.message,
+    });
   });
 
   autoUpdater.checkForUpdatesAndNotify();

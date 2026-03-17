@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useAuthStore } from "../stores/authStore";
+
+type UpdateStatus = "idle" | "checking" | "available" | "downloading" | "ready" | "up-to-date" | "error";
 
 const styles = {
   heading: {
@@ -44,6 +46,26 @@ const styles = {
     color: "#e0e0e0",
     cursor: "pointer",
   } as React.CSSProperties,
+  btnPrimary: {
+    padding: "6px 16px",
+    fontSize: 13,
+    border: "none",
+    borderRadius: 4,
+    backgroundColor: "#58a6ff",
+    color: "#fff",
+    cursor: "pointer",
+    fontWeight: 600,
+  } as React.CSSProperties,
+  btnRestart: {
+    padding: "6px 16px",
+    fontSize: 13,
+    border: "none",
+    borderRadius: 4,
+    backgroundColor: "#e94560",
+    color: "#fff",
+    cursor: "pointer",
+    fontWeight: 600,
+  } as React.CSSProperties,
   pathDisplay: {
     fontSize: 13,
     color: "#aaa",
@@ -57,7 +79,37 @@ const styles = {
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   } as React.CSSProperties,
+  progressBarOuter: {
+    width: "100%",
+    height: 8,
+    backgroundColor: "#0d1b2a",
+    borderRadius: 4,
+    overflow: "hidden",
+    marginTop: 8,
+  } as React.CSSProperties,
+  progressBarInner: {
+    height: "100%",
+    backgroundColor: "#58a6ff",
+    borderRadius: 4,
+    transition: "width 0.3s ease",
+  } as React.CSSProperties,
+  statusText: {
+    fontSize: 12,
+    color: "#888",
+    marginTop: 6,
+  } as React.CSSProperties,
+  errorText: {
+    fontSize: 12,
+    color: "#e94560",
+    marginTop: 6,
+  } as React.CSSProperties,
 };
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export function Settings() {
   const user = useAuthStore((s) => s.user);
@@ -66,9 +118,67 @@ export function Settings() {
   const [version, setVersion] = useState("...");
   const [installDir, setInstallDir] = useState("...");
 
+  // Update state
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>("idle");
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
+  const [downloadPercent, setDownloadPercent] = useState(0);
+  const [downloadSpeed, setDownloadSpeed] = useState(0);
+  const [downloadTransferred, setDownloadTransferred] = useState(0);
+  const [downloadTotal, setDownloadTotal] = useState(0);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const listenersAttached = useRef(false);
+
   useEffect(() => {
     window.boilerdeck.platform.getVersion().then(setVersion);
     window.boilerdeck.platform.getInstallDir().then(setInstallDir);
+  }, []);
+
+  // Attach updater listeners once
+  useEffect(() => {
+    if (listenersAttached.current) return;
+    listenersAttached.current = true;
+
+    window.boilerdeck.updater.onUpdateAvailable((data) => {
+      setUpdateVersion(data.version);
+      setUpdateStatus("downloading");
+      setUpdateError(null);
+    });
+
+    window.boilerdeck.updater.onUpdateNotAvailable(() => {
+      setUpdateStatus("up-to-date");
+    });
+
+    window.boilerdeck.updater.onUpdateProgress((data) => {
+      setUpdateStatus("downloading");
+      setDownloadPercent(data.percent);
+      setDownloadSpeed(data.bytesPerSecond);
+      setDownloadTransferred(data.transferred);
+      setDownloadTotal(data.total);
+    });
+
+    window.boilerdeck.updater.onUpdateDownloaded((data) => {
+      setUpdateVersion(data.version);
+      setUpdateStatus("ready");
+      setDownloadPercent(100);
+    });
+
+    window.boilerdeck.updater.onUpdateError((data) => {
+      setUpdateStatus("error");
+      setUpdateError(data.message);
+    });
+
+    return () => {
+      window.boilerdeck.updater.removeUpdateListeners();
+      listenersAttached.current = false;
+    };
+  }, []);
+
+  const handleCheckForUpdate = useCallback(async () => {
+    setUpdateStatus("checking");
+    setUpdateError(null);
+    setDownloadPercent(0);
+    await window.boilerdeck.updater.checkForUpdate();
+    // The result comes back via IPC events (onUpdateAvailable / onUpdateNotAvailable / onUpdateError)
   }, []);
 
   const handleChangeDir = async () => {
@@ -76,6 +186,19 @@ export function Settings() {
     if (dir) {
       await window.boilerdeck.store.set("installDir", dir);
       setInstallDir(dir);
+    }
+  };
+
+  const updateStatusMessage = (): string => {
+    switch (updateStatus) {
+      case "checking": return "Checking for updates...";
+      case "available": return `Update v${updateVersion} found. Starting download...`;
+      case "downloading":
+        return `Downloading${updateVersion ? ` v${updateVersion}` : ""}... ${downloadPercent.toFixed(0)}% (${formatBytes(downloadTransferred)} / ${formatBytes(downloadTotal)}) — ${formatBytes(downloadSpeed)}/s`;
+      case "ready": return `v${updateVersion} is ready to install.`;
+      case "up-to-date": return "You're on the latest version.";
+      case "error": return "";
+      default: return "";
     }
   };
 
@@ -125,13 +248,61 @@ export function Settings() {
         </div>
       </div>
 
+      {/* Updates */}
+      <div style={styles.section}>
+        <div style={styles.sectionTitle}>Updates</div>
+        <div style={styles.row}>
+          <span style={styles.label}>Current Version</span>
+          <span style={styles.value}>{version}</span>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <button
+            style={{
+              ...styles.btnPrimary,
+              opacity: updateStatus === "checking" || updateStatus === "downloading" ? 0.5 : 1,
+              cursor: updateStatus === "checking" || updateStatus === "downloading" ? "not-allowed" : "pointer",
+            }}
+            disabled={updateStatus === "checking" || updateStatus === "downloading"}
+            onClick={handleCheckForUpdate}
+          >
+            {updateStatus === "checking" ? "Checking..." : "Check for Updates"}
+          </button>
+
+          <button
+            style={{
+              ...styles.btnRestart,
+              opacity: updateStatus === "ready" ? 1 : 0.3,
+              cursor: updateStatus === "ready" ? "pointer" : "not-allowed",
+            }}
+            disabled={updateStatus !== "ready"}
+            onClick={() => window.boilerdeck.updater.restartForUpdate()}
+          >
+            Restart to Update
+          </button>
+        </div>
+
+        {/* Progress bar — visible during download */}
+        {updateStatus === "downloading" && (
+          <div style={styles.progressBarOuter}>
+            <div style={{ ...styles.progressBarInner, width: `${downloadPercent}%` }} />
+          </div>
+        )}
+
+        {/* Status text */}
+        {updateStatus !== "idle" && updateStatus !== "error" && (
+          <div style={styles.statusText}>{updateStatusMessage()}</div>
+        )}
+
+        {/* Error text */}
+        {updateStatus === "error" && updateError && (
+          <div style={styles.errorText}>{updateError}</div>
+        )}
+      </div>
+
       {/* App Info */}
       <div style={styles.section}>
         <div style={styles.sectionTitle}>About</div>
-        <div style={styles.row}>
-          <span style={styles.label}>Version</span>
-          <span style={styles.value}>{version}</span>
-        </div>
         <div style={styles.row}>
           <span style={styles.label}>Platform</span>
           <span style={styles.value}>BoilerDeck Desktop Client</span>

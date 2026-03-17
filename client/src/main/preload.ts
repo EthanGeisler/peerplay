@@ -7,11 +7,29 @@ contextBridge.exposeInMainWorld("boilerdeck", {
   },
 
   updater: {
+    checkForUpdate: (): Promise<{ updateAvailable: boolean; error?: string }> =>
+      ipcRenderer.invoke("app:check-for-update"),
+    onUpdateAvailable: (callback: (data: { version: string }) => void): void => {
+      ipcRenderer.on("app:update-available", (_event, data) => callback(data));
+    },
+    onUpdateNotAvailable: (callback: () => void): void => {
+      ipcRenderer.on("app:update-not-available", () => callback());
+    },
+    onUpdateProgress: (callback: (data: { percent: number; bytesPerSecond: number; transferred: number; total: number }) => void): void => {
+      ipcRenderer.on("app:update-progress", (_event, data) => callback(data));
+    },
     onUpdateDownloaded: (callback: (data: { version: string }) => void): void => {
       ipcRenderer.on("app:update-downloaded", (_event, data) => callback(data));
     },
-    removeUpdateListener: (): void => {
+    onUpdateError: (callback: (data: { message: string }) => void): void => {
+      ipcRenderer.on("app:update-error", (_event, data) => callback(data));
+    },
+    removeUpdateListeners: (): void => {
+      ipcRenderer.removeAllListeners("app:update-available");
+      ipcRenderer.removeAllListeners("app:update-not-available");
+      ipcRenderer.removeAllListeners("app:update-progress");
       ipcRenderer.removeAllListeners("app:update-downloaded");
+      ipcRenderer.removeAllListeners("app:update-error");
     },
     restartForUpdate: (): Promise<void> => ipcRenderer.invoke("app:restart-for-update"),
   },
@@ -101,8 +119,13 @@ declare global {
         getInstallDir: () => Promise<string>;
       };
       updater: {
+        checkForUpdate: () => Promise<{ updateAvailable: boolean; error?: string }>;
+        onUpdateAvailable: (callback: (data: { version: string }) => void) => void;
+        onUpdateNotAvailable: (callback: () => void) => void;
+        onUpdateProgress: (callback: (data: { percent: number; bytesPerSecond: number; transferred: number; total: number }) => void) => void;
         onUpdateDownloaded: (callback: (data: { version: string }) => void) => void;
-        removeUpdateListener: () => void;
+        onUpdateError: (callback: (data: { message: string }) => void) => void;
+        removeUpdateListeners: () => void;
         restartForUpdate: () => Promise<void>;
       };
       store: {

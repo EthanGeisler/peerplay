@@ -11,8 +11,13 @@ declare global {
         getInstallDir: () => Promise<string>;
       };
       updater: {
+        checkForUpdate: () => Promise<{ updateAvailable: boolean; error?: string }>;
+        onUpdateAvailable: (callback: (data: { version: string }) => void) => void;
+        onUpdateNotAvailable: (callback: () => void) => void;
+        onUpdateProgress: (callback: (data: { percent: number; bytesPerSecond: number; transferred: number; total: number }) => void) => void;
         onUpdateDownloaded: (callback: (data: { version: string }) => void) => void;
-        removeUpdateListener: () => void;
+        onUpdateError: (callback: (data: { message: string }) => void) => void;
+        removeUpdateListeners: () => void;
         restartForUpdate: () => Promise<void>;
       };
       store: {
