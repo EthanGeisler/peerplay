@@ -1,4 +1,4 @@
-import { db, NotFoundError, ForbiddenError, getConfig } from "@boilerdeck/shared";
+import { db, NotFoundError, ForbiddenError, AppError, getConfig } from "@boilerdeck/shared";
 import { unwrapKey, deriveUserKey, wrapKey } from "./crypto.js";
 import { randomBytes } from "node:crypto";
 
@@ -167,7 +167,7 @@ export async function getDecryptionKey(
 
   const config = getConfig();
   if (!config.DRM_MASTER_KEK) {
-    throw new Error("DRM_MASTER_KEK not configured");
+    throw new AppError(500, "DRM_MASTER_KEK not configured");
   }
   const kek = Buffer.from(config.DRM_MASTER_KEK, "hex");
 

@@ -6,7 +6,13 @@ import { formatPrice, PLACEHOLDER_COVER, resolveCoverUrl } from "../utils";
 const DRM_COLORS: Record<string, string> = {
   NONE: "#4ade80",
   LIGHT: "#facc15",
-  ENCRYPTED: "#f87171",
+  ENCRYPTED: "#58a6ff",
+};
+
+const DRM_LABELS: Record<string, string> = {
+  NONE: "DRM-Free",
+  LIGHT: "Light DRM",
+  ENCRYPTED: "Encrypted DRM",
 };
 
 const styles = {
@@ -133,7 +139,7 @@ export function Store() {
                 <div style={styles.cardFooter}>
                   <span style={styles.cardPrice}>{formatPrice(game.priceCents)}</span>
                   <span style={styles.drmBadge(game.drmTier)}>
-                    {game.drmTier === "NONE" ? "DRM-Free" : game.drmTier}
+                    {DRM_LABELS[game.drmTier] ?? game.drmTier}
                   </span>
                 </div>
               </div>

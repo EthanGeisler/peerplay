@@ -99,7 +99,7 @@ export async function refresh(token: string) {
 
   if (!stored || stored.expiresAt < new Date()) {
     if (stored) {
-      await db.refreshToken.delete({ where: { id: stored.id } });
+      await db.refreshToken.deleteMany({ where: { id: stored.id } });
     }
     throw new UnauthorizedError("Invalid or expired refresh token");
   }

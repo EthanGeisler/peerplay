@@ -4,7 +4,7 @@ import fsp from "node:fs/promises";
 import { Router } from "express";
 import { z, ZodError } from "zod";
 import multer from "multer";
-import { authenticate, requireRole, ValidationError, getConfig } from "@boilerdeck/shared";
+import { authenticate, requireRole, ValidationError, NotFoundError, getConfig } from "@boilerdeck/shared";
 import * as catalogService from "./service.js";
 
 export const catalogRouter = Router();
@@ -363,8 +363,7 @@ catalogRouter.get("/covers/:gameId", async (req, res, next) => {
 
     // Strict gameId validation — only alphanumeric, hyphens, underscores
     if (!/^[a-zA-Z0-9_-]+$/.test(gameId)) {
-      res.status(400).json({ error: "Invalid game ID" });
-      return;
+      throw new ValidationError("Invalid game ID");
     }
 
     const coversDir = path.join(getConfig().GAMES_DIR, "covers");
@@ -389,7 +388,7 @@ catalogRouter.get("/covers/:gameId", async (req, res, next) => {
       return;
     }
 
-    res.status(404).json({ error: "Cover image not found" });
+    throw new NotFoundError("Cover image");
   } catch (err) {
     next(err);
   }
