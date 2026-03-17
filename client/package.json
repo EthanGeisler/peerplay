@@ -1,6 +1,6 @@
 {
   "name": "@boilerdeck/client",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "BoilerDeck desktop client — decentralized game distribution powered by BitTorrent",
   "author": "BoilerDeck <dev@boilerdeck.com>",
   "private": true,
