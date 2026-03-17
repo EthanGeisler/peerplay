@@ -8,6 +8,7 @@ import { Login } from "./pages/Login";
 import { GameDetail } from "./pages/GameDetail";
 import { useAuthStore } from "./stores/authStore";
 import { UpdateBanner } from "./components/UpdateBanner";
+import { SetupDeveloper, DevDashboard, DevGameDetail, DevGameEditor } from "./pages/developer";
 
 const NAV_ITEMS = [
   { label: "Store", path: "/" },
@@ -135,6 +136,68 @@ export function App() {
           </div>
         ))}
 
+        {/* Developer section — visible to DEVELOPER/ADMIN users */}
+        {user && (user.role === "DEVELOPER" || user.role === "ADMIN") && (
+          <>
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: "#888",
+                padding: "16px 20px 8px",
+                letterSpacing: 1,
+                textTransform: "uppercase",
+                borderTop: "1px solid #0f3460",
+                marginTop: 8,
+              }}
+            >
+              Developer
+            </div>
+            <div
+              style={styles.navItem(location.pathname.startsWith("/developer"))}
+              onClick={() => navigate("/developer")}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") navigate("/developer");
+              }}
+              onMouseEnter={(e) => {
+                if (!location.pathname.startsWith("/developer")) {
+                  e.currentTarget.style.backgroundColor = "#0f3460aa";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!location.pathname.startsWith("/developer")) {
+                  e.currentTarget.style.backgroundColor = "transparent";
+                }
+              }}
+            >
+              Dashboard
+            </div>
+          </>
+        )}
+
+        {/* "Become a Developer" link for regular users */}
+        {user && user.role === "USER" && (
+          <div
+            style={{
+              ...styles.navItem(location.pathname === "/developer/setup"),
+              fontSize: 12,
+              color: "#e94560",
+              borderTop: "1px solid #0f3460",
+              marginTop: 8,
+            }}
+            onClick={() => navigate("/developer/setup")}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") navigate("/developer/setup");
+            }}
+          >
+            Become a Developer
+          </div>
+        )}
+
         <div style={styles.userSection}>
           {loading ? (
             <span style={{ color: "#888" }}>Loading...</span>
@@ -170,6 +233,11 @@ export function App() {
           <Route path="/downloads" element={<Downloads />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/developer/setup" element={<SetupDeveloper />} />
+          <Route path="/developer" element={<DevDashboard />} />
+          <Route path="/developer/games/new" element={<DevGameEditor />} />
+          <Route path="/developer/games/:id" element={<DevGameDetail />} />
+          <Route path="/developer/games/:id/edit" element={<DevGameEditor />} />
           <Route
             path="*"
             element={

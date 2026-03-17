@@ -80,6 +80,84 @@ export interface ApiGameListResponse {
   totalPages: number;
 }
 
+// Developer Portal types
+
+export interface Developer {
+  id: string;
+  studioName: string;
+  stripeOnboarded: boolean;
+  stripePayoutsEnabled: boolean;
+}
+
+export interface DevGameSummary {
+  id: string;
+  slug: string;
+  title: string;
+  status: string;
+  priceCents: number;
+  drmTier: string;
+  coverImageUrl: string | null;
+  versionsCount: number;
+  licensesCount: number;
+  salesCount: number;
+  createdAt: string;
+}
+
+export interface DevGameVersion {
+  id: string;
+  version: string;
+  status: string;
+  fileSizeBytes: number;
+  changelog: string;
+  createdAt: string;
+  torrent: {
+    id: string;
+    infoHash: string;
+    magnetUri: string;
+    createdAt: string;
+  } | null;
+}
+
+export interface DevGameData {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  priceCents: number;
+  drmTier: string;
+  status: string;
+  coverImageUrl: string | null;
+  screenshots: string[];
+  exePath: string | null;
+  savePaths: string[];
+  createdAt: string;
+  updatedAt: string;
+  versions: DevGameVersion[];
+  encryptionKey: { id: string; algorithm: string; createdAt: string } | null;
+  licensesCount: number;
+  salesCount: number;
+}
+
+export interface DevGameForm {
+  title: string;
+  description: string;
+  priceCents: number;
+  drmTier: "NONE" | "LIGHT" | "ENCRYPTED";
+  exePath: string;
+  coverImageUrl: string;
+}
+
+export interface DevGameDir {
+  name: string;
+  files: string[];
+}
+
+export interface DevDetectResult {
+  directory: string;
+  executables: string[];
+  recommended: string | null;
+}
+
 // Client-specific types
 
 export interface InstalledGame {
