@@ -32,6 +32,7 @@
 - **Server error shape:** Server returns `{ error: { code, message } }`. All API clients parse errors as `body.error?.message || body.message || res.statusText`. Never assume `body.message` at the top level.
 - **Helmet CORP:** Always initialize Helmet with `crossOriginResourcePolicy: { policy: "cross-origin" }` in `server/src/index.ts`. The default `same-origin` breaks Electron's `file://` renderer even when CORS is configured correctly.
 - **Token rotation must be idempotent:** Use `deleteMany` instead of `delete` when rotating refresh tokens — React StrictMode double-fires effects and concurrent requests will both find the same token. `deleteMany` on an already-deleted token is a no-op; `delete` throws Prisma P2025.
+- **Refresh calls must be serialized:** All API clients use a `refreshPromise` lock in `api.ts` so only one `refreshAccessToken()` runs at a time. Concurrent callers await the same promise. Without this, concurrent 401s cause a race that invalidates the session.
 - **Role changes require token refresh:** Any endpoint that upgrades a user's role must be followed by `refreshAccessToken()` on the client. The existing JWT carries the old role claim until refreshed.
 - **`GET /api/licenses` returns `{ licenses: [...] }`** — not a bare array. Always unwrap `data.licenses` and add `Array.isArray()` guard before calling array methods.
 
@@ -43,7 +44,11 @@
 - **Refresh tokens** stored via IPC `store:get/set` (JSON file), NOT localStorage (Electron has no persistent localStorage across builds)
 - **Shell links** restricted to `https://` only in the `shell:open-external` handler (security)
 - **Download metadata** stored in module-level Map, not in Zustand (avoids re-render churn)
+- **WebTorrent download path** is `installDir` (NOT `installDir/slug`) — WebTorrent creates the torrent root folder automatically. The install path (for game registry) is `installDir/slug`.
+- **Torrent destroyed after download** — `torrent.destroy({ destroyStore: false })` releases file handles so the exe can be launched. The client does not seed after download.
+- **Exe path is relative** to the game's torrent root directory (e.g., `PeerPlayBuild/Game.exe`). The client joins `installPath + exePath` to get the full path. Detection is recursive (walks subdirs).
 - **Native deps** (like `utp-native` for WebTorrent): must be in `asarUnpack` in electron-builder config
+- **Dev mode: kill stale Electron processes** — `taskkill //F //IM electron.exe` before relaunching. Zombie processes hold WebTorrent file locks causing EBUSY.
 
 ## Deployment to VPS
 Everything runs on a single Hetzner VPS (`boilerdeck.com` / `204.168.133.38`). HTTPS via Let's Encrypt (auto-renews). Deploy process:

@@ -262,6 +262,23 @@ ssh root@204.168.133.38 "systemctl restart boilerdeck"
 ssh root@204.168.133.38 "pkill transmission; sleep 1; nohup transmission-daemon --config-dir /root/.config/transmission-daemon > /var/log/transmission.log 2>&1 &"
 ```
 
+**Re-seed all torrents after Transmission restart:**
+```bash
+# On VPS: extract all torrents from DB and add to Transmission
+ssh root@204.168.133.38 'bash -s' << 'RESEED'
+CSRF=$(curl -s -o /dev/null -D - http://127.0.0.1:9091/transmission/rpc 2>&1 | grep -oP "X-Transmission-Session-Id: \K.*" | tr -d "\r\n")
+sudo -u postgres psql -d peerplay -t -A -c "SELECT id, encode(torrent_file, 'base64') FROM torrents;" | while IFS='|' read -r tid b64; do
+  [ -z "$b64" ] && continue
+  echo "Adding torrent $tid..."
+  curl -s -X POST http://127.0.0.1:9091/transmission/rpc \
+    -H "X-Transmission-Session-Id: $CSRF" \
+    -d "{\"method\":\"torrent-add\",\"arguments\":{\"metainfo\":\"$b64\",\"download-dir\":\"/opt/boilerdeck/games\"}}"
+  echo
+done
+transmission-remote -l
+RESEED
+```
+
 **Firewall (UFW):** SSH, 80/443, 6881-6889 TCP+UDP, 30000-65535 TCP+UDP
 
 ### Local Development
@@ -291,27 +308,34 @@ npm run dev:web       # runs on port 5173
 
 ---
 
-## Player Character 01 — The First Real Game
+## Games on the Platform
 
-- **Source:** `C:\Users\eface\player-character-01\build\PeerPlayBuild\`
-- **Executable:** `PLAYER_CHARACTER_01PeerPlay.exe`
+### PlayerCharacter01 (Web Build) — legacy, not launchable
+- **DB slug:** `playercharacter01-fb92`
+- **Info hash:** `9d8949a375b3cede3495e4e56622cb5bc75d791d`
+- **DRM:** NONE, Price: $1.00
+- **Issue:** This is a Godot web export (index.html + index.wasm). No exe — cannot be launched from the Electron client. Uploaded before we identified the web vs desktop build distinction.
+
+### PlayerCharacter01 Windows — the working game
+- **DB slug:** `playercharacter01-windows-d919`
+- **Info hash:** `cf3e503bb6e88f4fcdf2572629173884ec4c4994`
+- **Exe path:** `PeerPlayBuild/PLAYER_CHARACTER_01PeerPlay.exe` (set in DB)
 - **Size:** ~101MB (3 files: exe, console exe, pck)
-- **Active info hash:** `bf69c35df8f0d24cdacfdf3f10c7afdc4513b09e` (from `mktorrent` on VPS — this is the one in use)
-- **Featured** on the web storefront (first game returned by `GET /api/games`)
-- **DRM:** None (free, DRM-free)
-- **Seeded from:** VPS via Transmission daemon on `204.168.133.38:6881`
+- **DRM:** NONE, Price: $1.00
+- **Source:** `C:\Users\eface\player-character-01\build\PeerPlayBuild\`
+- **End-to-end verified:** Upload via dev portal → purchase → BitTorrent download → launch ✓ (2026-03-17)
+- **Seeded from:** VPS Transmission daemon on `204.168.133.38:6881`
 
-**Magnet URI (current, working):**
-```
-magnet:?xt=urn:btih:bf69c35df8f0d24cdacfdf3f10c7afdc4513b09e&dn=player-character-01&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&tr=udp%3A%2F%2Fexplodie.org%3A6969%2Fannounce&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969%2Fannounce&tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce
-```
+### Accounts on VPS (DB wiped 2026-03-17, only real accounts exist)
+- **Developer:** `eface` — uploaded both games via dev portal
+- **Player:** `developer1` — purchased and downloaded PlayerCharacter01 Windows
 
 **Important torrent lessons:**
 - **Do NOT use WebTorrent CLI for seeding.** WebTorrent uses WebRTC, which standard torrent clients (qBittorrent, Transmission, etc.) cannot connect to. Use `mktorrent` + `transmission-daemon` instead.
-- **Serve .torrent files, not just magnet links.** Magnet links require metadata download from a peer first — if peer discovery is slow, clients get stuck on "downloading metadata." .torrent files work immediately.
+- **Serve .torrent files, not just magnet links.** Magnet links require metadata download from a peer first — if peer discovery is slow, clients get stuck on "downloading metadata." .torrent files work immediately. The Electron client now fetches `.torrent` bytes from `/api/torrents/:gameId/latest/file` and falls back to magnet URI.
 - **The local dev machine is behind CGNAT** (Centracom ISP) and cannot seed torrents. All seeding must happen from the VPS.
 - **Info hashes differ between tools.** `mktorrent`, `create-torrent`, and `webtorrent` all produce different hashes from the same files. The only hash that matters is the one from the active seeder.
-- The DB `Torrent` record must match the active VPS seeder hash (`bf69c35...`). The storefront now reads the magnet URI from the torrent API, not hardcoded mock data.
+- **Upload pipeline creates torrent + adds to Transmission** — but Transmission add is fire-and-forget. If Transmission was restarted, torrents are lost. Use the re-seeding script in the Infrastructure section above.
 
 ---
 
@@ -354,6 +378,12 @@ magnet:?xt=urn:btih:bf69c35df8f0d24cdacfdf3f10c7afdc4513b09e&dn=player-character
 36. **JWT stale after server-side role change** — When the server upgrades a user's role (e.g., `POST /developer/register`), the existing JWT still carries the old role claim. Subsequent requests guarded by `requireRole("DEVELOPER")` will return 403. Fix: call `refreshAccessToken()` immediately after any role-changing operation on the client.
 37. **React StrictMode double-fires effects** — In development, React 18+ runs effects twice. Any effect that makes a mutating API call (e.g., token rotation using `delete` by ID) will race and crash on the second call if the first already consumed the resource. Fix: use `deleteMany` instead of `delete` for idempotent operations, or guard with a ref flag.
 38. **Transmission cleared, fresh torrents only** — As of 2026-03-17, Transmission was cleared of old test torrents. Only torrents added via the upload pipeline are present. If re-seeding manually, use the upload pipeline or `transmission-remote --add` with the .torrent file from the DB.
+39. **Transmission doesn't persist torrents across restarts** — The manually-started `transmission-daemon` (PID-based, not systemd — systemd service times out) does NOT reliably persist added torrents. After any Transmission restart, torrents must be re-added. The upload pipeline's `addToTransmission()` is fire-and-forget (errors logged but non-fatal), so uploads succeed even if Transmission is down. **To re-add a torrent:** extract base64 from DB (`SELECT encode(torrent_file, 'base64') FROM torrents WHERE id = '...'`), then POST to Transmission RPC with `download-dir: /opt/boilerdeck/games` (NOT `/opt/boilerdeck/games/<slug>` — the torrent's internal root folder provides the slug directory). See re-seeding script below.
+40. **WebTorrent download path — do NOT append game slug** — `wt.add(source, { path })` creates the torrent's internal root folder (named after the game slug) inside `path`. If you pass `installDir/slug` as path, you get `installDir/slug/slug/...` (double nesting). Pass `installDir` as the WebTorrent download path; the install path (for the game registry) is `installDir/slug`.
+41. **WebTorrent must be destroyed after download completes** — `torrent.destroy({ destroyStore: false })` releases file handles without deleting downloaded files. Without this, the exe stays locked (EBUSY) and the game can't be launched. The client no longer seeds after download — acceptable for a game distribution client.
+42. **Stale Electron processes on Windows** — Closing the Electron window doesn't always kill the main process (especially in dev mode). Multiple zombie Electron processes accumulate, each holding WebTorrent file locks. Before debugging EBUSY errors, run `tasklist //FI "IMAGENAME eq electron.exe"` and kill all instances with `taskkill //F //IM electron.exe`.
+43. **Exe auto-detection is recursive** — `detectExecutable()` in `catalog/service.ts` walks subdirectories to find `.exe` files. Game uploads often nest files (e.g., `PeerPlayBuild/Game.exe`). The detected path is stored relative to the game's root directory (e.g., `PeerPlayBuild/Game.exe`), and the client joins it with the install path at launch time.
+44. **Refresh token race condition (client-side)** — All API clients (client, web, dev-portal) use a `refreshPromise` lock to serialize concurrent refresh calls. Without this, two simultaneous 401 responses both trigger `refreshAccessToken()`, the second one sends the already-rotated token, gets 401, and **deletes the new token** stored by the first call — logging the user out. This is different from gotcha #37 (server-side `deleteMany`).
 
 ---
 
@@ -418,9 +448,13 @@ The version in `client/package.json` (`"version": "0.1.0"`) controls the install
 
 - **Repo:** https://github.com/EthanGeisler/peerplay (rename pending — GitHub repo still named `peerplay`)
 - **Branch:** `main` (only branch)
-- **30 commits** as of 2026-03-17 (latest first):
-  1. `05d0d3d` `Fix refresh token race condition causing 500 on concurrent requests`
-  2. `9df49bd` `Fix API error message parsing across all clients`
+- **34 commits** as of 2026-03-17 (latest first):
+  1. `8039e85` `Fix download path double-nesting and post-download file locking`
+  2. `3ac80b2` `Fix token refresh race condition and upload pipeline issues`
+  3. `a275593` `Add Array.isArray guards to Library page and libraryStore`
+  4. `eb93713` `Update CONTEXT.md and CLAUDE.md with session fixes and infrastructure changes`
+  5. `05d0d3d` `Fix refresh token race condition causing 500 on concurrent requests`
+  6. `9df49bd` `Fix API error message parsing across all clients`
   3. `d2e9e71` `Remove account registration from dev portal login`
   4. `6f01f8b` `Fix dev portal role escalation and client license deserialization bugs`
   5. `3eba50c` `Fix blank game detail screen in Electron client`
@@ -471,8 +505,10 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 - [x] Download button on web storefront — header button + Store page banner, now served directly from VPS `/downloads/`
 - [ ] Real cover art / screenshots for Player Character 01 (currently using placehold.co)
 - [ ] Real app icon for Electron client (currently a placeholder — `client/resources/icon.ico`)
-- [ ] Electron client: fetch `.torrent` file from `/api/torrents/:gameId/latest/file` instead of using magnet URI (faster metadata, endpoint exists but client doesn't use it yet)
+- [x] Electron client: fetch `.torrent` file from `/api/torrents/:gameId/latest/file` instead of using magnet URI — done 2026-03-17 (client fetches .torrent bytes, falls back to magnet)
+- [x] Electron client: end-to-end verified — upload via dev portal, purchase, download via BitTorrent, launch game — done 2026-03-17
 - [ ] Electron client: catch-all route for 404s
+- [ ] Electron client: handle duplicate torrent gracefully (currently errors on re-add of same info hash)
 - [ ] Electron client: store key whitelist (currently accepts any key — not a security issue since it's local-only, but good hygiene)
 - [ ] Electron client: first real end-to-end test (start app, browse store, download a game)
 
