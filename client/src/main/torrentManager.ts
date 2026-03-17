@@ -117,6 +117,10 @@ export async function startDownload(opts: StartDownloadOpts): Promise<{ success:
           downloadPath: meta.downloadPath,
         });
       }
+      // Release file handles so the exe can be launched
+      activeDownloads.delete(torrent.infoHash);
+      torrent.destroy({ destroyStore: false });
+      if (wt.torrents.length === 0) stopProgressBroadcast();
     });
   });
 }

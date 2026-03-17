@@ -110,7 +110,7 @@ export const useDownloadStore = create<DownloadState>((set, get) => ({
             },
           );
           const decryptResult = await window.boilerdeck.drm.decryptGame({
-            installPath: data.downloadPath,
+            installPath: meta.downloadPath,
             key: keyResult.key,
             algorithm: keyResult.algorithm,
           });
@@ -127,7 +127,7 @@ export const useDownloadStore = create<DownloadState>((set, get) => ({
         gameId: meta.gameId,
         title: meta.title,
         slug: meta.slug,
-        installPath: data.downloadPath,
+        installPath: meta.downloadPath,
         exePath: meta.exePath,
         drmTier: meta.drmTier,
         version: meta.version,

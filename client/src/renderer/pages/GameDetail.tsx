@@ -178,7 +178,10 @@ export function GameDetail() {
     try {
       const torrent = await useLibraryStore.getState().fetchTorrent(game.id);
       const installDir = await window.boilerdeck.platform.getInstallDir();
-      const downloadPath = `${installDir}/${game.slug}`;
+      // WebTorrent creates the torrent root folder (game.slug) inside downloadPath,
+      // so pass installDir directly — not installDir/slug — to avoid double nesting
+      const downloadPath = installDir;
+      const installPath = `${installDir}/${game.slug}`;
 
       // Fetch .torrent file for faster start (skip metadata download phase)
       // Falls back to magnet URI if fetch fails
@@ -203,7 +206,7 @@ export function GameDetail() {
           drmTier: game.drmTier,
           version: game.latestVersion?.version ?? "unknown",
           coverImageUrl: game.coverImageUrl,
-          downloadPath,
+          downloadPath: installPath,
         },
       });
       navigate("/downloads");
