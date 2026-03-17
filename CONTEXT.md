@@ -154,8 +154,8 @@ Full desktop client: browse store, purchase games (Stripe Checkout in system bro
 **Main process (`client/src/main/`):**
 | File | Purpose |
 |------|---------|
-| `index.ts` | Electron app lifecycle, all IPC handler registration, torrent client init/destroy |
-| `preload.ts` | `contextBridge.exposeInMainWorld("boilerdeck", {...})` — sections: platform, store, shell, dialog, games, drm, downloads |
+| `index.ts` | Electron app lifecycle, all IPC handler registration, torrent client init/destroy, auto-updater setup (check/download/progress/error events forwarded to renderer) |
+| `preload.ts` | `contextBridge.exposeInMainWorld("boilerdeck", {...})` — sections: platform, updater, store, shell, dialog, games, drm, downloads |
 | `store.ts` | JSON file persistence at `app.getPath("userData")/boilerdeck-config.json`. Keys: refreshToken, installDir, installedGames, settings, deviceFingerprint |
 | `torrentManager.ts` | WebTorrent singleton. `startDownload()` prefers .torrent buffer over magnet. Broadcasts progress every 1s via `mainWindow.webContents.send("downloads:progress-update")`. Sends `downloads:complete` with gameId/title/infoHash/downloadPath on torrent done. |
 | `gameLauncher.ts` | `child_process.spawn(exe, [], { detached: true, stdio: "ignore" })` + `child.unref()`. Tracks running games in a Map. `uninstallGame()` uses `fs.promises.rm(path, { recursive: true, force: true })`. |
@@ -209,6 +209,10 @@ Full desktop client: browse store, purchase games (Stripe Checkout in system bro
 
 | Script | Purpose |
 |--------|---------|
+| `upload-games.mjs` | **Primary upload tool.** Reads `game-staging/manifest.json`, creates game + version + uploads zip + uploads cover + publishes. Usage: `node scripts/upload-games.mjs <email> <password> [manifest.json]` |
+| `upload-covers.mjs` | Uploads cover images for existing games. Matches by title substring. Usage: `node scripts/upload-covers.mjs <email> <password>` |
+| `publish-all-drafts.mjs` | Publishes all DRAFT games. Usage: `node scripts/publish-all-drafts.mjs <email> <password>` |
+| `reseed-torrents.sh` | Re-adds all published game torrents to Transmission on VPS. Usage: `ssh root@204.168.133.38 'bash -s' < scripts/reseed-torrents.sh` |
 | `create-game-torrent.mjs` | Creates .torrent file from a game directory |
 | `parse-torrent.mjs` | Parses .torrent to extract info hash + magnet URI |
 | `publish-game.mjs` | Publishes a game in the DB (sets PUBLISHED, creates Torrent + GameVersion records) |
@@ -216,6 +220,8 @@ Full desktop client: browse store, purchase games (Stripe Checkout in system bro
 | `publish-game-encrypted.mjs` | Publishes an encrypted game (creates EncryptionKey record, sets drmTier ENCRYPTED, creates Torrent + GameVersion) |
 | `player-character-01.torrent` | Generated torrent file for PC01 (8KB) |
 | `player-character-01.magnet.txt` | Magnet URI for quick reference |
+
+**Game staging directory** (`game-staging/`): Gitignored. Contains downloaded game zips, cover images (`covers/`), and `manifest.json` for the upload script. See CLAUDE.md "Adding Games to the Platform" for the full workflow.
 
 ---
 
@@ -310,13 +316,17 @@ npm run dev:web       # runs on port 5173
 
 ## Games on the Platform
 
-### PlayerCharacter01 (Web Build) — legacy, not launchable
+**8 published games** as of 2026-03-17. All seeded from VPS Transmission daemon on `204.168.133.38:6881`.
+
+### Original Games
+
+#### PlayerCharacter01 (Web Build) — legacy, not launchable
 - **DB slug:** `playercharacter01-fb92`
 - **Info hash:** `9d8949a375b3cede3495e4e56622cb5bc75d791d`
 - **DRM:** NONE, Price: $1.00
 - **Issue:** This is a Godot web export (index.html + index.wasm). No exe — cannot be launched from the Electron client. Uploaded before we identified the web vs desktop build distinction.
 
-### PlayerCharacter01 Windows — the working game
+#### PlayerCharacter01 Windows — the working game
 - **DB slug:** `playercharacter01-windows-d919`
 - **Info hash:** `cf3e503bb6e88f4fcdf2572629173884ec4c4994`
 - **Exe path:** `PeerPlayBuild/PLAYER_CHARACTER_01PeerPlay.exe` (set in DB)
@@ -324,10 +334,26 @@ npm run dev:web       # runs on port 5173
 - **DRM:** NONE, Price: $1.00
 - **Source:** `C:\Users\eface\player-character-01\build\PeerPlayBuild\`
 - **End-to-end verified:** Upload via dev portal → purchase → BitTorrent download → launch ✓ (2026-03-17)
-- **Seeded from:** VPS Transmission daemon on `204.168.133.38:6881`
+
+### Open-Source Game Library (added 2026-03-17)
+
+6 free, open-source games uploaded via `scripts/upload-games.mjs` to showcase the platform. All are GPL/zlib licensed and legally redistributable. Uploaded from portable Windows zip builds in `game-staging/`.
+
+| Game | Slug | Info Hash | Size | Genre | License |
+|------|------|-----------|------|-------|---------|
+| OpenTTD | `openttd-dec4` | `4c9d465e...` | 33 MB | Transport Sim | GPLv2 |
+| OpenRA | `openra-44be` | `dce6cd2c...` | 141 MB | RTS (C&C remake) | GPLv3 |
+| Endless Sky | `endless-sky-45de` | `42528da9...` | 418 MB | Space Trading | GPLv3 |
+| Warzone 2100 | `warzone-2100-ffc0` | `8ba93c4a...` | 432 MB | Sci-fi RTS | GPLv2+ |
+| Veloren | `veloren-6d44` | `cfcdd8ad...` | 999 MB | Voxel RPG | GPLv3 |
+| SuperTuxKart | `supertuxkart-4728` | `739de815...` | 1.59 GB | Kart Racing | GPLv3 |
+
+All have cover images uploaded. All are free ($0), DRM: NONE.
+
+> **Note:** There are also 6 DRAFT duplicate games from an accidental double-run of the upload script. These are invisible to users (only PUBLISHED games appear in the store) but should be cleaned up via the dev portal.
 
 ### Accounts on VPS (DB wiped 2026-03-17, only real accounts exist)
-- **Developer:** `eface` — uploaded both games via dev portal
+- **Developer:** `eface` — uploaded all games via dev portal and scripts
 - **Player:** `developer1` — purchased and downloaded PlayerCharacter01 Windows
 
 **Important torrent lessons:**
@@ -335,7 +361,7 @@ npm run dev:web       # runs on port 5173
 - **Serve .torrent files, not just magnet links.** Magnet links require metadata download from a peer first — if peer discovery is slow, clients get stuck on "downloading metadata." .torrent files work immediately. The Electron client now fetches `.torrent` bytes from `/api/torrents/:gameId/latest/file` and falls back to magnet URI.
 - **The local dev machine is behind CGNAT** (Centracom ISP) and cannot seed torrents. All seeding must happen from the VPS.
 - **Info hashes differ between tools.** `mktorrent`, `create-torrent`, and `webtorrent` all produce different hashes from the same files. The only hash that matters is the one from the active seeder.
-- **Upload pipeline creates torrent + adds to Transmission** — but Transmission add is fire-and-forget. If Transmission was restarted, torrents are lost. Use the re-seeding script in the Infrastructure section above.
+- **Upload pipeline creates torrent + adds to Transmission** — but the `addToTransmission()` call is fire-and-forget and **silently fails for large torrent files** (base64-encoded torrent data can exceed bash/curl argument limits). After uploading games, always re-seed: `ssh root@204.168.133.38 'bash -s' < scripts/reseed-torrents.sh`
 
 ---
 
@@ -384,6 +410,10 @@ npm run dev:web       # runs on port 5173
 42. **Stale Electron processes on Windows** — Closing the Electron window doesn't always kill the main process (especially in dev mode). Multiple zombie Electron processes accumulate, each holding WebTorrent file locks. Before debugging EBUSY errors, run `tasklist //FI "IMAGENAME eq electron.exe"` and kill all instances with `taskkill //F //IM electron.exe`.
 43. **Exe auto-detection is recursive** — `detectExecutable()` in `catalog/service.ts` walks subdirectories to find `.exe` files. Game uploads often nest files (e.g., `PeerPlayBuild/Game.exe`). The detected path is stored relative to the game's root directory (e.g., `PeerPlayBuild/Game.exe`), and the client joins it with the install path at launch time.
 44. **Refresh token race condition (client-side)** — All API clients (client, web, dev-portal) use a `refreshPromise` lock to serialize concurrent refresh calls. Without this, two simultaneous 401 responses both trigger `refreshAccessToken()`, the second one sends the already-rotated token, gets 401, and **deletes the new token** stored by the first call — logging the user out. This is different from gotcha #37 (server-side `deleteMany`).
+45. **Publish endpoint is PATCH, not POST** — `PATCH /developer/games/:id/publish` and `PATCH /developer/games/:id/unpublish`. Using POST returns 404 with an HTML error page ("Cannot POST ...").
+46. **addToTransmission silently fails for large torrents** — The upload pipeline's `addToTransmission()` sends base64-encoded torrent data via curl. For large games (hundreds of MB), the base64 string can exceed bash's argument length limit (~2 MB). The upload succeeds (game + torrent in DB) but Transmission never receives the torrent. **Always run `scripts/reseed-torrents.sh` after uploading games.** The reseed script works around this by writing base64 to a temp file and using `curl -d @file`.
+47. **Games created in DRAFT status** — The `POST /developer/games` endpoint creates games with status `DRAFT`. They must be explicitly published via `PATCH /developer/games/:id/publish` to appear in the store listing. The `upload-games.mjs` script handles this automatically.
+48. **Updater IPC events must use ref guard** — The Settings page update UI subscribes to 5 IPC events (`update-available`, `update-not-available`, `update-progress`, `update-downloaded`, `update-error`). React StrictMode double-fires effects, which would register duplicate listeners. The `listenersAttached` ref flag prevents this. Cleanup calls `removeUpdateListeners()` which removes all 5 at once.
 
 ---
 
@@ -438,9 +468,10 @@ The version in `client/package.json` (`"version": "0.2.0"`) controls the install
 - **v0.1.0** — https://github.com/EthanGeisler/peerplay/releases/tag/v0.1.0 (superseded, auto-update prompts users to v0.2.0)
 
 ### Auto-Update (electron-updater) — fully working
-- **Main process** (`client/src/main/index.ts` `setupAutoUpdater()`): checks GitHub Releases on startup, auto-downloads in background, sends `app:update-downloaded` IPC event when ready
-- **Preload bridge** (`client/src/main/preload.ts`): exposes `updater.onUpdateDownloaded()`, `removeUpdateListener()`, `restartForUpdate()`
-- **UI** (`client/src/renderer/components/UpdateBanner.tsx`): banner appears at top of window with version number + "Restart to Update" button → calls `autoUpdater.quitAndInstall()`
+- **Main process** (`client/src/main/index.ts` `setupAutoUpdater()`): checks GitHub Releases on startup, auto-downloads in background. Forwards 5 events to renderer: `app:update-available`, `app:update-not-available`, `app:update-progress` (percent/speed/transferred/total), `app:update-downloaded`, `app:update-error`. Also has `app:check-for-update` IPC handler for manual checks.
+- **Preload bridge** (`client/src/main/preload.ts`): exposes `updater.checkForUpdate()`, `onUpdateAvailable()`, `onUpdateNotAvailable()`, `onUpdateProgress()`, `onUpdateDownloaded()`, `onUpdateError()`, `removeUpdateListeners()`, `restartForUpdate()`
+- **UI — Banner** (`client/src/renderer/components/UpdateBanner.tsx`): banner appears at top of window with version number + "Restart to Update" button → calls `autoUpdater.quitAndInstall()`
+- **UI — Settings page** (`client/src/renderer/pages/Settings.tsx`): Manual "Check for Updates" button with progress bar (percent, speed, transferred/total), "Restart to Update" button (disabled until download complete), status messages (checking/downloading/ready/up-to-date/error). Uses `listenersAttached` ref guard to prevent React StrictMode double-registration.
 - **Config:** `autoDownload: true` (silent), `autoInstallOnAppQuit: true`
 - **Skipped in:** dev mode and E2E tests (`isDev || process.env.ELECTRON_E2E`)
 - **Delta updates:** `.blockmap` files enable partial downloads — only changed blocks are fetched, not the full installer
@@ -477,32 +508,20 @@ ssh root@204.168.133.38 "cd /opt/boilerdeck && git pull origin main && npx vite 
 
 - **Repo:** https://github.com/EthanGeisler/peerplay (rename pending — GitHub repo still named `peerplay`)
 - **Branch:** `main` (only branch)
-- **36 commits** as of 2026-03-17 (latest first):
-  1. `912f091` `Bump client version to 0.2.0 and update download links`
-  2. `bb26191` `Update CONTEXT.md and CLAUDE.md with session learnings`
-  3. `8039e85` `Fix download path double-nesting and post-download file locking`
-  4. `3ac80b2` `Fix token refresh race condition and upload pipeline issues`
-  5. `a275593` `Add Array.isArray guards to Library page and libraryStore`
-  6. `eb93713` `Update CONTEXT.md and CLAUDE.md with session fixes and infrastructure changes`
-  7. `05d0d3d` `Fix refresh token race condition causing 500 on concurrent requests`
-  8. `9df49bd` `Fix API error message parsing across all clients`
-  9. `d2e9e71` `Remove account registration from dev portal login`
-  10. `6f01f8b` `Fix dev portal role escalation and client license deserialization bugs`
-  11. `3eba50c` `Fix blank game detail screen in Electron client`
-  12. `e132213` `Serve installer download directly from VPS instead of GitHub Releases`
-  13. `e15f2e4` `Update CONTEXT.md and CLAUDE.md with Electron build pipeline documentation`
-  14. `459ec60` `Fix review issues: CI workflow, accessibility, and responsive layout`
-  15. `51503c6` `Add Windows download button and Electron build pipeline`
-  16. `bd09ef5` `Add storefront search, cover image uploads, Electron improvements, and e2e tests`
-  17. `015ebfd` `Update CONTEXT.md and CLAUDE.md with full Electron client architecture documentation`
-  18. `ac3ae87` `Update CLAUDE.md and CONTEXT.md with Stripe Connect integration details`
-  19. `dd4f235` `Build functional Electron desktop client with BitTorrent downloads, DRM, and game launching`
-  20. `dfd977a` `Fix review issues: Stripe security, webhook idempotency, frontend cleanup`
-  21. `3e6f71d` `Fix Stripe Connect return endpoint and Dashboard error logging`
-  22. `cd78e5c` `Rebrand Peerplay to BoilerDeck and set up boilerdeck.com domain`
-  23+ (earlier commits omitted for brevity — see `git log` for full history)
+- **40 commits** as of 2026-03-17 (latest first):
+  1. `440a016` `Fix review issues: token race condition, error handling, DRM badges`
+  2. `b063233` `Fix cover images in Electron client and add store link to dev portal setup`
+  3. `6082929` `Fix cover image upload field name mismatch`
+  4. `f8346ca` `Update docs with v0.2.0 release, auto-update details, and release process`
+  5. `912f091` `Bump client version to 0.2.0 and update download links`
+  6. `bb26191` `Update CONTEXT.md and CLAUDE.md with session learnings`
+  7. `8039e85` `Fix download path double-nesting and post-download file locking`
+  8. `3ac80b2` `Fix token refresh race condition and upload pipeline issues`
+  9+ (earlier commits omitted — see `git log` for full history)
 - **Git identity:** `EthanGeisler` / `25466222+EthanGeisler@users.noreply.github.com`
 - **Tags:** `v0.1.0` (first release), `v0.2.0` (current release — auto-update, bug fixes)
+
+> **Important:** Commits 1–3 above are AFTER the v0.2.0 tag. The v0.2.0 release does NOT include cover image fixes or the Settings page update UI. A v0.2.1 release is needed to ship these to users via auto-update. The user has a local build with these fixes (built via `npm run build:electron && electron-builder` on 2026-03-17) but it's still versioned as 0.2.0.
 
 ---
 
@@ -521,6 +540,10 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 - [x] Consolidated hosting — storefront + dev portal + API all on VPS
 - [x] Electron build pipeline — NSIS installer + portable exe, GitHub Actions CI, v0.1.0 published
 - [x] Download button on web storefront — header button + Store page banner, now served directly from VPS `/downloads/`
+- [x] Open-source game library — 6 free GPL games uploaded, cover images added, seeding on VPS (2026-03-17)
+- [x] Settings page manual update UI — check for updates button, progress bar, restart button (2026-03-17, in local build, needs v0.2.1 release)
+- [ ] Cut v0.2.1 release — includes cover image fixes, Settings update UI, and other post-v0.2.0 fixes. Bump version, tag, CI build, SCP to VPS.
+- [ ] Clean up 6 DRAFT duplicate games from accidental double-upload (delete via dev portal)
 - [ ] Real cover art / screenshots for Player Character 01 (currently using placehold.co)
 - [ ] Real app icon for Electron client (currently a placeholder — `client/resources/icon.ico`)
 - [x] Electron client: fetch `.torrent` file from `/api/torrents/:gameId/latest/file` instead of using magnet URI — done 2026-03-17 (client fetches .torrent bytes, falls back to magnet)
@@ -614,7 +637,13 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 | Game build (PC01) | `C:\Users\eface\player-character-01\build\PeerPlayBuild\` |
 | Game files (VPS) | `/opt/boilerdeck/games/<slug>/` |
 | Upload temp (VPS) | `/opt/boilerdeck/games/.tmp/` |
-| Torrent scripts | `scripts/` |
+| Game upload script | `scripts/upload-games.mjs` (reads `game-staging/manifest.json`) |
+| Cover upload script | `scripts/upload-covers.mjs` |
+| Publish drafts script | `scripts/publish-all-drafts.mjs` |
+| VPS torrent reseed | `scripts/reseed-torrents.sh` (run via SSH) |
+| Game staging dir | `game-staging/` (gitignored, zips + covers + manifest) |
+| Settings page (update UI) | `client/src/renderer/pages/Settings.tsx` |
+| Torrent scripts (legacy) | `scripts/create-game-torrent.mjs`, `parse-torrent.mjs`, etc. |
 | Transmission config | `/root/.config/transmission-daemon/settings.json` (on VPS) |
 | Downloads dir (VPS) | `/opt/boilerdeck/downloads/` (installer served at `/downloads/`) |
 | Dev portal login | `dev@example.com` / `developer123` (seed data — **DB wiped 2026-03-17, these no longer exist on VPS**) |

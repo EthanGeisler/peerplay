@@ -96,6 +96,44 @@ ssh root@204.168.133.38 "systemctl restart boilerdeck"
 - **Reviewers catch, not block.** Run reviewers after writing code to catch convention drift and gotchas. They review only changed files.
 - **Deploy agent automates the manual SSH flow.** It figures out what changed, only rebuilds what's needed, and verifies health after.
 
+## Adding Games to the Platform
+
+**Full pipeline for uploading new games:**
+
+1. **Download** portable Windows zip builds into `game-staging/`
+2. **Download** cover images into `game-staging/covers/` (jpg/png/webp, from official sites)
+3. **Create manifest** at `game-staging/manifest.json` — array of game objects:
+   ```json
+   [{ "zipFile": "game.zip", "coverFile": "covers/game.jpg", "title": "Game Name",
+      "description": "...", "version": "1.0.0", "priceCents": 0, "drmTier": "NONE" }]
+   ```
+4. **Tell the user to run** (Claude cannot run this — requires credentials):
+   ```bash
+   node scripts/upload-games.mjs <email> <password>
+   ```
+5. **Re-seed torrents on VPS** (upload pipeline's `addToTransmission` is fire-and-forget, often silently fails for large torrents):
+   ```bash
+   ssh root@204.168.133.38 'bash -s' < scripts/reseed-torrents.sh
+   ```
+
+**Key scripts:**
+- `scripts/upload-games.mjs` — Creates game + version + uploads zip + uploads cover + publishes. Reads from `game-staging/manifest.json` (or custom path as 3rd arg).
+- `scripts/upload-covers.mjs` — Uploads covers for existing games (matches by title substring).
+- `scripts/publish-all-drafts.mjs` — Publishes all DRAFT games.
+- `scripts/reseed-torrents.sh` — Re-adds all published game torrents to Transmission. Run on VPS via SSH.
+
+**Gotchas:**
+- Upload limit is **2 GB** (multer config). Games larger than this cannot be uploaded.
+- The publish endpoint is `PATCH /developer/games/:id/publish` (not POST).
+- Games are created in `DRAFT` status — must be explicitly published.
+- Transmission doesn't persist torrents across restarts — always re-seed after uploading.
+- Base64 torrent data can exceed bash arg limits — the reseed script uses temp files + python to avoid this.
+- Only games with a `.exe` inside the zip can be uploaded (exe auto-detection is required).
+- Java-only games (`.jar`) won't work — no `.exe` to detect.
+- The `game-staging/` directory is **gitignored** (contains multi-GB game zips).
+
+**Good sources for free redistributable games:** Open-source games with GPL/MIT/zlib licenses and portable Windows zip builds. Check GitHub releases for portable zips. Avoid: installer-only games, Java-only games, games > 2 GB.
+
 ## Environment
 - Copy `server/.env.example` to `server/.env` and configure
 - Requires PostgreSQL and Redis running locally (or connection strings to remote instances)
