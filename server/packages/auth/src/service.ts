@@ -104,8 +104,8 @@ export async function refresh(token: string) {
     throw new UnauthorizedError("Invalid or expired refresh token");
   }
 
-  // Rotate: delete old, create new
-  await db.refreshToken.delete({ where: { id: stored.id } });
+  // Rotate: delete old, create new (deleteMany tolerates already-deleted tokens from race conditions)
+  await db.refreshToken.deleteMany({ where: { id: stored.id } });
 
   const accessToken = generateAccessToken(stored.user);
   const newRefreshToken = generateRefreshToken();
