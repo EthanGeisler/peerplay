@@ -180,12 +180,12 @@
 
 ### 2.1 — Create events table migration
 
-- [ ] `[AUTO]` Migration file exists at `server/prisma/migrations/*_add_events_table/migration.sql`
-- [ ] `[AUTO]` `npx prisma migrate dev` applies without errors
-- [ ] `[CODE]` `Event` model in schema.prisma has: `id` (String @id), `pubkey` (String), `createdAt` (Int, mapped to `created_at_unix`), `kind` (Int), `tags` (Json), `content` (String), `sig` (String), `dTag` (String?), `receivedAt` (DateTime)
-- [ ] `[CODE]` `Event` model has indexes on: `kind`, `pubkey`, `createdAt`, and a unique constraint on `[pubkey, kind, dTag]`
-- [ ] `[CODE]` `Game` model has `eventId String? @unique @map("event_id")`
-- [ ] `[AUTO]` Existing data untouched after migration
+- [x] `[AUTO]` Migration file exists at `server/prisma/migrations/*_add_events_table/migration.sql`
+- [x] `[AUTO]` `npx prisma migrate dev` applies without errors
+- [x] `[CODE]` `Event` model in schema.prisma has: `id` (String @id), `pubkey` (String), `createdAt` (Int, mapped to `created_at_unix`), `kind` (Int), `tags` (Json), `content` (String), `sig` (String), `dTag` (String?), `receivedAt` (DateTime)
+- [x] `[CODE]` `Event` model has indexes on: `kind`, `pubkey`, `createdAt`, and a unique constraint on `[pubkey, kind, dTag]`
+- [x] `[CODE]` `Game` model has `eventId String? @unique @map("event_id")`
+- [x] `[AUTO]` Existing data untouched after migration
 
 ### 2.2 — Event utility module
 

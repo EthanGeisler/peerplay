@@ -554,6 +554,8 @@ ssh root@204.168.133.38 "cd /opt/boilerdeck && git pull origin main && npx vite 
 | 1.11 | Electron client: mnemonic flow | DONE | `dede4dd` |
 | 1.12 | Electron client: client-side keypair generation | DONE | `9d00e34` |
 | 1.13 | Password change flow | DONE | `ad69472` |
+| 2.1 | Create events table migration | DONE | `4bb9c6d` |
+| 2.2 | Event utility module | **NEXT** | — |
 
 ### Implementation Workflow
 
