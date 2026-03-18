@@ -541,8 +541,18 @@ ssh root@204.168.133.38 "cd /opt/boilerdeck && git pull origin main && npx vite 
 | Sub-task | Description | Status | Commit |
 |----------|-------------|--------|--------|
 | 1.1 | Add crypto dependencies | DONE | `cc37ab3` |
-| 1.2 | Crypto utility module | **NEXT** | — |
-| 1.3–1.13 | Remaining Phase 1 | Not started | — |
+| 1.2 | Crypto utility module | DONE | `f32e712` |
+| 1.3 | Database migration (keypair columns) | DONE | `0b67c21` |
+| 1.4 | Generate keypair on registration | DONE | `0914130` |
+| 1.5 | Cache signing key on login + pubkey in JWT | DONE | `acd966e` |
+| 1.6 | Lazy keypair migration + recover-mnemonic | DONE | `8227103` |
+| 1.7 | Challenge-based login (sovereign mode) | DONE | `4f22f64` |
+| 1.8 | Key export + custody switch | DONE | `4f20e9e` |
+| 1.9 | Frontend: mnemonic modal on registration (web) | DONE | `3faf876` |
+| 1.10 | Frontend: mnemonic modal on login migration (web) | **NEXT** | — |
+| 1.11 | Electron client: mnemonic flow | Not started | — |
+| 1.12 | Electron client: client-side keypair generation | Not started | — |
+| 1.13 | Password change flow | Not started | — |
 
 ### Implementation Workflow
 
