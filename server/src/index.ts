@@ -10,7 +10,7 @@ import { catalogRouter } from "@boilerdeck/catalog";
 import { licenseRouter } from "@boilerdeck/license";
 import { paymentRouter } from "@boilerdeck/payment";
 import { torrentRouter } from "@boilerdeck/torrent";
-import { relayRouter } from "@boilerdeck/relay";
+import { relayRouter, attachRelayWebSocket } from "@boilerdeck/relay";
 
 const config = getConfig();
 const app = express();
@@ -59,8 +59,11 @@ app.use("/api", relayRouter);
 // Error handler (must be last)
 app.use(errorHandler);
 
-app.listen(config.PORT, () => {
+const server = app.listen(config.PORT, () => {
   console.log(`BoilerDeck API running on port ${config.PORT} [${config.NODE_ENV}]`);
 });
+
+// Attach NIP-01 WebSocket relay on /relay
+attachRelayWebSocket(server);
 
 export default app;

@@ -5,6 +5,9 @@ export type { DeleteResult } from "./service.js";
 // Routes
 export { relayRouter } from "./routes.js";
 
+// WebSocket
+export { attachRelayWebSocket } from "./ws.js";
+
 // Crypto (re-exports for relay consumers)
 export {
   createEvent,
