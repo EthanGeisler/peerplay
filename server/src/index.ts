@@ -4,7 +4,7 @@ import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
 import morgan from "morgan";
-import { getConfig, errorHandler } from "@boilerdeck/shared";
+import { getConfig, errorHandler, eventRouter } from "@boilerdeck/shared";
 import { authRouter, developerRouter } from "@boilerdeck/auth";
 import { catalogRouter } from "@boilerdeck/catalog";
 import { licenseRouter } from "@boilerdeck/license";
@@ -53,6 +53,7 @@ app.use("/api", catalogRouter);
 app.use("/api", licenseRouter);
 app.use("/api", paymentRouter);
 app.use("/api", torrentRouter);
+app.use("/api", eventRouter);
 
 // Error handler (must be last)
 app.use(errorHandler);
