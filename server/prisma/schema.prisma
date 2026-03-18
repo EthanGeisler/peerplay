@@ -39,13 +39,23 @@ enum PaymentStatus {
   REFUNDED
 }
 
+enum CustodyMode {
+  CUSTODIAL
+  SELF_CUSTODY
+  @@map("custody_mode")
+}
+
 model User {
   id              String    @id @default(uuid())
   email           String    @unique
   passwordHash    String    @map("password_hash")
   displayName     String    @map("display_name")
   role            UserRole  @default(PLAYER)
-  stripeCustomerId String?  @map("stripe_customer_id")
+  stripeCustomerId  String?      @map("stripe_customer_id")
+  nostrPubkey       String?      @unique @map("nostr_pubkey")
+  encryptedNsec     String?      @map("encrypted_nsec")
+  encryptedMnemonic String?      @map("encrypted_mnemonic")
+  custodyMode       CustodyMode  @default(CUSTODIAL) @map("custody_mode")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
