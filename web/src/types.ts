@@ -113,4 +113,5 @@ export interface ProfileData {
   name?: string;
   about?: string;
   picture?: string;
+  created_at?: number;
 }

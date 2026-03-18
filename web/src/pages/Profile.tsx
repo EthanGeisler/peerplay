@@ -2,15 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useAuthStore } from "../stores/authStore";
 import { apiFetch } from "../api";
-import type { NostrEvent } from "../types";
-
-interface ProfileData {
-  pubkey: string;
-  name?: string;
-  about?: string;
-  picture?: string;
-  created_at?: number;
-}
+import type { NostrEvent, ProfileData } from "../types";
 
 interface ReputationData {
   pubkey: string;

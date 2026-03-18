@@ -85,7 +85,10 @@ export function Social() {
     try {
       const oldest = events[events.length - 1].created_at;
       const fetched = await fetchEvents(oldest);
-      setEvents((prev) => [...prev, ...fetched]);
+      setEvents((prev) => {
+        const existing = new Set(prev.map((e) => e.id));
+        return [...prev, ...fetched.filter((e) => !existing.has(e.id))];
+      });
       setHasMore(fetched.length >= 30);
     } finally {
       setLoadingMore(false);
