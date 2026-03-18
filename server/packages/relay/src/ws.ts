@@ -295,8 +295,9 @@ function handleClose(
 
 /**
  * Push an event to all connections with a subscription that matches it.
+ * Exported for use by sign-and-publish and federation modules.
  */
-function fanOutEvent(event: SignedEvent): void {
+export function fanOutEvent(event: SignedEvent): void {
   for (const [, { ws, state }] of connections) {
     if (ws.readyState !== WebSocket.OPEN) continue;
 

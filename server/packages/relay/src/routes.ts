@@ -30,7 +30,9 @@ import {
   materializeEvent,
 } from "@boilerdeck/shared";
 import type { SignedEvent } from "@boilerdeck/shared";
+import { signEventForUser } from "@boilerdeck/auth";
 import { storeEvent, getEvent, queryEvents } from "./service.js";
+import { fanOutEvent } from "./ws.js";
 
 export const relayRouter = Router();
 
@@ -262,6 +264,55 @@ relayRouter.post("/relay/me/import-key", authenticate, async (req, res, next) =>
     await redis.set(`signing_key:${req.user!.sub}`, cached, "EX", ttl);
 
     res.json({ pubkey: newPubkey });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── POST /events/sign-and-publish — server signs + stores + broadcasts ──────
+
+relayRouter.post("/events/sign-and-publish", authenticate, async (req, res, next) => {
+  try {
+    const { kind, content, tags } = req.body;
+
+    // Validate input shape
+    if (typeof kind !== "number" || !Number.isInteger(kind) || kind < 0) {
+      throw new ValidationError("kind must be a non-negative integer");
+    }
+    if (typeof content !== "string") {
+      throw new ValidationError("content must be a string");
+    }
+    if (!Array.isArray(tags)) {
+      throw new ValidationError("tags must be an array of string arrays");
+    }
+    if (Buffer.byteLength(content, "utf8") > MAX_CONTENT_BYTES) {
+      throw new ValidationError("Event content exceeds 1MB limit");
+    }
+    if (tags.length > MAX_TAGS) {
+      throw new ValidationError("Event tags exceed 1000 limit");
+    }
+
+    // Sign the event using the user's cached signing key
+    const event = await signEventForUser(req.user!.sub, {
+      kind,
+      tags: tags as string[][],
+      content,
+    });
+
+    // Store the event
+    await storeEvent(event);
+
+    // Materialize into legacy tables (non-fatal)
+    try {
+      await materializeEvent(event);
+    } catch (matErr) {
+      console.warn("[relay] materializeEvent failed (non-fatal):", matErr);
+    }
+
+    // Broadcast to WebSocket subscribers
+    fanOutEvent(event);
+
+    res.status(201).json(event);
   } catch (err) {
     next(err);
   }

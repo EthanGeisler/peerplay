@@ -384,11 +384,11 @@
 
 ### 3.5 — Keypair Generation on Registration + Key Management
 
-- [ ] `[AUTO]` **Register → pubkey returned:** `POST /api/auth/register` response includes `pubkey`
-- [ ] `[AUTO]` **Login backfill:** Login with user without pubkey → pubkey generated and returned
-- [ ] `[AUTO]` **Key export:** `GET /api/relay/me/keys` (authenticated) → returns `{ pubkey, privkey }` both hex
-- [ ] `[AUTO]` **Key import:** `POST /api/relay/me/import-key` with `{ privkey }` → pubkey updated to match
-- [ ] `[CODE]` Private key encrypted at rest with `EVENT_SIGNING_KEY` env var using AES-256-GCM
+- [x] `[AUTO]` **Register → pubkey returned:** `POST /api/auth/register` response includes `pubkey`
+- [x] `[AUTO]` **Login backfill:** Login with user without pubkey → pubkey generated and returned
+- [x] `[AUTO]` **Key export:** `GET /api/relay/me/keys` (authenticated) → returns `{ pubkey, privkey }` both hex
+- [x] `[AUTO]` **Key import:** `POST /api/relay/me/import-key` with `{ privkey }` → pubkey updated to match
+- [x] `[CODE]` Private key encrypted at rest with `EVENT_SIGNING_KEY` env var using AES-256-GCM
 
 ### 3.6 — Server-Side Event Signing (for Web Users)
 
