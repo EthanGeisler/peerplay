@@ -135,16 +135,16 @@
 
 ### 1.12 — Electron client: client-side keypair generation
 
-- [ ] `[CODE]` IPC handler `crypto:generate-keypair` exists in `client/src/main/index.ts` — uses `@noble/curves/secp256k1` + NIP-06 derivation
-- [ ] `[CODE]` IPC handler `crypto:sign-challenge` exists in `client/src/main/index.ts` — Schnorr signs SHA-256(challenge)
-- [ ] `[CODE]` Both channels exposed in `preload.ts` under `window.boilerdeck.crypto`
-- [ ] `[CODE]` Type declarations in `env.d.ts` match preload bridge
-- [ ] `[CODE]` `@noble/curves`, `@scure/bip39`, `@scure/bip32`, `@scure/base` in client dependencies
-- [ ] `[CODE]` Registration page has a toggle "Generate keys on this device (advanced)"
+- [x] `[CODE]` IPC handler `crypto:generate-keypair` exists in `client/src/main/index.ts` — uses `@noble/curves/secp256k1` + NIP-06 derivation
+- [x] `[CODE]` IPC handler `crypto:sign-challenge` exists in `client/src/main/index.ts` — Schnorr signs SHA-256(challenge)
+- [x] `[CODE]` Both channels exposed in `preload.ts` under `window.boilerdeck.crypto`
+- [x] `[CODE]` Type declarations in `env.d.ts` match preload bridge
+- [x] `[CODE]` `@noble/curves`, `@scure/bip39`, `@scure/bip32`, `@scure/base` in client dependencies
+- [x] `[CODE]` Registration page has a toggle "Generate keys on this device (advanced)"
 - [ ] `[AUTO]` **Client-side registration:** Register with client-side key gen → server DB has `nostr_pubkey` set but `encrypted_nsec` is NULL, `encrypted_mnemonic` is NULL, `custody_mode` is 'SELF_CUSTODY'
-- [ ] `[CODE]` Private key stored in Electron store (encrypted at rest via safeStorage)
-- [ ] `[CODE]` Self-custody Electron login uses challenge-based auth (1.7), not password
-- [ ] `[AUTO]` `npx tsc --noEmit` from `client/` exits 0
+- [x] `[CODE]` Private key stored in Electron store (encrypted at rest via safeStorage)
+- [x] `[CODE]` Self-custody Electron login uses challenge-based auth (1.7), not password
+- [x] `[AUTO]` `npx tsc --noEmit` from `client/` exits 0
 
 ### 1.13 — Password change flow
 
