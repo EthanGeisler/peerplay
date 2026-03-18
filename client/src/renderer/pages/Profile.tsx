@@ -248,7 +248,9 @@ export function Profile() {
 
           <div style={styles.pubkey}>{pubkey}</div>
 
-          {bio && <p style={styles.bio}>{bio}</p>}
+          <p style={{ ...styles.bio, color: bio ? "#ccc" : "#666", fontStyle: bio ? "normal" : "italic" }}>
+            {bio || "No bio yet."}
+          </p>
 
           <div style={styles.statsRow}>
             {profile?.created_at && (

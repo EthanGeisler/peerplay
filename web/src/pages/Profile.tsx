@@ -241,11 +241,9 @@ export function Profile() {
           </div>
 
           {/* Bio */}
-          {bio && (
-            <p style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 12 }}>
-              {bio}
-            </p>
-          )}
+          <p style={{ fontSize: 14, color: bio ? "var(--text-secondary)" : "var(--text-muted)", lineHeight: 1.6, marginBottom: 12, fontStyle: bio ? "normal" : "italic" }}>
+            {bio || "No bio yet."}
+          </p>
 
           {/* Stats row */}
           <div style={{ display: "flex", gap: 24, fontSize: 13, color: "var(--text-muted)" }}>
