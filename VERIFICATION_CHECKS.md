@@ -122,9 +122,9 @@
 
 ### 1.10 — Frontend: mnemonic display on first login migration (web)
 
-- [ ] `[CODE]` Login handler checks for `mnemonic` in response and triggers same modal as registration
-- [ ] `[MANUAL]` Login with a pre-migration user in browser → mnemonic modal appears
-- [ ] `[MANUAL]` Login with a user who already has a keypair → no mnemonic modal
+- [x] `[CODE]` Login handler checks for `mnemonic` in response and triggers same modal as registration
+- [x] `[MANUAL]` Login with a pre-migration user in browser → mnemonic modal appears
+- [x] `[MANUAL]` Login with a user who already has a keypair → no mnemonic modal
 
 ### 1.11 — Electron client: mnemonic flow
 
