@@ -15,6 +15,7 @@ interface StoreData {
     downloadSpeedLimit?: number;
     uploadSpeedLimit?: number;
   };
+  selfCustodyKey?: string;
 }
 
 interface InstalledGameEntry {
@@ -36,6 +37,7 @@ export const STORE_KEY_WHITELIST = new Set([
   "installDir",
   "installedGames",
   "settings",
+  "selfCustodyKey",
 ]);
 
 export function isAllowedStoreKey(key: string): boolean {

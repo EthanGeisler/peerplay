@@ -12,7 +12,9 @@ interface AuthState {
   loading: boolean;
   error: string | null;
   login: (email: string, password: string) => Promise<string | undefined>;
+  loginWithPubkey: () => Promise<void>;
   register: (email: string, password: string, displayName: string) => Promise<string | undefined>;
+  registerSelfCustody: (email: string, password: string, displayName: string) => Promise<string>;
   registerDeveloper: (studioName: string) => Promise<void>;
   logout: () => Promise<void>;
   loadSession: () => Promise<void>;
@@ -64,6 +66,47 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ user: data.user });
 
     return data.mnemonic;
+  },
+
+  registerSelfCustody: async (email: string, password: string, displayName: string) => {
+    set({ error: null });
+    // Generate keypair locally in main process
+    const { mnemonic, pubkeyHex } = await window.boilerdeck.crypto.generateKeypair();
+
+    // Register with server (server stores pubkey only, no encrypted key)
+    const data = await apiFetch<ApiAuthResponse>("/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ email, password, displayName, pubkey: pubkeyHex }),
+    });
+
+    setAccessToken(data.accessToken);
+    await window.boilerdeck.store.set("refreshToken", data.refreshToken);
+    set({ user: data.user });
+
+    return mnemonic;
+  },
+
+  loginWithPubkey: async () => {
+    set({ error: null });
+    // Get challenge from server
+    const { challenge } = await apiFetch<{ challenge: string; expiresAt: string }>("/auth/challenge");
+
+    // Sign challenge in main process using stored private key
+    const { signature, pubkeyHex } = await window.boilerdeck.crypto.signChallenge(challenge);
+
+    // Login with pubkey
+    const data = await apiFetch<ApiAuthResponse>("/auth/login/pubkey", {
+      method: "POST",
+      body: JSON.stringify({ pubkey: pubkeyHex, challenge, signature }),
+    });
+
+    setAccessToken(data.accessToken);
+    await window.boilerdeck.store.set("refreshToken", data.refreshToken);
+    set({ user: data.user });
+
+    if (data.user.role === "DEVELOPER" || data.user.role === "ADMIN") {
+      await loadDeveloperProfile(set);
+    }
   },
 
   registerDeveloper: async (studioName: string) => {

@@ -69,12 +69,24 @@ const styles = {
     fontSize: 13,
     textAlign: "center",
   } as React.CSSProperties,
+  toggle: {
+    display: "flex",
+    alignItems: "center",
+    cursor: "pointer",
+    marginTop: 4,
+  } as React.CSSProperties,
+  toggleLabel: {
+    fontSize: 12,
+    color: "#888",
+    marginLeft: 8,
+  } as React.CSSProperties,
 };
 
 export function Login() {
   const navigate = useNavigate();
   const login = useAuthStore((s) => s.login);
   const register = useAuthStore((s) => s.register);
+  const registerSelfCustody = useAuthStore((s) => s.registerSelfCustody);
 
   const [tab, setTab] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
@@ -83,6 +95,7 @@ export function Login() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [mnemonic, setMnemonic] = useState<string | null>(null);
+  const [selfCustody, setSelfCustody] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -92,6 +105,8 @@ export function Login() {
       let m: string | undefined;
       if (tab === "login") {
         m = await login(email, password);
+      } else if (selfCustody) {
+        m = await registerSelfCustody(email, password, displayName);
       } else {
         m = await register(email, password, displayName);
       }
@@ -161,6 +176,19 @@ export function Login() {
             minLength={6}
           />
         </div>
+        {tab === "register" && (
+          <label style={styles.toggle}>
+            <input
+              type="checkbox"
+              checked={selfCustody}
+              onChange={(e) => setSelfCustody(e.target.checked)}
+              style={{ accentColor: "#e94560" }}
+            />
+            <span style={styles.toggleLabel}>
+              Generate keys on this device (advanced)
+            </span>
+          </label>
+        )}
         {error && <p style={styles.error}>{error}</p>}
         <button style={styles.button} type="submit" disabled={submitting}>
           {submitting ? "Please wait..." : tab === "login" ? "Sign In" : "Create Account"}

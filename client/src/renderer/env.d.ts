@@ -25,6 +25,10 @@ declare global {
         set: (key: string, value: unknown) => Promise<boolean>;
         delete: (key: string) => Promise<boolean>;
       };
+      crypto: {
+        generateKeypair: () => Promise<{ mnemonic: string; pubkeyHex: string }>;
+        signChallenge: (challengeHex: string) => Promise<{ signature: string; pubkeyHex: string }>;
+      };
       shell: {
         openExternal: (url: string) => Promise<void>;
       };

@@ -41,6 +41,13 @@ contextBridge.exposeInMainWorld("boilerdeck", {
     delete: (key: string): Promise<boolean> => ipcRenderer.invoke("store:delete", key),
   },
 
+  crypto: {
+    generateKeypair: (): Promise<{ mnemonic: string; pubkeyHex: string }> =>
+      ipcRenderer.invoke("crypto:generate-keypair"),
+    signChallenge: (challengeHex: string): Promise<{ signature: string; pubkeyHex: string }> =>
+      ipcRenderer.invoke("crypto:sign-challenge", challengeHex),
+  },
+
   shell: {
     openExternal: (url: string): Promise<void> =>
       ipcRenderer.invoke("shell:open-external", url),
@@ -121,6 +128,10 @@ declare global {
         get: (key: string) => Promise<unknown>;
         set: (key: string, value: unknown) => Promise<boolean>;
         delete: (key: string) => Promise<boolean>;
+      };
+      crypto: {
+        generateKeypair: () => Promise<{ mnemonic: string; pubkeyHex: string }>;
+        signChallenge: (challengeHex: string) => Promise<{ signature: string; pubkeyHex: string }>;
       };
       shell: {
         openExternal: (url: string) => Promise<void>;
