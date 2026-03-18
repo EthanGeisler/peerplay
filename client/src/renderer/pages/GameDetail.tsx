@@ -286,6 +286,9 @@ export function GameDetail() {
         <p style={{ color: "#e94560", fontSize: 13, marginTop: 12 }}>{error}</p>
       )}
 
+      {/* Top Seeders */}
+      <TopSeedersSection slug={slug} />
+
       {/* Review Form — only if logged in, owns game, and hasn't reviewed yet */}
       {slug && user && owned && !hasReviewed && (
         <ReviewForm
@@ -296,6 +299,154 @@ export function GameDetail() {
 
       {/* Reviews */}
       {slug && <ReviewSection slug={slug} refreshKey={reviewRefreshKey} />}
+    </div>
+  );
+}
+
+interface ReputationData {
+  pubkey: string;
+  score: number;
+  attestationCount: number;
+  uniqueAttesters: number;
+}
+
+interface SeederInfo {
+  pubkey: string;
+  reputation: ReputationData;
+}
+
+function getBadge(score: number): { label: string; color: string; bgColor: string } | null {
+  if (score >= 200) return { label: "Gold", color: "#ffd700", bgColor: "rgba(255,215,0,0.15)" };
+  if (score >= 50) return { label: "Silver", color: "#c0c0c0", bgColor: "rgba(192,192,192,0.15)" };
+  if (score >= 10) return { label: "Bronze", color: "#cd7f32", bgColor: "rgba(205,127,50,0.15)" };
+  return null;
+}
+
+function truncatePubkey(pubkey: string): string {
+  if (pubkey.length <= 16) return pubkey;
+  return `${pubkey.slice(0, 8)}...${pubkey.slice(-8)}`;
+}
+
+function TopSeedersSection({ slug }: { slug?: string }) {
+  const [seeders, setSeeders] = useState<SeederInfo[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!slug) {
+      setLoading(false);
+      return;
+    }
+
+    apiFetch<Array<{ pubkey: string; tags: string[][] }>>(`/events?kinds=31338`)
+      .then(async (events) => {
+        if (!Array.isArray(events)) {
+          setLoading(false);
+          return;
+        }
+
+        const seederPubkeys = new Set<string>();
+        for (const event of events) {
+          if (!Array.isArray(event.tags)) continue;
+          const hasGameRef = event.tags.some(
+            (t) => (t[0] === "game" && t[1] === slug) || (t[0] === "d" && typeof t[1] === "string" && t[1].includes(slug))
+          );
+          if (!hasGameRef) continue;
+          const pTag = event.tags.find((t) => t[0] === "p" && t[1]);
+          if (pTag) seederPubkeys.add(pTag[1]);
+        }
+
+        const seederInfos: SeederInfo[] = [];
+        for (const pk of seederPubkeys) {
+          try {
+            const rep = await apiFetch<ReputationData>(`/reputation/${pk}`);
+            if (rep.score > 0) {
+              seederInfos.push({ pubkey: pk, reputation: rep });
+            }
+          } catch {
+            // Skip
+          }
+        }
+
+        seederInfos.sort((a, b) => b.reputation.score - a.reputation.score);
+        setSeeders(seederInfos.slice(0, 10));
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [slug]);
+
+  return (
+    <div
+      style={{
+        backgroundColor: "#16213e",
+        borderRadius: 8,
+        border: "1px solid #0f3460",
+        padding: 24,
+        marginTop: 24,
+        marginBottom: 24,
+        maxWidth: 600,
+      }}
+    >
+      <h2 style={{ fontSize: 18, fontWeight: 700, color: "#fff", marginBottom: 16 }}>Top Seeders</h2>
+      {loading ? (
+        <p style={{ fontSize: 13, color: "#888" }}>Loading...</p>
+      ) : seeders.length === 0 ? (
+        <p style={{ fontSize: 13, color: "#888" }}>
+          No seeding data yet. Seeder rankings will appear as download activity accumulates.
+        </p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {seeders.map((seeder, i) => {
+            const badge = getBadge(seeder.reputation.score);
+            return (
+              <div
+                key={seeder.pubkey}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "8px 12px",
+                  borderRadius: 4,
+                  backgroundColor: "#0a0a1a",
+                }}
+              >
+                <span style={{ fontSize: 14, fontWeight: 700, color: "#888", width: 24 }}>
+                  #{i + 1}
+                </span>
+                <span
+                  style={{
+                    fontSize: 13,
+                    fontFamily: "monospace",
+                    color: "#e94560",
+                    flex: 1,
+                    cursor: "pointer",
+                  }}
+                  onClick={() => window.location.hash = `/profile/${seeder.pubkey}`}
+                >
+                  {truncatePubkey(seeder.pubkey)}
+                </span>
+                <span style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>
+                  {seeder.reputation.score.toFixed(1)}
+                </span>
+                {badge && (
+                  <span
+                    style={{
+                      padding: "2px 8px",
+                      borderRadius: 4,
+                      backgroundColor: badge.bgColor,
+                      color: badge.color,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      border: `1px solid ${badge.color}`,
+                    }}
+                  >
+                    {badge.label}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
