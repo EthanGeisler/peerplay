@@ -272,7 +272,7 @@ export async function loginWithPubkey(input: PubkeyLoginInput) {
   // Look up user by pubkey
   const user = await db.user.findUnique({ where: { nostrPubkey: input.pubkey } });
   if (!user) {
-    throw new NotFoundError("No account found for this pubkey");
+    throw new NotFoundError("Account for this pubkey");
   }
 
   const accessToken = generateAccessToken(user);
