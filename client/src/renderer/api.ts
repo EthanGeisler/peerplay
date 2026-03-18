@@ -2,6 +2,71 @@ import { createApiClient, ApiError } from "@boilerdeck/ui-shared";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "https://boilerdeck.com/api";
 
+// ── .onion auto-discovery ────────────────────────────────────────────────────
+// When Tor mode is active, we fetch relay info to check for an onion_address.
+// If present, API calls are rewritten to use http://<onion>.onion/api instead
+// of the clearnet URL, eliminating the Tor exit node for end-to-end onion routing.
+
+let _onionApiBase: string | null = null;
+let _onionDiscoveryDone = false;
+
+/**
+ * Attempt to discover a .onion address from the relay info endpoint.
+ * Called once per session when Tor mode is active. Best-effort — failures
+ * are silently ignored (we just keep using the clearnet URL through Tor).
+ */
+async function discoverOnionAddress(): Promise<void> {
+  if (_onionDiscoveryDone) return;
+  _onionDiscoveryDone = true;
+  try {
+    const infoUrl = API_BASE.replace(/\/api$/, "") + "/api/relay/info";
+    const res = await window.boilerdeck.api.proxiedFetch({
+      url: infoUrl,
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (res.status >= 200 && res.status < 300) {
+      const info = JSON.parse(res.body);
+      if (info.onion_address && typeof info.onion_address === "string") {
+        // Build the onion API base: http://<address>.onion/api (or just http://<address>/api if already has .onion)
+        const addr = info.onion_address.replace(/\/+$/, "");
+        _onionApiBase = `http://${addr}/api`;
+        console.log("[privacy] Discovered .onion address:", _onionApiBase);
+      }
+    }
+  } catch {
+    // Best-effort — silently continue with clearnet URL through Tor
+  }
+}
+
+/**
+ * Reset onion discovery state (e.g., when privacy mode changes).
+ */
+function resetOnionDiscovery(): void {
+  _onionApiBase = null;
+  _onionDiscoveryDone = false;
+}
+
+/**
+ * Get the effective API base URL. Returns the .onion base when in Tor mode
+ * and a .onion address has been discovered, otherwise the default API_BASE.
+ */
+async function getEffectiveApiBase(): Promise<string> {
+  try {
+    const settings = await window.boilerdeck.privacy.getSettings();
+    if (settings.mode === "tor" && settings.routeApiTraffic) {
+      await discoverOnionAddress();
+      if (_onionApiBase) return _onionApiBase;
+    } else {
+      // Not in Tor mode — reset discovery so it re-checks next time
+      resetOnionDiscovery();
+    }
+  } catch {
+    // Fall through to default
+  }
+  return API_BASE;
+}
+
 const client = createApiClient(API_BASE, {
   getRefreshToken: async () =>
     (await window.boilerdeck.store.get("refreshToken")) as string | null,
@@ -51,7 +116,8 @@ async function proxiedApiFetch<T = unknown>(
     headers["Authorization"] = `Bearer ${accessToken}`;
   }
 
-  const url = `${API_BASE}${path}`;
+  const base = await getEffectiveApiBase();
+  const url = `${base}${path}`;
   const method = (options.method ?? "GET").toUpperCase();
   const body = options.body as string | undefined;
 
@@ -109,7 +175,8 @@ export async function fetchTorrentFileBase64(gameId: string): Promise<string> {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const url = `${API_BASE}/torrents/${gameId}/latest/file`;
+  const base = useProxy ? await getEffectiveApiBase() : API_BASE;
+  const url = `${base}/torrents/${gameId}/latest/file`;
 
   if (useProxy) {
     let res = await window.boilerdeck.api.proxiedFetch({ url, method: "GET", headers });

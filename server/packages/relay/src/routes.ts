@@ -1226,7 +1226,8 @@ relayRouter.get("/followers/:pubkey", async (req, res, next) => {
 // ── Relay info helper ───────────────────────────────────────────────────────
 
 function buildRelayInfo(): Record<string, unknown> {
-  return {
+  const config = getConfig();
+  const info: Record<string, unknown> = {
     name: "BoilerDeck Relay",
     description: "Nostr-compatible relay for the BoilerDeck decentralized game distribution platform",
     relay_url: "wss://boilerdeck.com/relay",
@@ -1241,6 +1242,10 @@ function buildRelayInfo(): Record<string, unknown> {
     },
     external_relays: getExternalRelayUrls(),
   };
+  if (config.ONION_ADDRESS) {
+    info.onion_address = config.ONION_ADDRESS;
+  }
+  return info;
 }
 
 // ── GET /relay/info — relay metadata (REST) ─────────────────────────────────

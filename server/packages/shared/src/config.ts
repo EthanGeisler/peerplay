@@ -27,6 +27,7 @@ const envSchema = z.object({
   SIGNING_CACHE_KEY: z.string().length(64).regex(/^[0-9a-f]+$/),
   EXTERNAL_RELAYS: z.string().default(""),
   RELAY_ADMIN_PRIVKEY: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+  ONION_ADDRESS: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
