@@ -4,7 +4,8 @@ import fsp from "node:fs/promises";
 import { Router } from "express";
 import { z, ZodError } from "zod";
 import multer from "multer";
-import { authenticate, requireRole, ValidationError, NotFoundError, getConfig } from "@boilerdeck/shared";
+import { authenticate, requireRole, ValidationError, NotFoundError, getConfig, storeEvent, EVENT_KIND_GAME_LISTING, db } from "@boilerdeck/shared";
+import { signEventForUser } from "@boilerdeck/auth";
 import * as catalogService from "./service.js";
 
 export const catalogRouter = Router();
@@ -253,6 +254,28 @@ catalogRouter.post(
       }
       const developer = await catalogService.getDeveloperByUserId(req.user!.sub);
       const game = await catalogService.createGame(developer.id, input);
+
+      // Sign and store a kind 30001 event for this game (non-blocking on failure)
+      try {
+        const event = await signEventForUser(req.user!.sub, {
+          kind: EVENT_KIND_GAME_LISTING,
+          tags: [["d", game.slug], ["t", "game"]],
+          content: JSON.stringify({
+            title: game.title,
+            description: game.description,
+            priceCents: game.priceCents,
+            slug: game.slug,
+          }),
+        });
+        await storeEvent(event);
+        await db.game.update({
+          where: { id: game.id },
+          data: { eventId: event.id },
+        });
+      } catch {
+        // Signing failure is non-fatal — game exists with eventId: null
+      }
+
       res.status(201).json(game);
     } catch (err) {
       next(err);

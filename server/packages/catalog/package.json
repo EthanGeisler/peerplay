@@ -6,6 +6,7 @@
   "main": "src/index.ts",
   "scripts": { "build": "tsc", "lint": "tsc --noEmit" },
   "dependencies": {
+    "@boilerdeck/auth": "*",
     "@boilerdeck/shared": "*",
     "@boilerdeck/torrent": "*",
     "express": "^5.1.0",
