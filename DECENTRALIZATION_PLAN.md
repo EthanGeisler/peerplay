@@ -376,9 +376,11 @@ Client also has: InstalledGame, DownloadProgress, Dev* types
 ### Key Design Decisions
 - Event ID = SHA-256 hash of canonical JSON (NIP-01 style)
 - Canonical JSON: `[0, pubkey, created_at, kind, tags, content]`
+  - **NIP-01 serialization rules:** UTF-8 encoded, no whitespace, no trailing commas, `created_at` is an integer (not string), `tags` is an array of arrays of strings, `content` is always a string (JSON-stringify objects before setting as content). The serialized form MUST match byte-for-byte across implementations for the hash to be deterministic.
 - Signatures: Schnorr over secp256k1 (same as Nostr NIP-01)
 - Kind ranges: 0-9999 regular, 10000-19999 replaceable, 30000-39999 parameterized replaceable (by `d` tag)
 - Custom kinds: 30001 (listing), 30002 (version), 31337 (review), 31338 (attestation)
+- **Parameterized replaceable events (30000-39999) require a `d` tag.** The `d` tag value is the unique identifier within the `pubkey + kind` namespace. Events without a `d` tag are treated as having `d = ""`. All kind 30001/30002 events MUST include a `d` tag.
 
 **Phase 2 note:** When a sovereign client posts an event directly to a relay (bypassing the gateway), the materializer must handle conflicts with existing DB state. Use `created_at` as tiebreaker — latest event wins. Add a reconciliation script for manual conflict resolution.
 
@@ -410,7 +412,7 @@ Client also has: InstalledGame, DownloadProgress, Dev* types
 ### 2.2 — Event utility module
 - **File:** `server/packages/shared/src/events.ts` (NEW)
 - Export functions:
-  - `serializeEvent(event)` → NIP-01 canonical JSON: `[0, pubkey, created_at, kind, tags, content]`
+  - `serializeEvent(event)` → NIP-01 canonical JSON: `[0, pubkey, created_at, kind, tags, content]` — must use `JSON.stringify` with no spaces/indentation and ensure `created_at` is a number, `tags` is `string[][]`, and `content` is a string
   - `hashEvent(event)` → SHA-256 of serialized bytes → hex string (this is the event ID)
   - `createEvent(params: { pubkey, kind, tags, content }, privateKey)` → full signed event with computed `id` and `sig`
   - `verifyEvent(event)` → boolean (recompute hash, verify Schnorr signature)
@@ -940,6 +942,8 @@ Phase 8 (Decentralization) depends on 3+7
 | Sovereign client event conflicts | Materializer uses `created_at` tiebreaker; reconciliation script for manual cases |
 | Prisma rename (Game → Listing) in Phase 7 | Dedicated sub-task, update all queries + types, `@@map("games")` keeps DB table |
 | Encryption format changes | Version prefix `v1:` in encryption format allows migration to new schemes |
+| Relay federation consistency | External relays may be unreliable, slow, or return stale data. Federation is best-effort — the gateway relay is authoritative. Client deduplicates and prefers newest `created_at`. |
+| Phase 7 rename blast radius | Game → Listing rename touches every server package. Run full `tsc --noEmit` + integration smoke tests after each sub-task, not just at the end. |
 
 ---
 
@@ -963,3 +967,18 @@ Items from Grok's review and how they were resolved:
 | **MEDIUM: Phase 7 rename scope** | Added note to Phase 7 about updating all queries + types. |
 | **MEDIUM: Shared exports for crypto types** | Will be handled in each sub-task as types are created. |
 | **MEDIUM: Mnemonic modal escape hatch** | Fixed → "I'll do this later" button with warning added to 1.9. |
+
+### Grok Review #2 Decisions (2026-03-17)
+
+Second round of Grok feedback on Phases 2-8:
+
+| Issue | Resolution |
+|-------|-----------|
+| **Import paths (.js suffix wrong)** | Disagree — `.js` suffix is required for ESM subpath exports. Already documented on line 202. Grok is incorrect here. |
+| **NIP-01 canonical serialization rules** | Agreed — added explicit serialization rules (UTF-8, no whitespace, integer types, string content) to Phase 2 key decisions and 2.2 spec. |
+| **Parameterized replaceable d-tag requirement** | Agreed — added explicit note that kinds 30001/30002 MUST include a `d` tag. Already present in 2.5/2.7 examples but now stated as a rule. |
+| **Custom kinds 31337/31338 collision risk** | No change — these are in the 30000-39999 app-specific range. Collision with standard Nostr kinds is unlikely and can be renumbered if needed. |
+| **Relay federation realism** | Agreed — added risk row noting federation is best-effort, gateway is authoritative. |
+| **Tor bundling concerns (legal, size)** | Acknowledged but deferred — Phase 6 is far out. Will evaluate Tor Expert Bundle vs full bundle vs proxy-only at implementation time. |
+| **Phase 7 rename smoke tests** | Agreed — added risk row requiring `tsc --noEmit` + integration smoke tests after each Phase 7 sub-task. |
+| **Redis TTL / challenge signing nits** | Already addressed in implementation — Redis TTL matches refresh token expiry, challenge signing uses SHA-256(challenge bytes). |

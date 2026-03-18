@@ -587,14 +587,17 @@ These are in `server/packages/auth/package.json`. See `docs/handoff/1.1.md` for 
 - `@scure/bip39` ^2.0.1 — BIP39 mnemonic generation (12-word recovery phrases)
 - `@scure/base` ^2.0.0 — Hex/bech32 encoding (npub/nsec)
 
-### What 1.2 Needs to Do
+### What 2.2 Needs to Do
 
-See `DECENTRALIZATION_PLAN.md` sub-task 1.2 for full spec. Key points:
-- Create `server/packages/auth/src/crypto.ts` with secp256k1/Schnorr functions
-- Use NIP-06 derivation path, x-only pubkeys (32 bytes), Schnorr signatures
-- Encryption format: `v1:salt:nonce:tag:ciphertext` (versioned, colon-separated hex)
-- Include `encryptMnemonic`/`decryptMnemonic` (mnemonic stored encrypted in DB)
-- Include `pubkeyToNpub`/`privkeyToNsec` (bech32 encoding for Nostr)
+See `DECENTRALIZATION_PLAN.md` sub-task 2.2 for full spec. Key points:
+- Create `server/packages/shared/src/events.ts` (NEW)
+- `serializeEvent(event)` → NIP-01 canonical JSON `[0, pubkey, created_at, kind, tags, content]` — deterministic, no whitespace, integer `created_at`, string `content`
+- `hashEvent(event)` → SHA-256 of serialized bytes → hex string (event ID)
+- `createEvent(params, privateKey)` → full signed event with `id` and `sig`
+- `verifyEvent(event)` → boolean (recompute hash, verify Schnorr signature)
+- Export kind constants: `EVENT_KIND_GAME_LISTING = 30001`, `EVENT_KIND_GAME_VERSION = 30002`, `EVENT_KIND_REVIEW = 31337`, `EVENT_KIND_ATTESTATION = 31338`
+- Re-export from `shared/src/index.ts`
+- Test: create + verify round-trip, tamper detection (modifying content/id/sig → verifyEvent returns false)
 
 ---
 

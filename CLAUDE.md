@@ -49,6 +49,7 @@ If any step fails, fix the issue and retry. Do not skip steps. Do not ask the us
 - **Role changes require token refresh:** Any endpoint that upgrades a user's role must be followed by `refreshAccessToken()` on the client. The existing JWT carries the old role claim until refreshed.
 - **`GET /api/licenses` returns `{ licenses: [...] }`** — not a bare array. Always unwrap `data.licenses` and add `Array.isArray()` guard before calling array methods.
 - **No DRM enforcement:** BoilerDeck distributes game builds as-is. There is no DRM system — developers handle their own copy protection before uploading. The license package only tracks ownership (who bought what). See CONTEXT.md "Copy Protection Philosophy" for details.
+- **Nostr identity system (Phase 1 complete):** Every user has a secp256k1 keypair. Crypto module at `server/packages/auth/src/crypto.ts`. Pubkeys are immutable. Custodial users have encrypted privkey/mnemonic in DB (AES-256-GCM, format `v1:salt:nonce:tag:ciphertext`). Self-custody users only have pubkey stored. Signing keys cached in Redis encrypted with `SIGNING_CACHE_KEY`. See memory file `boilerdeck_decentralization.md` for full architecture summary.
 
 ## Electron Client Conventions
 - **IPC handlers** go in `client/src/main/index.ts` `setupIpcHandlers()` — namespaced like `store:get`, `downloads:start`, `games:launch`
