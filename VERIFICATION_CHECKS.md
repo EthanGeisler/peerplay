@@ -343,27 +343,27 @@
 
 ### 3.1 — Event Schema and Crypto Utilities (relay package)
 
-- [ ] `[CODE]` `server/packages/relay/src/crypto.ts` exists with secp256k1 Schnorr sign/verify functions (reuses auth/crypto.ts or shared)
-- [ ] `[CODE]` `server/packages/relay/src/types.ts` defines `RelayEvent`, `EventFilter`, `Subscription` interfaces
-- [ ] `[AUTO]` **Sign + verify round-trip:** Generate keypair → sign event → verify → passes
-- [ ] `[AUTO]` **Tamper detection:** Modify signed event content → verify → fails
-- [ ] `[CODE]` Event structure matches NIP-01: `{ id, pubkey, created_at, kind, tags, content, sig }`
+- [x] `[CODE]` `server/packages/relay/src/crypto.ts` exists with secp256k1 Schnorr sign/verify functions (reuses auth/crypto.ts or shared)
+- [x] `[CODE]` `server/packages/relay/src/types.ts` defines `RelayEvent`, `EventFilter`, `Subscription` interfaces
+- [x] `[AUTO]` **Sign + verify round-trip:** Generate keypair → sign event → verify → passes
+- [x] `[AUTO]` **Tamper detection:** Modify signed event content → verify → fails
+- [x] `[CODE]` Event structure matches NIP-01: `{ id, pubkey, created_at, kind, tags, content, sig }`
 
 ### 3.2 — Prisma Schema: Events Table + User Keypair
 
-- [ ] `[AUTO]` Migration applies cleanly
-- [ ] `[CODE]` `Event` model has indexes on `kind`, `pubkey`, `createdAt`, `[kind, createdAt]`
-- [ ] `[CODE]` `User` model has `nostrPubkey String? @unique`, `encryptedNsec String?`, `encryptedMnemonic String?`, `custodyMode CustodyMode` fields
-- [ ] `[AUTO]` Insert a test event via Prisma, query it back — round-trip succeeds
+- [x] `[AUTO]` Migration applies cleanly
+- [x] `[CODE]` `Event` model has indexes on `kind`, `pubkey`, `createdAt`, `[kind, createdAt]`
+- [x] `[CODE]` `User` model has `nostrPubkey String? @unique`, `encryptedNsec String?`, `encryptedMnemonic String?`, `custodyMode CustodyMode` fields
+- [x] `[AUTO]` Insert a test event via Prisma, query it back — round-trip succeeds
 
 ### 3.3 — Relay Package Skeleton
 
-- [ ] `[CODE]` `server/packages/relay/package.json` exists with name `@boilerdeck/relay`
-- [ ] `[CODE]` `server/packages/relay/src/index.ts` exports service and route modules
-- [ ] `[CODE]` `server/packages/relay/src/service.ts` exports `storeEvent`, `queryEvents`, `deleteEvent`
-- [ ] `[CODE]` `server/packages/relay/src/routes.ts` defines `POST /api/events`, `GET /api/events`, `GET /api/events/:id`
-- [ ] `[AUTO]` `npm install` from root resolves `@boilerdeck/relay` as workspace package
-- [ ] `[AUTO]` **REST round-trip:** POST an event → GET it back by ID → matches
+- [x] `[CODE]` `server/packages/relay/package.json` exists with name `@boilerdeck/relay`
+- [x] `[CODE]` `server/packages/relay/src/index.ts` exports service and route modules
+- [x] `[CODE]` `server/packages/relay/src/service.ts` exports `storeEvent`, `queryEvents`, `deleteEvent`
+- [x] `[CODE]` `server/packages/relay/src/routes.ts` defines `POST /api/events`, `GET /api/events`, `GET /api/events/:id`
+- [x] `[AUTO]` `npm install` from root resolves `@boilerdeck/relay` as workspace package
+- [x] `[AUTO]` **REST round-trip:** POST an event → GET it back by ID → matches
 
 ### 3.4 — WebSocket Relay Endpoint
 
