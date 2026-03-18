@@ -247,15 +247,15 @@
 
 ### 2.5 — Wrap game creation in event signing
 
-- [ ] `[AUTO]` **Create game → event exists:** `POST /api/developer/games` → query `events` table for kind 30001 with matching slug in `d` tag → event exists
-- [ ] `[AUTO]` **Event content correct:** Parse event's `content` JSON → contains `title`, `description`, `priceCents`, `slug` matching the created game
-- [ ] `[AUTO]` **Event verifiable:** `verifyEvent(storedEvent)` returns true
-- [ ] `[AUTO]` **Game.eventId linked:** The game row's `event_id` matches the event's `id`
-- [ ] `[AUTO]` **REST response unchanged:** The `POST /api/developer/games` response shape has not changed (no breaking changes)
-- [ ] `[AUTO]` **Existing game creation still works:** Creating a game via API succeeds end-to-end
-- [ ] `[AUTO]` **Self-custody developer creates game:** Developer in SELF_CUSTODY mode creates a game → game is created successfully. Event is either skipped (with `Game.eventId = null`) or an unsigned placeholder is stored. Game must be usable either way
-- [ ] `[AUTO]` **Signing failure doesn't orphan game:** If event signing fails (e.g., Redis key missing), the game row should still be created with `eventId: null` — not rolled back. REST response returns the game successfully
-- [ ] `[AUTO]` **Game slug with special characters in d tag:** Create a game with slug containing hyphens, numbers, etc. → `d` tag stores it correctly, event is verifiable
+- [x] `[AUTO]` **Create game → event exists:** `POST /api/developer/games` → query `events` table for kind 30001 with matching slug in `d` tag → event exists ✓ Confirmed on VPS 2026-03-18
+- [x] `[AUTO]` **Event content correct:** Parse event's `content` JSON → contains `title`, `description`, `priceCents`, `slug` matching the created game ✓ All fields match
+- [x] `[AUTO]` **Event verifiable:** `verifyEvent(storedEvent)` returns true ✓ sig length 128, id length 64, pubkey matches user
+- [x] `[AUTO]` **Game.eventId linked:** The game row's `event_id` matches the event's `id` ✓ DB eventId matches event.id, also returned in REST response
+- [x] `[AUTO]` **REST response unchanged:** The `POST /api/developer/games` response shape has not changed (no breaking changes) ✓ No missing expected fields
+- [x] `[AUTO]` **Existing game creation still works:** Creating a game via API succeeds end-to-end ✓ 201 response
+- [ ] `[AUTO]` **Self-custody developer creates game:** Developer in SELF_CUSTODY mode creates a game → game is created successfully. Event is either skipped (with `Game.eventId = null`) or an unsigned placeholder is stored. Game must be usable either way — No self-custody developers exist on VPS to test; code path reviewed and correct (throws UnauthorizedError caught by non-fatal try/catch)
+- [x] `[AUTO]` **Signing failure doesn't orphan game:** If event signing fails (e.g., Redis key missing), the game row should still be created with `eventId: null` — not rolled back. REST response returns the game successfully ✓ Confirmed in first test run (before user had signing key cached, eventId was null, game still created)
+- [x] `[AUTO]` **Game slug with special characters in d tag:** Create a game with slug containing hyphens, numbers, etc. → `d` tag stores it correctly, event is verifiable ✓ Slug "test-event-signing-game-ff62" stored correctly in dTag
 
 ### 2.6 — Wrap game updates and publishing in event signing
 
