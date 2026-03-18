@@ -170,6 +170,73 @@ function setupIpcHandlers(): void {
     };
   });
 
+  // --- Events (local signing + relay publish) ---
+  ipcMain.handle("events:sign-and-publish-review", async (_event, opts: {
+    slug: string;
+    rating: number;
+    title: string;
+    body: string;
+  }) => {
+    const { schnorr } = await import("@noble/curves/secp256k1.js");
+    const { sha256 } = await import("@noble/hashes/sha2.js");
+    const { hexToBytes, bytesToHex } = await import("@noble/hashes/utils.js");
+
+    // 1. Get the user's private key — try cached key from store first, then fetch from server
+    let privkeyHex: string | null = storeGet("relayPrivkey") as string | null;
+    let pubkeyHex: string | null = storeGet("relayPubkey") as string | null;
+
+    if (!privkeyHex) {
+      // Need to fetch from server via apiFetch — renderer must pass tokens through IPC
+      // Instead, we'll try the self-custody key first
+      const encryptedB64 = storeGet("selfCustodyKey") as string | null;
+      if (encryptedB64) {
+        privkeyHex = safeStorage.decryptString(Buffer.from(encryptedB64, "base64"));
+        pubkeyHex = bytesToHex(schnorr.getPublicKey(hexToBytes(privkeyHex)));
+      }
+    }
+
+    if (!privkeyHex || !pubkeyHex) {
+      throw new Error("NO_KEY");
+    }
+
+    const privateKey = hexToBytes(privkeyHex);
+
+    // 2. Build the kind 31337 event
+    const content = JSON.stringify({
+      rating: opts.rating,
+      title: opts.title,
+      body: opts.body,
+    });
+    const tags: string[][] = [["d", opts.slug]];
+    const kind = 31337;
+    const created_at = Math.floor(Date.now() / 1000);
+
+    // 3. Compute event ID (NIP-01: SHA-256 of [0, pubkey, created_at, kind, tags, content])
+    const serialized = JSON.stringify([0, pubkeyHex, created_at, kind, tags, content]);
+    const idBytes = sha256(new TextEncoder().encode(serialized));
+    const id = bytesToHex(idBytes);
+
+    // 4. Sign with Schnorr
+    const sig = bytesToHex(schnorr.sign(idBytes, privateKey));
+
+    const signedEvent = { id, pubkey: pubkeyHex, created_at, kind, tags, content, sig };
+
+    // 5. Publish via relay WebSocket
+    const result = relayManager.publish(signedEvent);
+    if (!result.success) {
+      throw new Error(result.error || "Failed to publish to relay");
+    }
+
+    return signedEvent;
+  });
+
+  // --- Relay key caching (for server-managed keys fetched by renderer) ---
+  ipcMain.handle("events:cache-relay-keys", (_event, keys: { pubkey: string; privkey: string }) => {
+    storeSet("relayPrivkey", keys.privkey);
+    storeSet("relayPubkey", keys.pubkey);
+    return { success: true };
+  });
+
   // --- Relay (WebSocket connection manager) ---
   ipcMain.handle("relay:connect", (_event, url: string) => {
     return relayManager.connect(url);

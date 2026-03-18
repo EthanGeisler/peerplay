@@ -48,6 +48,17 @@ contextBridge.exposeInMainWorld("boilerdeck", {
       ipcRenderer.invoke("crypto:sign-challenge", challengeHex),
   },
 
+  events: {
+    signAndPublishReview: (opts: {
+      slug: string;
+      rating: number;
+      title: string;
+      body: string;
+    }): Promise<unknown> => ipcRenderer.invoke("events:sign-and-publish-review", opts),
+    cacheRelayKeys: (keys: { pubkey: string; privkey: string }): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke("events:cache-relay-keys", keys),
+  },
+
   relay: {
     connect: (url: string): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke("relay:connect", url),
@@ -165,6 +176,15 @@ declare global {
       crypto: {
         generateKeypair: () => Promise<{ mnemonic: string; pubkeyHex: string }>;
         signChallenge: (challengeHex: string) => Promise<{ signature: string; pubkeyHex: string }>;
+      };
+      events: {
+        signAndPublishReview: (opts: {
+          slug: string;
+          rating: number;
+          title: string;
+          body: string;
+        }) => Promise<unknown>;
+        cacheRelayKeys: (keys: { pubkey: string; privkey: string }) => Promise<{ success: boolean }>;
       };
       relay: {
         connect: (url: string) => Promise<{ success: boolean; error?: string }>;

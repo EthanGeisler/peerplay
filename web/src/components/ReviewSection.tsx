@@ -25,7 +25,7 @@ function formatTimestamp(unixSeconds: number): string {
   return new Date(unixSeconds * 1000).toLocaleDateString();
 }
 
-export function ReviewSection({ slug }: { slug: string }) {
+export function ReviewSection({ slug, refreshKey }: { slug: string; refreshKey?: number }) {
   const [reviews, setReviews] = useState<ApiReview[]>([]);
   const [averageRating, setAverageRating] = useState(0);
   const [reviewCount, setReviewCount] = useState(0);
@@ -64,7 +64,7 @@ export function ReviewSection({ slug }: { slug: string }) {
     setOffset(0);
     setInitialLoaded(false);
     fetchReviews(0, false);
-  }, [slug, fetchReviews]);
+  }, [slug, fetchReviews, refreshKey]);
 
   const handleLoadMore = () => {
     const newOffset = offset + REVIEWS_PER_PAGE;

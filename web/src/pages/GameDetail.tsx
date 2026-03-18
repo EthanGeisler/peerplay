@@ -1,11 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useGameStore } from "../stores/gameStore";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useAuthStore } from "../stores/authStore";
 import { formatPrice, formatSize, PLACEHOLDER_COVER } from "../utils";
-import type { ApiTorrent } from "../types";
+import type { ApiTorrent, ApiReviewsResponse } from "../types";
+import { apiFetch } from "../api";
 import { ReviewSection } from "../components/ReviewSection";
+import { ReviewForm } from "../components/ReviewForm";
 
 export function GameDetail() {
   const { slug } = useParams<{ slug: string }>();
@@ -20,6 +22,8 @@ export function GameDetail() {
 
   const [torrent, setTorrent] = useState<ApiTorrent | null>(null);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
+  const [reviewRefreshKey, setReviewRefreshKey] = useState(0);
+  const [hasReviewed, setHasReviewed] = useState(false);
 
   const owned = game
     ? licenses.some((l) => l.game.id === game.id && l.status === "ACTIVE")
@@ -32,6 +36,21 @@ export function GameDetail() {
   useEffect(() => {
     if (user) fetchLicenses();
   }, [user, fetchLicenses]);
+
+  // Check if user has already reviewed this game
+  useEffect(() => {
+    if (!slug || !user?.pubkey) {
+      setHasReviewed(false);
+      return;
+    }
+    apiFetch<ApiReviewsResponse>(`/games/${slug}/reviews?limit=100&offset=0`)
+      .then((data) => {
+        const userPubkey = user.pubkey || user.nostrPubkey;
+        const alreadyReviewed = data.reviews.some((r) => r.pubkey === userPubkey);
+        setHasReviewed(alreadyReviewed);
+      })
+      .catch(() => setHasReviewed(false));
+  }, [slug, user, reviewRefreshKey]);
 
   // Fetch torrent when game is owned
   useEffect(() => {
@@ -333,8 +352,16 @@ export function GameDetail() {
         </p>
       </div>
 
+      {/* Review Form — only if logged in, owns game, and hasn't reviewed yet */}
+      {slug && user && owned && !hasReviewed && (
+        <ReviewForm
+          slug={slug}
+          onReviewSubmitted={() => setReviewRefreshKey((k) => k + 1)}
+        />
+      )}
+
       {/* Reviews */}
-      {slug && <ReviewSection slug={slug} />}
+      {slug && <ReviewSection slug={slug} refreshKey={reviewRefreshKey} />}
     </div>
   );
 }

@@ -16,6 +16,8 @@ interface StoreData {
     uploadSpeedLimit?: number;
   };
   selfCustodyKey?: string;
+  relayPrivkey?: string;
+  relayPubkey?: string;
 }
 
 interface InstalledGameEntry {
@@ -38,6 +40,8 @@ export const STORE_KEY_WHITELIST = new Set([
   "installedGames",
   "settings",
   "selfCustodyKey",
+  "relayPrivkey",
+  "relayPubkey",
 ]);
 
 export function isAllowedStoreKey(key: string): boolean {

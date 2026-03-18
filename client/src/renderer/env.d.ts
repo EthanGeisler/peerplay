@@ -29,6 +29,15 @@ declare global {
         generateKeypair: () => Promise<{ mnemonic: string; pubkeyHex: string }>;
         signChallenge: (challengeHex: string) => Promise<{ signature: string; pubkeyHex: string }>;
       };
+      events: {
+        signAndPublishReview: (opts: {
+          slug: string;
+          rating: number;
+          title: string;
+          body: string;
+        }) => Promise<unknown>;
+        cacheRelayKeys: (keys: { pubkey: string; privkey: string }) => Promise<{ success: boolean }>;
+      };
       relay: {
         connect: (url: string) => Promise<{ success: boolean; error?: string }>;
         disconnect: () => Promise<{ success: boolean }>;

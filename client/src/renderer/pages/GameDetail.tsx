@@ -4,9 +4,11 @@ import { useGameStore } from "../stores/gameStore";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useDownloadStore } from "../stores/downloadStore";
 import { useAuthStore } from "../stores/authStore";
-import { fetchTorrentFileBase64 } from "../api";
+import { fetchTorrentFileBase64, apiFetch } from "../api";
 import { formatPrice, formatSize, PLACEHOLDER_COVER, resolveCoverUrl } from "../utils";
+import type { ApiReviewsResponse } from "../types";
 import { ReviewSection } from "../components/ReviewSection";
+import { ReviewForm } from "../components/ReviewForm";
 
 const styles = {
   back: {
@@ -109,6 +111,8 @@ export function GameDetail() {
   const user = useAuthStore((s) => s.user);
 
   const [error, setError] = useState("");
+  const [reviewRefreshKey, setReviewRefreshKey] = useState(0);
+  const [hasReviewed, setHasReviewed] = useState(false);
 
   useEffect(() => {
     if (slug) fetchGameBySlug(slug);
@@ -118,6 +122,21 @@ export function GameDetail() {
   useEffect(() => {
     if (user) fetchLicenses();
   }, [user, fetchLicenses]);
+
+  // Check if user has already reviewed this game
+  useEffect(() => {
+    if (!slug || !user?.pubkey) {
+      setHasReviewed(false);
+      return;
+    }
+    apiFetch<ApiReviewsResponse>(`/games/${slug}/reviews?limit=100&offset=0`)
+      .then((data) => {
+        const userPubkey = user.pubkey || user.nostrPubkey;
+        const alreadyReviewed = data.reviews.some((r) => r.pubkey === userPubkey);
+        setHasReviewed(alreadyReviewed);
+      })
+      .catch(() => setHasReviewed(false));
+  }, [slug, user, reviewRefreshKey]);
 
   if (currentGameLoading || !currentGame) {
     return (
@@ -266,8 +285,16 @@ export function GameDetail() {
         <p style={{ color: "#e94560", fontSize: 13, marginTop: 12 }}>{error}</p>
       )}
 
+      {/* Review Form — only if logged in, owns game, and hasn't reviewed yet */}
+      {slug && user && owned && !hasReviewed && (
+        <ReviewForm
+          slug={slug}
+          onReviewSubmitted={() => setReviewRefreshKey((k) => k + 1)}
+        />
+      )}
+
       {/* Reviews */}
-      {slug && <ReviewSection slug={slug} />}
+      {slug && <ReviewSection slug={slug} refreshKey={reviewRefreshKey} />}
     </div>
   );
 }
