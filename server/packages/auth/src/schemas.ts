@@ -12,5 +12,10 @@ export const loginSchema = z.object({
   password: z.string(),
 });
 
+export const recoverMnemonicSchema = z.object({
+  password: z.string(),
+});
+
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
+export type RecoverMnemonicInput = z.infer<typeof recoverMnemonicSchema>;

@@ -1,10 +1,10 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import crypto from "node:crypto";
-import { db, redis, getConfig, ConflictError, UnauthorizedError } from "@boilerdeck/shared";
+import { db, redis, getConfig, ConflictError, UnauthorizedError, ValidationError } from "@boilerdeck/shared";
 import type { JwtPayload } from "@boilerdeck/shared";
 import type { RegisterInput, LoginInput } from "./schemas.js";
-import { generateKeypair, encryptPrivateKey, encryptMnemonic, decryptPrivateKey, pubkeyHex } from "./crypto.js";
+import { generateKeypair, encryptPrivateKey, encryptMnemonic, decryptPrivateKey, decryptMnemonic, pubkeyHex } from "./crypto.js";
 
 const SALT_ROUNDS = 12;
 
@@ -128,16 +128,40 @@ export async function login(input: LoginInput) {
     throw new UnauthorizedError("Invalid email or password");
   }
 
+  let mnemonic: string | undefined;
+  let nostrPubkey = user.nostrPubkey;
+  let encryptedNsec = user.encryptedNsec;
+
+  // Lazy migration: generate keypair for pre-existing users without one
+  if (!user.nostrPubkey) {
+    const keypair = generateKeypair();
+    nostrPubkey = pubkeyHex(keypair.publicKey);
+    mnemonic = keypair.mnemonic;
+
+    encryptedNsec = encryptPrivateKey(keypair.privateKey, input.password);
+    const encryptedMnemonicValue = encryptMnemonic(keypair.mnemonic, input.password);
+
+    await db.user.update({
+      where: { id: user.id },
+      data: {
+        nostrPubkey,
+        encryptedNsec,
+        encryptedMnemonic: encryptedMnemonicValue,
+        custodyMode: "CUSTODIAL",
+      },
+    });
+  }
+
   // Cache signing key in Redis for custodial users
-  if (user.encryptedNsec && user.custodyMode === "CUSTODIAL") {
+  if (encryptedNsec && (user.custodyMode === "CUSTODIAL" || !user.nostrPubkey)) {
     const config = getConfig();
-    const privateKey = decryptPrivateKey(user.encryptedNsec, input.password);
+    const privateKey = decryptPrivateKey(encryptedNsec, input.password);
     const cached = encryptForCache(privateKey, config.SIGNING_CACHE_KEY);
     const ttl = getRefreshTtlSeconds();
     await redis.set(`signing_key:${user.id}`, cached, "EX", ttl);
   }
 
-  const accessToken = generateAccessToken(user);
+  const accessToken = generateAccessToken({ ...user, nostrPubkey });
   const refreshToken = generateRefreshToken();
 
   await db.refreshToken.create({
@@ -149,9 +173,10 @@ export async function login(input: LoginInput) {
   });
 
   return {
-    user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, nostrPubkey: user.nostrPubkey },
+    user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, nostrPubkey },
     accessToken,
     refreshToken,
+    ...(mnemonic ? { mnemonic } : {}),
   };
 }
 
@@ -187,6 +212,30 @@ export async function refresh(token: string) {
 
 export async function logout(token: string) {
   await db.refreshToken.deleteMany({ where: { token } });
+}
+
+export async function recoverMnemonic(userId: string, password: string) {
+  const user = await db.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    throw new UnauthorizedError("User not found");
+  }
+
+  if (user.custodyMode === "SELF_CUSTODY") {
+    throw new ValidationError("Self-custody users manage their own keys");
+  }
+
+  if (!user.encryptedMnemonic) {
+    throw new ValidationError("No mnemonic available for this account");
+  }
+
+  // Verify password before decrypting
+  const valid = await bcrypt.compare(password, user.passwordHash);
+  if (!valid) {
+    throw new UnauthorizedError("Invalid password");
+  }
+
+  const mnemonic = decryptMnemonic(user.encryptedMnemonic, password);
+  return { mnemonic };
 }
 
 export async function getMe(userId: string) {

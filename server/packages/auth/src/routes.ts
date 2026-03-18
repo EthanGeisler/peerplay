@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { authenticate, ValidationError } from "@boilerdeck/shared";
-import { registerSchema, loginSchema } from "./schemas.js";
+import { registerSchema, loginSchema, recoverMnemonicSchema } from "./schemas.js";
 import * as authService from "./service.js";
 import { ZodError } from "zod";
 
@@ -63,6 +63,21 @@ authRouter.post("/logout", async (req, res, next) => {
       await authService.logout(refreshToken);
     }
     res.json({ message: "Logged out" });
+  } catch (err) {
+    next(err);
+  }
+});
+
+authRouter.post("/recover-mnemonic", authenticate, async (req, res, next) => {
+  try {
+    let input;
+    try {
+      input = recoverMnemonicSchema.parse(req.body);
+    } catch (err) {
+      handleZodError(err);
+    }
+    const result = await authService.recoverMnemonic(req.user!.sub, input.password);
+    res.json(result);
   } catch (err) {
     next(err);
   }
