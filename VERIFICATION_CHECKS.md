@@ -148,17 +148,17 @@
 
 ### 1.13 — Password change flow
 
-- [ ] `[AUTO]` **Change password:** `POST /api/auth/change-password` with `{ currentPassword, newPassword }` → returns 200
-- [ ] `[AUTO]` **Wrong current password:** Submit wrong `currentPassword` → returns 401
-- [ ] `[AUTO]` **Re-encrypted keys:** After password change, `decryptPrivateKey(user.encryptedNsec, newPassword)` succeeds and produces same key
-- [ ] `[AUTO]` **Re-encrypted mnemonic:** After password change, `decryptMnemonic(user.encryptedMnemonic, newPassword)` succeeds and produces original mnemonic
-- [ ] `[AUTO]` **Old password fails:** After change, `decryptPrivateKey(user.encryptedNsec, oldPassword)` throws error
-- [ ] `[AUTO]` **Refresh tokens invalidated:** All existing refresh tokens for user are deleted after password change
-- [ ] `[AUTO]` **Redis cache cleared:** `signing_key:<userId>` no longer exists after password change
-- [ ] `[AUTO]` **Login with new password:** `POST /api/auth/login` with new password succeeds and re-populates Redis
-- [ ] `[AUTO]` **Self-custody user:** Change password for self-custody user → succeeds (only bcrypt hash changes, no keys to re-encrypt)
-- [ ] `[CODE]` `changePasswordSchema` in `schemas.ts` validates `currentPassword` (min 1) and `newPassword` (min 8)
-- [ ] `[AUTO]` `npx tsc --noEmit` from auth package exits 0
+- [x] `[AUTO]` **Change password:** `POST /api/auth/change-password` with `{ currentPassword, newPassword }` → returns 200
+- [x] `[AUTO]` **Wrong current password:** Submit wrong `currentPassword` → returns 401
+- [x] `[AUTO]` **Re-encrypted keys:** After password change, `decryptPrivateKey(user.encryptedNsec, newPassword)` succeeds and produces same key
+- [x] `[AUTO]` **Re-encrypted mnemonic:** After password change, `decryptMnemonic(user.encryptedMnemonic, newPassword)` succeeds and produces original mnemonic
+- [x] `[AUTO]` **Old password fails:** After change, `decryptPrivateKey(user.encryptedNsec, oldPassword)` throws error
+- [x] `[AUTO]` **Refresh tokens invalidated:** All existing refresh tokens for user are deleted after password change
+- [x] `[AUTO]` **Redis cache cleared:** `signing_key:<userId>` no longer exists after password change
+- [x] `[AUTO]` **Login with new password:** `POST /api/auth/login` with new password succeeds and re-populates Redis
+- [x] `[AUTO]` **Self-custody user:** Change password for self-custody user → succeeds (only bcrypt hash changes, no keys to re-encrypt)
+- [x] `[CODE]` `changePasswordSchema` in `schemas.ts` validates `currentPassword` (min 1) and `newPassword` (min 8)
+- [x] `[AUTO]` `npx tsc --noEmit` from auth package exits 0
 
 ---
 
