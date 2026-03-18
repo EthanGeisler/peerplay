@@ -7,7 +7,7 @@ interface AuthState {
   loading: boolean;
   error: string | null;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, displayName: string) => Promise<void>;
+  register: (email: string, password: string, displayName: string) => Promise<string | undefined>;
   logout: () => Promise<void>;
   loadSession: () => Promise<void>;
   clearError: () => void;
@@ -47,6 +47,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       setAccessToken(data.accessToken);
       localStorage.setItem("pp_refresh_token", data.refreshToken);
       set({ user: data.user, loading: false });
+      return data.mnemonic;
     } catch (err) {
       set({
         loading: false,
