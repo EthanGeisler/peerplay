@@ -176,11 +176,13 @@ catalogRouter.patch(
             slug: game.slug,
           }),
         });
-        await storeEvent(event);
-        game = await db.game.update({
-          where: { id: game.id },
-          data: { eventId: event.id },
-        });
+        const result = await storeEvent(event);
+        if (result !== "DUPLICATE") {
+          game = await db.game.update({
+            where: { id: game.id },
+            data: { eventId: event.id },
+          });
+        }
       } catch {
         // Signing failure is non-fatal
       }
@@ -213,11 +215,13 @@ catalogRouter.patch(
             slug: game.slug,
           }),
         });
-        await storeEvent(event);
-        game = await db.game.update({
-          where: { id: game.id },
-          data: { eventId: event.id },
-        });
+        const result = await storeEvent(event);
+        if (result !== "DUPLICATE") {
+          game = await db.game.update({
+            where: { id: game.id },
+            data: { eventId: event.id },
+          });
+        }
       } catch {
         // Signing failure is non-fatal
       }
@@ -311,11 +315,13 @@ catalogRouter.post(
             slug: game.slug,
           }),
         });
-        await storeEvent(event);
-        game = await db.game.update({
-          where: { id: game.id },
-          data: { eventId: event.id },
-        });
+        const result = await storeEvent(event);
+        if (result !== "DUPLICATE") {
+          game = await db.game.update({
+            where: { id: game.id },
+            data: { eventId: event.id },
+          });
+        }
       } catch {
         // Signing failure is non-fatal — game exists with eventId: null
       }
@@ -354,11 +360,13 @@ catalogRouter.put(
             slug: game.slug,
           }),
         });
-        await storeEvent(event);
-        game = await db.game.update({
-          where: { id: game.id },
-          data: { eventId: event.id },
-        });
+        const result = await storeEvent(event);
+        if (result !== "DUPLICATE") {
+          game = await db.game.update({
+            where: { id: game.id },
+            data: { eventId: event.id },
+          });
+        }
       } catch {
         // Signing failure is non-fatal
       }
