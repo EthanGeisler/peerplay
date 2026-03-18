@@ -129,6 +129,7 @@ export function Login() {
   const register = useAuthStore((s) => s.register);
   const registerSelfCustody = useAuthStore((s) => s.registerSelfCustody);
   const registerWithNostr = useAuthStore((s) => s.registerWithNostr);
+  const registerWithExistingNostr = useAuthStore((s) => s.registerWithExistingNostr);
   const loginWithPubkey = useAuthStore((s) => s.loginWithPubkey);
   const loginWithMnemonic = useAuthStore((s) => s.loginWithMnemonic);
 
@@ -142,6 +143,7 @@ export function Login() {
   const [mnemonic, setMnemonic] = useState<string | null>(null);
   const [selfCustody, setSelfCustody] = useState(false);
   const [useNostr, setUseNostr] = useState(false);
+  const [hasExistingKey, setHasExistingKey] = useState(false);
   const [hasCachedKey, setHasCachedKey] = useState(false);
 
   // Check if there's a cached self-custody key for one-click sign-in
@@ -164,6 +166,10 @@ export function Login() {
           return;
         }
         m = await login(email, password);
+      } else if (useNostr && hasExistingKey) {
+        await registerWithExistingNostr(displayName, recoveryPhrase);
+        navigate("/");
+        return;
       } else if (useNostr) {
         m = await registerWithNostr(displayName);
       } else if (selfCustody) {
@@ -199,6 +205,7 @@ export function Login() {
   const handleTabSwitch = (t: "login" | "register") => {
     setTab(t);
     setUseNostr(false);
+    setHasExistingKey(false);
     setError("");
   };
 
@@ -299,9 +306,51 @@ export function Login() {
                   onChange={(e) => setDisplayName(e.target.value)}
                   required
                 />
-                <p style={styles.helpText}>
-                  A keypair will be generated on this device. You'll receive a 12-word recovery phrase — this is your only way to sign in.
-                </p>
+                {hasExistingKey ? (
+                  <>
+                    <div style={{ marginTop: 16 }}>
+                      <label style={styles.label} htmlFor="existingPhrase">
+                        Recovery Phrase
+                      </label>
+                      <textarea
+                        id="existingPhrase"
+                        value={recoveryPhrase}
+                        onChange={(e) => setRecoveryPhrase(e.target.value)}
+                        required
+                        style={{
+                          ...styles.input,
+                          minHeight: 80,
+                          resize: "vertical",
+                          fontFamily: "monospace",
+                        }}
+                        placeholder="Enter your 12-word recovery phrase"
+                      />
+                    </div>
+                    <p style={styles.helpText}>
+                      Enter the 12-word recovery phrase from your existing Nostr identity.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => { setHasExistingKey(false); setRecoveryPhrase(""); setError(""); }}
+                      style={{ ...styles.nostrToggleBtn, fontSize: 12, marginTop: 4 }}
+                    >
+                      Generate a new key instead
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p style={styles.helpText}>
+                      A keypair will be generated on this device. You'll receive a 12-word recovery phrase — this is your only way to sign in.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => { setHasExistingKey(true); setError(""); }}
+                      style={{ ...styles.nostrToggleBtn, fontSize: 12, marginTop: 4 }}
+                    >
+                      I already have a Nostr key
+                    </button>
+                  </>
+                )}
               </div>
             ) : (
               <div>
@@ -333,7 +382,9 @@ export function Login() {
             : useNostr
               ? tab === "login"
                 ? "Sign In with Key"
-                : "Create Nostr Account"
+                : hasExistingKey
+                  ? "Link Nostr Account"
+                  : "Create Nostr Account"
               : tab === "login"
                 ? "Sign In"
                 : "Create Account"}

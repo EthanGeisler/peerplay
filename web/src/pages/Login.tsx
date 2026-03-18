@@ -8,6 +8,7 @@ export function Login() {
   const login = useAuthStore((s) => s.login);
   const register = useAuthStore((s) => s.register);
   const registerWithNostr = useAuthStore((s) => s.registerWithNostr);
+  const registerWithExistingNostr = useAuthStore((s) => s.registerWithExistingNostr);
   const loginWithNostr = useAuthStore((s) => s.loginWithNostr);
   const error = useAuthStore((s) => s.error);
   const clearError = useAuthStore((s) => s.clearError);
@@ -20,6 +21,7 @@ export function Login() {
   const [submitting, setSubmitting] = useState(false);
   const [mnemonic, setMnemonic] = useState<string | null>(null);
   const [useNostr, setUseNostr] = useState(false);
+  const [hasExistingKey, setHasExistingKey] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,7 +40,10 @@ export function Login() {
           }
         }
       } else {
-        if (useNostr) {
+        if (useNostr && hasExistingKey) {
+          await registerWithExistingNostr(displayName, recoveryPhrase);
+          navigate("/");
+        } else if (useNostr) {
           const m = await registerWithNostr(displayName);
           setMnemonic(m);
         } else {
@@ -60,6 +65,7 @@ export function Login() {
   const handleTabSwitch = (t: "login" | "register") => {
     setTab(t);
     setUseNostr(false);
+    setHasExistingKey(false);
     clearError();
   };
 
@@ -163,9 +169,44 @@ export function Login() {
                   style={inputStyle}
                   placeholder="Your name"
                 />
-                <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.4 }}>
-                  A keypair will be generated in your browser. You'll receive a 12-word recovery phrase — this is your only way to sign in.
-                </p>
+                {hasExistingKey ? (
+                  <>
+                    <div style={{ marginTop: 16 }}>
+                      <label htmlFor="existingPhrase" style={labelStyle}>Recovery Phrase</label>
+                      <textarea
+                        id="existingPhrase"
+                        value={recoveryPhrase}
+                        onChange={(e) => setRecoveryPhrase(e.target.value)}
+                        required
+                        style={{ ...inputStyle, minHeight: 80, resize: "vertical", fontFamily: "monospace" }}
+                        placeholder="Enter your 12-word recovery phrase"
+                      />
+                    </div>
+                    <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.4 }}>
+                      Enter the 12-word recovery phrase from your existing Nostr identity.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => { setHasExistingKey(false); setRecoveryPhrase(""); clearError(); }}
+                      style={{ background: "none", border: "none", color: "var(--accent)", fontSize: 12, cursor: "pointer", padding: "4px 0", marginTop: 4 }}
+                    >
+                      Generate a new key instead
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.4 }}>
+                      A keypair will be generated in your browser. You'll receive a 12-word recovery phrase — this is your only way to sign in.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => { setHasExistingKey(true); clearError(); }}
+                      style={{ background: "none", border: "none", color: "var(--accent)", fontSize: 12, cursor: "pointer", padding: "4px 0", marginTop: 4 }}
+                    >
+                      I already have a Nostr key
+                    </button>
+                  </>
+                )}
               </div>
             ) : (
               <div style={{ marginBottom: 24 }}>
@@ -202,7 +243,9 @@ export function Login() {
             : useNostr
               ? tab === "login"
                 ? "Sign In with Key"
-                : "Create Nostr Account"
+                : hasExistingKey
+                  ? "Link Nostr Account"
+                  : "Create Nostr Account"
               : tab === "login"
                 ? "Sign In"
                 : "Create Account"}

@@ -10,6 +10,7 @@ interface AuthState {
   login: (email: string, password: string) => Promise<string | undefined>;
   register: (email: string, password: string, displayName: string) => Promise<string | undefined>;
   registerWithNostr: (displayName: string) => Promise<string>;
+  registerWithExistingNostr: (displayName: string, mnemonic: string) => Promise<void>;
   loginWithNostr: (mnemonicPhrase: string) => Promise<void>;
   logout: () => Promise<void>;
   loadSession: () => Promise<void>;
@@ -76,6 +77,30 @@ export const useAuthStore = create<AuthState>((set) => ({
       localStorage.setItem("pp_refresh_token", data.refreshToken);
       set({ user: data.user });
       return mnemonic;
+    } catch (err) {
+      set({
+        error: err instanceof ApiError ? err.message : "Registration failed",
+      });
+      throw err;
+    }
+  },
+
+  registerWithExistingNostr: async (displayName: string, mnemonic: string) => {
+    set({ error: null });
+    try {
+      const { pubkeyHex, privateKey } = deriveFromMnemonic(mnemonic.trim());
+
+      const { challenge } = await apiFetch<{ challenge: string; expiresAt: string }>("/auth/challenge");
+      const signature = signChallenge(challenge, privateKey);
+
+      const data = await apiFetch<ApiAuthResponse>("/auth/register/pubkey", {
+        method: "POST",
+        body: JSON.stringify({ pubkey: pubkeyHex, displayName, challenge, signature }),
+      });
+
+      setAccessToken(data.accessToken);
+      localStorage.setItem("pp_refresh_token", data.refreshToken);
+      set({ user: data.user });
     } catch (err) {
       set({
         error: err instanceof ApiError ? err.message : "Registration failed",
