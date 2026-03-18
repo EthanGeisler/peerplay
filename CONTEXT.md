@@ -533,63 +533,18 @@ ssh root@204.168.133.38 "cd /opt/boilerdeck && git pull origin main && npx vite 
 
 ---
 
-## URGENT: Uncommitted Refactoring (2026-03-18)
+## Codebase Refactoring (2026-03-18) — Committed & Deployed
 
-**There are uncommitted local changes that need to be committed, pushed, and deployed.** All type-checks pass (server, web, dev-portal, client — zero errors). Changes have been reviewed by `@server-reviewer`.
+Commit `f09ad3a` — major maintainability refactoring. Key changes:
+1. **`shared-ui/` (`@boilerdeck/ui-shared`)** — shared API client with `TokenStorage` adapter. Each frontend's `api.ts` is a thin wrapper.
+2. **`handleZodError`** extracted to `shared/src/errors.ts` (was duplicated in 3 route files)
+3. **`dev-portal/src/types.ts`** — 10 interfaces extracted from inline definitions
+4. **`catalog/src/service.ts`** split into `service.ts` (game CRUD) + `upload.ts` (zip/exe/Transmission)
+5. **GameEditor** split into sub-components: `GameEditorForm`, `UploadManager`, `ExeDetector` (both dev-portal and client)
+6. **Phase 1 spec** archived to `docs/Phase_1_Spec.md`
+7. **Bug fixes:** cover upload field name `"coverImage"` → `"cover"`, apiUpload error parsing
 
-### What changed (not yet committed):
-
-1. **New package: `shared-ui/` (`@boilerdeck/ui-shared`)** — Shared API client core (token refresh, `apiFetch`, `ApiError`, `TokenStorage` adapter interface). Each frontend's `api.ts` is now a thin wrapper that provides a platform-specific `TokenStorage` (localStorage or IPC). Added to root `package.json` workspaces.
-
-2. **`handleZodError` extracted to `shared/src/errors.ts`** — Was duplicated in `auth/routes.ts`, `catalog/routes.ts`, `payment/routes.ts`. Now imported from `@boilerdeck/shared`.
-
-3. **`dev-portal/src/types.ts` created** — 10 interfaces extracted from inline definitions across authStore, GameEditor, GameDetail, Dashboard.
-
-4. **`catalog/src/service.ts` split** — Game CRUD stays in `service.ts` (365 lines), upload/zip processing moved to `upload.ts` (~210 lines). Routes import from both.
-
-5. **GameEditor component split (both dev-portal and client)** — Each ~880-line monolith split into 4 files: main page + `GameEditorForm` + `UploadManager` + `ExeDetector`. State stays in page, sub-components receive props.
-   - dev-portal: `dev-portal/src/components/{GameEditorForm,UploadManager,ExeDetector}.tsx`
-   - client: `client/src/renderer/components/developer/{GameEditorForm,UploadManager,ExeDetector}.tsx`
-
-6. **Phase 1 spec archived** — Detailed sub-task specs moved to `docs/Phase_1_Spec.md`. `DECENTRALIZATION_PLAN.md` has a compact summary.
-
-7. **Bug fixes caught by `@server-reviewer`:**
-   - Cover upload field name `"coverImage"` → `"cover"` in both GameEditor files (was silently failing)
-   - `dev-portal/src/api.ts` `apiUpload` retry: `.catch` on non-Promise replaced with try/catch
-   - `dev-portal/src/api.ts` `apiUpload` error parsing: added `body.error?.message` per server error shape convention
-
-8. **CONTEXT.md updates:** Marked DRM deploy, v0.2.1 release, DRAFT game cleanup as done. Updated release refs to v0.2.1.
-
-### To commit and deploy:
-
-```bash
-# Stage all changes
-git add shared-ui/ server/packages/catalog/src/upload.ts dev-portal/src/types.ts \
-  dev-portal/src/components/ client/src/renderer/components/developer/ docs/Phase_1_Spec.md \
-  CLAUDE.md CONTEXT.md DECENTRALIZATION_PLAN.md package.json package-lock.json \
-  web/package.json dev-portal/package.json client/package.json \
-  web/src/api.ts dev-portal/src/api.ts client/src/renderer/api.ts \
-  dev-portal/src/stores/authStore.ts dev-portal/src/pages/ \
-  client/src/renderer/pages/developer/DevGameEditor.tsx \
-  server/packages/shared/src/errors.ts server/packages/shared/src/index.ts \
-  server/packages/auth/src/routes.ts server/packages/catalog/src/routes.ts \
-  server/packages/catalog/src/service.ts server/packages/payment/src/routes.ts
-
-# Commit
-git commit -m "Refactor: extract shared API client, split large files, fix cover upload bug"
-
-# Push
-git push origin main
-
-# Deploy (server + both frontends changed)
-# @deploy or manually:
-ssh root@204.168.133.38 "cd /opt/boilerdeck && git stash --include-untracked 2>/dev/null; git pull origin main && npm install"
-ssh root@204.168.133.38 "cd /opt/boilerdeck && npx vite build web && npx vite build dev-portal"
-ssh root@204.168.133.38 "systemctl restart boilerdeck"
-curl -s https://boilerdeck.com/api/health
-```
-
-**After committing, delete this "URGENT" section** — it's only relevant until the changes are committed.
+See `CLAUDE.md` for updated conventions reflecting these changes.
 
 ---
 

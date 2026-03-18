@@ -4,12 +4,13 @@ import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
 import morgan from "morgan";
-import { getConfig, errorHandler, eventRouter } from "@boilerdeck/shared";
+import { getConfig, errorHandler } from "@boilerdeck/shared";
 import { authRouter, developerRouter } from "@boilerdeck/auth";
 import { catalogRouter } from "@boilerdeck/catalog";
 import { licenseRouter } from "@boilerdeck/license";
 import { paymentRouter } from "@boilerdeck/payment";
 import { torrentRouter } from "@boilerdeck/torrent";
+import { relayRouter } from "@boilerdeck/relay";
 
 const config = getConfig();
 const app = express();
@@ -53,7 +54,7 @@ app.use("/api", catalogRouter);
 app.use("/api", licenseRouter);
 app.use("/api", paymentRouter);
 app.use("/api", torrentRouter);
-app.use("/api", eventRouter);
+app.use("/api", relayRouter);
 
 // Error handler (must be last)
 app.use(errorHandler);

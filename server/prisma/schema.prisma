@@ -204,6 +204,7 @@ model Event {
   @@index([kind])
   @@index([pubkey])
   @@index([createdAt])
+  @@index([kind, createdAt])
   @@map("events")
 }
 
