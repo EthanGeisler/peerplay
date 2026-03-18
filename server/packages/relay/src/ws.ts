@@ -20,6 +20,8 @@ import { verifyEvent, materializeEvent, redis } from "@boilerdeck/shared";
 import type { SignedEvent } from "@boilerdeck/shared";
 import { storeEvent, queryEvents } from "./service.js";
 import { federateOutbound, isImported } from "./federation.js";
+import { validateEventKind } from "./kinds.js";
+import { validateAttestationAsync } from "./attestationValidation.js";
 import type {
   EventFilter,
   Subscription,
@@ -251,6 +253,20 @@ async function handleEvent(
   // Verify signature
   if (!verifyEvent(event)) {
     sendOk(ws, event.id, false, "invalid: signature verification failed");
+    return;
+  }
+
+  // Kind-specific validation (synchronous)
+  const kindResult = validateEventKind(event);
+  if (!kindResult.valid) {
+    sendOk(ws, event.id, false, `invalid: ${kindResult.error}`);
+    return;
+  }
+
+  // Async attestation validation (DB checks for kind 31338)
+  const asyncResult = await validateAttestationAsync(event);
+  if (!asyncResult.valid) {
+    sendOk(ws, event.id, false, `invalid: ${asyncResult.error}`);
     return;
   }
 

@@ -172,11 +172,22 @@ function validateReview(event: SignedEvent): ValidationResult {
   return VALID;
 }
 
+/** Max clock skew allowed for attestation events: 10 minutes in seconds. */
+export const ATTESTATION_FUTURE_LIMIT_SECONDS = 10 * 60;
+
 /**
  * Kind 31338 — Attestation (BoilerDeck custom).
  * Parameterized replaceable event — one attestation per (signer, seeder, infoHash).
  * Required: ["p", pubkey] tag (the seeder being attested) and ["d", identifier] tag.
- * Content: JSON with attestation data (infoHash, bytesDownloaded, etc.).
+ * Content: JSON with attestation data (bytesDownloaded, etc.).
+ *
+ * Synchronous checks:
+ * - Required tags: p (seeder pubkey), d (identifier containing infoHash)
+ * - Content: valid JSON object with bytesDownloaded > 0
+ * - Self-attestation: signer pubkey != p tag pubkey
+ * - Future-dated: created_at not more than 10 minutes in the future
+ *
+ * Async checks (infoHash lookup, bytes vs file size) are in attestationValidation.ts.
  */
 function validateAttestation(event: SignedEvent): ValidationResult {
   if (!hasTagWithValue(event.tags, "p")) {
@@ -186,17 +197,41 @@ function validateAttestation(event: SignedEvent): ValidationResult {
     return invalid("kind 31338 (attestation): must include a 'd' tag with the attestation identifier");
   }
 
+  // Self-attestation check: signer pubkey must not equal p tag pubkey
+  const pTag = findTag(event.tags, "p");
+  if (pTag && pTag[1]?.toLowerCase() === event.pubkey.toLowerCase()) {
+    return invalid("Cannot attest for yourself");
+  }
+
+  // Future-dated check: created_at must not be more than 10 minutes in the future
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  if (event.created_at > nowSeconds + ATTESTATION_FUTURE_LIMIT_SECONDS) {
+    return invalid("Event timestamp too far in the future");
+  }
+
   if (event.content.length === 0) {
     return invalid("kind 31338 (attestation): content must not be empty");
   }
 
+  let parsed: Record<string, unknown>;
   try {
-    const parsed = JSON.parse(event.content);
+    parsed = JSON.parse(event.content);
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
       return invalid("kind 31338 (attestation): content must be a JSON object");
     }
   } catch {
     return invalid("kind 31338 (attestation): content must be valid JSON");
+  }
+
+  // bytesDownloaded must be present and > 0
+  if (typeof parsed.bytesDownloaded !== "number") {
+    return invalid("kind 31338 (attestation): content must include 'bytesDownloaded' as a number");
+  }
+  if (parsed.bytesDownloaded === 0) {
+    return invalid("No meaningful seeding occurred");
+  }
+  if (parsed.bytesDownloaded < 0) {
+    return invalid("kind 31338 (attestation): bytesDownloaded must be positive");
   }
 
   return VALID;

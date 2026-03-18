@@ -36,11 +36,15 @@ export {
   KIND_REVIEW,
   KIND_ATTESTATION,
   SUPPORTED_KINDS,
+  ATTESTATION_FUTURE_LIMIT_SECONDS,
   validateEventKind,
   kindName,
   isSupportedKind,
 } from "./kinds.js";
 export type { ValidationResult } from "./kinds.js";
+
+// Async attestation validation
+export { validateAttestationAsync } from "./attestationValidation.js";
 
 // Types
 export type {

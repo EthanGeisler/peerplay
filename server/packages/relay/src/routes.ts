@@ -47,7 +47,8 @@ import { signEventForUser } from "@boilerdeck/auth";
 import { storeEvent, getEvent, queryEvents, deleteEvent } from "./service.js";
 import { fanOutEvent } from "./ws.js";
 import { federateOutbound, getExternalRelayUrls } from "./federation.js";
-import { KIND_PROFILE, KIND_TEXT_NOTE, KIND_REVIEW, KIND_FOLLOW_LIST, KIND_DELETION } from "./kinds.js";
+import { KIND_PROFILE, KIND_TEXT_NOTE, KIND_REVIEW, KIND_FOLLOW_LIST, KIND_DELETION, KIND_ATTESTATION, validateEventKind } from "./kinds.js";
+import { validateAttestationAsync } from "./attestationValidation.js";
 
 export const relayRouter = Router();
 
@@ -93,6 +94,12 @@ relayRouter.post("/events", authenticate, async (req, res, next) => {
       );
     }
 
+    // Kind-specific validation (synchronous)
+    const kindResult = validateEventKind(event);
+    if (!kindResult.valid) {
+      throw new ValidationError(kindResult.error!);
+    }
+
     // Verify pubkey matches authenticated user
     const user = await db.user.findUnique({
       where: { id: req.user!.sub },
@@ -103,6 +110,12 @@ relayRouter.post("/events", authenticate, async (req, res, next) => {
       throw new ForbiddenError(
         "Event pubkey does not match your account's public key",
       );
+    }
+
+    // Async attestation validation (DB checks for kind 31338)
+    const asyncResult = await validateAttestationAsync(event);
+    if (!asyncResult.valid) {
+      throw new ValidationError(asyncResult.error!);
     }
 
     // Store event
@@ -316,6 +329,18 @@ relayRouter.post("/events/sign-and-publish", authenticate, async (req, res, next
       tags: tags as string[][],
       content,
     });
+
+    // Kind-specific validation (synchronous)
+    const kindResult = validateEventKind(event);
+    if (!kindResult.valid) {
+      throw new ValidationError(kindResult.error!);
+    }
+
+    // Async attestation validation (DB checks for kind 31338)
+    const asyncResult = await validateAttestationAsync(event);
+    if (!asyncResult.valid) {
+      throw new ValidationError(asyncResult.error!);
+    }
 
     // Store the event
     await storeEvent(event);
