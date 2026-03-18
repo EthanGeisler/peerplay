@@ -173,13 +173,32 @@ export function extractDTag(tags: string[][]): string | null {
  * Check if a kind is parameterized replaceable (30000-39999).
  * These events use the d tag for uniqueness within pubkey+kind.
  */
-export function isReplaceableKind(kind: number): boolean {
+export function isParameterizedReplaceableKind(kind: number): boolean {
   return kind >= 30000 && kind <= 39999;
 }
 
 /**
+ * Check if a kind is regular replaceable (NIP-01: kinds 0, 3, and 10000-19999).
+ * These events are replaceable by pubkey+kind (no d tag parameterization).
+ * Only one event per pubkey+kind exists at a time.
+ */
+export function isRegularReplaceableKind(kind: number): boolean {
+  return kind === 0 || kind === 3 || (kind >= 10000 && kind <= 19999);
+}
+
+/**
+ * Check if a kind is replaceable (either regular or parameterized).
+ * Regular replaceable: kinds 0, 3, 10000-19999 (one per pubkey+kind)
+ * Parameterized replaceable: kinds 30000-39999 (one per pubkey+kind+dTag)
+ */
+export function isReplaceableKind(kind: number): boolean {
+  return isRegularReplaceableKind(kind) || isParameterizedReplaceableKind(kind);
+}
+
+/**
  * Normalize dTag for database storage.
- * - Replaceable kinds (30000-39999): always returns a string (never null)
+ * - Regular replaceable kinds (0, 3, 10000-19999): always returns "" (no parameterization)
+ * - Parameterized replaceable kinds (30000-39999): returns d tag value or ""
  * - Other kinds: always returns null
  *
  * This prevents the PostgreSQL NULL uniqueness footgun where multiple NULLs
@@ -189,7 +208,10 @@ export function normalizeDTag(
   kind: number,
   tags: string[][],
 ): string | null {
-  if (!isReplaceableKind(kind)) return null;
-  const dTag = extractDTag(tags);
-  return dTag ?? "";
+  if (isRegularReplaceableKind(kind)) return "";
+  if (isParameterizedReplaceableKind(kind)) {
+    const dTag = extractDTag(tags);
+    return dTag ?? "";
+  }
+  return null;
 }

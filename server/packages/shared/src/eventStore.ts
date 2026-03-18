@@ -4,8 +4,8 @@
  * Handles:
  * - Signature verification before storage
  * - Duplicate detection (by event ID)
- * - Replaceable event semantics (kind 30000-39999: newest wins by created_at)
- * - dTag normalization (replaceable kinds → "", regular kinds → null)
+ * - Replaceable event semantics (kinds 0, 3, 10000-19999, 30000-39999: newest wins by created_at)
+ * - dTag normalization (replaceable kinds → "", parameterized → d tag value, regular → null)
  */
 
 import type { Event as PrismaEvent } from "@prisma/client";
@@ -71,7 +71,7 @@ export async function storeEvent(event: SignedEvent): Promise<StoreResult> {
 
   const dTag = normalizeDTag(event.kind, event.tags);
 
-  // Handle replaceable events (kind 30000-39999)
+  // Handle replaceable events (kinds 0, 3, 10000-19999, 30000-39999)
   if (isReplaceableKind(event.kind)) {
     return storeReplaceableEvent(event, dTag!);
   }

@@ -1,5 +1,5 @@
 /**
- * Relay REST routes for event management and key management.
+ * Relay REST routes for event management, key management, and profiles.
  *
  * Event routes:
  * - POST /events — submit a pre-signed event (authenticated, pubkey must match)
@@ -12,6 +12,10 @@
  *
  * Event signing routes:
  * - POST /events/sign-and-publish — server signs + stores + broadcasts (authenticated)
+ *
+ * Profile routes:
+ * - PUT /profiles/me — set/update profile (authenticated, creates kind 0 event)
+ * - GET /profiles/:pubkey — get profile data from latest kind 0 event (public)
  */
 
 import * as nodeCrypto from "node:crypto";
@@ -34,6 +38,7 @@ import { signEventForUser } from "@boilerdeck/auth";
 import { storeEvent, getEvent, queryEvents } from "./service.js";
 import { fanOutEvent } from "./ws.js";
 import { federateOutbound, getExternalRelayUrls } from "./federation.js";
+import { KIND_PROFILE } from "./kinds.js";
 
 export const relayRouter = Router();
 
@@ -320,6 +325,121 @@ relayRouter.post("/events/sign-and-publish", authenticate, async (req, res, next
     federateOutbound(event);
 
     res.status(201).json(event);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── PUT /profiles/me — set/update user profile ──────────────────────────────
+
+relayRouter.put("/profiles/me", authenticate, async (req, res, next) => {
+  try {
+    const { name, about, picture } = req.body;
+
+    // Validate input: all fields optional but must be strings if present
+    if (name !== undefined && typeof name !== "string") {
+      throw new ValidationError("name must be a string");
+    }
+    if (about !== undefined && typeof about !== "string") {
+      throw new ValidationError("about must be a string");
+    }
+    if (picture !== undefined && typeof picture !== "string") {
+      throw new ValidationError("picture must be a string");
+    }
+
+    // Load user to get pubkey and displayName
+    const user = await db.user.findUnique({
+      where: { id: req.user!.sub },
+      select: { nostrPubkey: true, displayName: true },
+    });
+
+    if (!user?.nostrPubkey) {
+      throw new UnauthorizedError(
+        "User has no cryptographic identity. Log in to generate a keypair.",
+      );
+    }
+
+    // Check if this is the first profile creation (no existing kind 0 event)
+    const existingProfiles = await queryEvents({
+      kinds: [KIND_PROFILE],
+      authors: [user.nostrPubkey],
+      limit: 1,
+    });
+
+    const isFirstProfile = existingProfiles.length === 0;
+
+    // Build profile content — seed name from displayName on first creation
+    const profileContent: Record<string, string> = {};
+    if (name !== undefined) {
+      profileContent.name = name;
+    } else if (isFirstProfile && user.displayName) {
+      // Migration: seed from existing displayName on first profile creation
+      profileContent.name = user.displayName;
+    }
+    if (about !== undefined) {
+      profileContent.about = about;
+    }
+    if (picture !== undefined) {
+      profileContent.picture = picture;
+    }
+
+    // Create and sign the kind 0 event
+    const event = await signEventForUser(req.user!.sub, {
+      kind: KIND_PROFILE,
+      tags: [],
+      content: JSON.stringify(profileContent),
+    });
+
+    // Store event (replaceable — will replace any existing kind 0 for this pubkey)
+    await storeEvent(event);
+
+    // Broadcast to WebSocket subscribers
+    fanOutEvent(event);
+
+    // Forward to external relays
+    federateOutbound(event);
+
+    res.json(profileContent);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── GET /profiles/:pubkey — get profile data ────────────────────────────────
+
+relayRouter.get("/profiles/:pubkey", async (req, res, next) => {
+  try {
+    const { pubkey } = req.params;
+
+    // Validate pubkey format (64-char hex)
+    if (!pubkey || pubkey.length !== 64 || !/^[0-9a-f]+$/i.test(pubkey)) {
+      throw new ValidationError("pubkey must be a 64-character hex string");
+    }
+
+    // Query latest kind 0 event for this pubkey
+    const events = await queryEvents({
+      kinds: [KIND_PROFILE],
+      authors: [pubkey],
+      limit: 1,
+    });
+
+    if (events.length === 0) {
+      throw new NotFoundError("Profile");
+    }
+
+    const event = events[0]!;
+    let profileData: Record<string, unknown>;
+    try {
+      profileData = JSON.parse(event.content);
+    } catch {
+      profileData = {};
+    }
+
+    res.json({
+      pubkey: event.pubkey,
+      ...profileData,
+      created_at: event.created_at,
+    });
   } catch (err) {
     next(err);
   }

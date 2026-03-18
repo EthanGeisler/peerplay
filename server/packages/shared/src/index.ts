@@ -25,6 +25,8 @@ export {
   verifyEvent,
   extractDTag,
   isReplaceableKind,
+  isRegularReplaceableKind,
+  isParameterizedReplaceableKind,
   normalizeDTag,
   EVENT_KIND_GAME_LISTING,
   EVENT_KIND_GAME_VERSION,
