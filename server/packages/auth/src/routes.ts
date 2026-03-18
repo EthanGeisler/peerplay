@@ -1,9 +1,8 @@
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
-import { authenticate, ValidationError } from "@boilerdeck/shared";
+import { authenticate, ValidationError, handleZodError } from "@boilerdeck/shared";
 import { registerSchema, loginSchema, recoverMnemonicSchema, pubkeyLoginSchema, exportKeysSchema, switchCustodySchema, changePasswordSchema } from "./schemas.js";
 import * as authService from "./service.js";
-import { ZodError } from "zod";
 
 const challengeLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -14,13 +13,6 @@ const challengeLimiter = rateLimit({
 });
 
 export const authRouter = Router();
-
-function handleZodError(err: unknown): never {
-  if (err instanceof ZodError) {
-    throw new ValidationError(err.errors.map((e) => e.message).join(", "));
-  }
-  throw err;
-}
 
 authRouter.post("/register", async (req, res, next) => {
   try {

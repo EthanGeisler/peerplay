@@ -1,39 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiFetch, apiUpload, ApiError } from "../api";
-
-interface GameVersion {
-  id: string;
-  version: string;
-  status: string;
-  fileSizeBytes: number;
-  changelog: string;
-  createdAt: string;
-  torrent: {
-    id: string;
-    infoHash: string;
-    magnetUri: string;
-    createdAt: string;
-  } | null;
-}
-
-interface GameData {
-  id: string;
-  slug: string;
-  title: string;
-  description: string;
-  priceCents: number;
-  status: string;
-  coverImageUrl: string | null;
-  screenshots: string[];
-  exePath: string | null;
-  savePaths: string[];
-  createdAt: string;
-  updatedAt: string;
-  versions: GameVersion[];
-  licensesCount: number;
-  salesCount: number;
-}
+import type { GameVersion, GameData } from "../types";
 
 const STATUS_COLORS: Record<string, string> = {
   DRAFT: "var(--text-muted)",

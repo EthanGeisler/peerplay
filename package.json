@@ -2,6 +2,7 @@
   "name": "boilerdeck",
   "private": true,
   "workspaces": [
+    "shared-ui",
     "server",
     "server/packages/*",
     "client",
@@ -21,7 +22,10 @@
     "lint": "npm run lint --workspaces --if-present"
   },
   "devDependencies": {
-    "typescript": "^5.7.0",
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "express-rate-limit": "^8.3.1"
   }
 }

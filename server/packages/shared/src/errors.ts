@@ -1,3 +1,5 @@
+import { ZodError } from "zod";
+
 export class AppError extends Error {
   constructor(
     public statusCode: number,
@@ -37,4 +39,11 @@ export class ValidationError extends AppError {
   constructor(message: string) {
     super(400, message, "VALIDATION_ERROR");
   }
+}
+
+export function handleZodError(err: unknown): never {
+  if (err instanceof ZodError) {
+    throw new ValidationError(err.errors.map((e) => e.message).join(", "));
+  }
+  throw err;
 }

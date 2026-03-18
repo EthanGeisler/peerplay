@@ -1,33 +1,6 @@
 import { create } from "zustand";
 import { apiFetch, setAccessToken, refreshAccessToken } from "../api";
-
-interface User {
-  id: string;
-  email: string;
-  displayName: string;
-  role: string;
-}
-
-interface Developer {
-  id: string;
-  studioName: string;
-  stripeOnboarded: boolean;
-  stripePayoutsEnabled: boolean;
-}
-
-interface AuthState {
-  user: User | null;
-  developer: Developer | null;
-  loading: boolean;
-  error: string | null;
-
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, displayName: string) => Promise<void>;
-  registerDeveloper: (studioName: string) => Promise<void>;
-  logout: () => void;
-  loadSession: () => Promise<void>;
-  clearError: () => void;
-}
+import type { User, Developer, AuthState } from "../types";
 
 async function loadDeveloperProfile(set: (s: Partial<AuthState>) => void) {
   try {

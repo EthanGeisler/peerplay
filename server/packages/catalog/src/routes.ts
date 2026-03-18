@@ -2,11 +2,12 @@ import path from "node:path";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import { Router } from "express";
-import { z, ZodError } from "zod";
+import { z } from "zod";
 import multer from "multer";
-import { authenticate, requireRole, ValidationError, NotFoundError, getConfig, storeEvent, EVENT_KIND_GAME_LISTING, EVENT_KIND_GAME_VERSION, db } from "@boilerdeck/shared";
+import { authenticate, requireRole, ValidationError, NotFoundError, getConfig, storeEvent, EVENT_KIND_GAME_LISTING, EVENT_KIND_GAME_VERSION, db, handleZodError } from "@boilerdeck/shared";
 import { signEventForUser } from "@boilerdeck/auth";
 import * as catalogService from "./service.js";
+import * as uploadService from "./upload.js";
 
 export const catalogRouter = Router();
 
@@ -57,13 +58,6 @@ const coverUpload = multer({
     }
   },
 });
-
-function handleZodError(err: unknown): never {
-  if (err instanceof ZodError) {
-    throw new ValidationError(err.errors.map((e) => e.message).join(", "));
-  }
-  throw err;
-}
 
 // ── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -241,7 +235,7 @@ catalogRouter.get(
   requireRole("DEVELOPER", "ADMIN"),
   async (_req, res, next) => {
     try {
-      const dirs = await catalogService.listGameDirectories();
+      const dirs = await uploadService.listGameDirectories();
       res.json({ directories: dirs });
     } catch (err) {
       next(err);
@@ -255,7 +249,7 @@ catalogRouter.get(
   requireRole("DEVELOPER", "ADMIN"),
   async (req, res, next) => {
     try {
-      const result = await catalogService.detectExecutable(String(req.params.dirname));
+      const result = await uploadService.detectExecutable(String(req.params.dirname));
       res.json(result);
     } catch (err) {
       next(err);
@@ -274,7 +268,7 @@ catalogRouter.post(
         throw new ValidationError("dirname is required");
       }
       const developer = await catalogService.getDeveloperByUserId(req.user!.sub);
-      const result = await catalogService.autoDetectAndSetExe(
+      const result = await uploadService.autoDetectAndSetExe(
         String(req.params.id),
         developer.id,
         dirname,
@@ -508,7 +502,7 @@ catalogRouter.post(
       }
 
       const developer = await catalogService.getDeveloperByUserId(req.user!.sub);
-      const result = await catalogService.uploadAndProcessVersion(
+      const result = await uploadService.uploadAndProcessVersion(
         String(req.params.id),
         developer.id,
         String(req.params.versionId),

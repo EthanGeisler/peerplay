@@ -1,16 +1,9 @@
 import { Router } from "express";
-import { z, ZodError } from "zod";
-import { authenticate, ValidationError } from "@boilerdeck/shared";
+import { z } from "zod";
+import { authenticate, handleZodError } from "@boilerdeck/shared";
 import * as paymentService from "./service.js";
 
 export const paymentRouter = Router();
-
-function handleZodError(err: unknown): never {
-  if (err instanceof ZodError) {
-    throw new ValidationError(err.errors.map((e) => e.message).join(", "));
-  }
-  throw err;
-}
 
 const checkoutSchema = z.object({
   gameId: z.string().uuid("gameId must be a valid UUID"),

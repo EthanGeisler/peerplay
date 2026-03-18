@@ -19,10 +19,11 @@ If any step fails, fix the issue and retry. Do not skip steps. Do not ask the us
 - `server/` — Node.js + TypeScript backend monorepo (Express, Prisma, PostgreSQL)
 - `server/packages/` — Modular service packages (auth, catalog, license, payment, saves, torrent, shared)
 - `server/prisma/` — Database schema and migrations
+- `shared-ui/` — Shared frontend package (`@boilerdeck/ui-shared`) — API client core (token refresh, apiFetch, ApiError)
 - `client/` — Electron + React desktop app (Vite, zustand, WebTorrent)
 - `dev-portal/` — Developer dashboard SPA (Vite, React 19, Zustand, real API calls)
 - `web/` — Public storefront SPA (Vite, React 19, HashRouter, real API calls)
-- `docs/` — Public documentation (future)
+- `docs/` — Documentation + handoff docs + archived specs
 
 ## Development
 - **Server:** `npm run dev:server` from root (uses tsx watch)
@@ -36,7 +37,7 @@ If any step fails, fix the issue and retry. Do not skip steps. Do not ask the us
 
 ## Key Conventions
 - Express routes use `try/catch` with `next(err)` pattern
-- Input validation via Zod schemas
+- Input validation via Zod schemas — use `handleZodError` from `@boilerdeck/shared` (not a local copy)
 - Auth via JWT (access + refresh tokens), `authenticate` middleware from `@boilerdeck/shared`
 - Role checks via `requireRole("DEVELOPER")` etc.
 - Error classes: AppError, NotFoundError, UnauthorizedError, ForbiddenError, ConflictError, ValidationError
@@ -45,7 +46,10 @@ If any step fails, fix the issue and retry. Do not skip steps. Do not ask the us
 - **Server error shape:** Server returns `{ error: { code, message } }`. All API clients parse errors as `body.error?.message || body.message || res.statusText`. Never assume `body.message` at the top level.
 - **Helmet CORP:** Always initialize Helmet with `crossOriginResourcePolicy: { policy: "cross-origin" }` in `server/src/index.ts`. The default `same-origin` breaks Electron's `file://` renderer even when CORS is configured correctly.
 - **Token rotation must be idempotent:** Use `deleteMany` instead of `delete` when rotating refresh tokens — React StrictMode double-fires effects and concurrent requests will both find the same token. `deleteMany` on an already-deleted token is a no-op; `delete` throws Prisma P2025.
-- **Refresh calls must be serialized:** All API clients use a `refreshPromise` lock in `api.ts` so only one `refreshAccessToken()` runs at a time. Concurrent callers await the same promise. Without this, concurrent 401s cause a race that invalidates the session.
+- **Refresh calls must be serialized:** All API clients use a `refreshPromise` lock via `@boilerdeck/ui-shared` so only one `refreshAccessToken()` runs at a time. Concurrent callers await the same promise. Without this, concurrent 401s cause a race that invalidates the session.
+- **Shared API client:** Token refresh, `apiFetch`, and `ApiError` live in `shared-ui/src/api-core.ts` (`@boilerdeck/ui-shared`). Each frontend's `api.ts` is a thin wrapper that provides a `TokenStorage` adapter (localStorage or IPC). Never duplicate token logic in individual frontends.
+- **Catalog service split:** Game CRUD is in `catalog/src/service.ts`, upload/zip processing is in `catalog/src/upload.ts`. Routes import from both.
+- **Frontend component structure:** Large page components (GameEditor, GameDetail) are split into sub-components (GameEditorForm, UploadManager, ExeDetector). State stays in the page, sub-components receive props.
 - **Role changes require token refresh:** Any endpoint that upgrades a user's role must be followed by `refreshAccessToken()` on the client. The existing JWT carries the old role claim until refreshed.
 - **`GET /api/licenses` returns `{ licenses: [...] }`** — not a bare array. Always unwrap `data.licenses` and add `Array.isArray()` guard before calling array methods.
 - **No DRM enforcement:** BoilerDeck distributes game builds as-is. There is no DRM system — developers handle their own copy protection before uploading. The license package only tracks ownership (who bought what). See CONTEXT.md "Copy Protection Philosophy" for details.

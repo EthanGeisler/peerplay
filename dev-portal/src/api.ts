@@ -1,98 +1,23 @@
+import { createApiClient, ApiError } from "@boilerdeck/ui-shared";
+
 const API_BASE = "/api";
 
-let accessToken: string | null = null;
-
-export function setAccessToken(token: string | null) {
-  accessToken = token;
-}
-
-export function getAccessToken() {
-  return accessToken;
-}
-
-// Serialize concurrent refresh calls — only one in-flight at a time
-let refreshPromise: Promise<string | null> | null = null;
-
-export async function refreshAccessToken(): Promise<string | null> {
-  if (refreshPromise) return refreshPromise;
-
-  refreshPromise = doRefresh();
-  try {
-    return await refreshPromise;
-  } finally {
-    refreshPromise = null;
-  }
-}
-
-async function doRefresh(): Promise<string | null> {
-  const refreshToken = localStorage.getItem("pp_refresh_token");
-  if (!refreshToken) return null;
-
-  try {
-    const res = await fetch(`${API_BASE}/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken }),
-    });
-
-    if (!res.ok) {
+const client = createApiClient(API_BASE, {
+  getRefreshToken: async () => localStorage.getItem("pp_refresh_token"),
+  setRefreshToken: async (token) => {
+    if (token) {
+      localStorage.setItem("pp_refresh_token", token);
+    } else {
       localStorage.removeItem("pp_refresh_token");
-      return null;
     }
+  },
+});
 
-    const data = await res.json();
-    localStorage.setItem("pp_refresh_token", data.refreshToken);
-    accessToken = data.accessToken;
-    return data.accessToken;
-  } catch {
-    return null;
-  }
-}
-
-export async function apiFetch<T = unknown>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(options.headers as Record<string, string>),
-  };
-
-  if (accessToken) {
-    headers["Authorization"] = `Bearer ${accessToken}`;
-  }
-
-  let res = await fetch(`${API_BASE}${path}`, { ...options, headers });
-
-  // Auto-refresh on 401
-  if (res.status === 401 && accessToken) {
-    const newToken = await refreshAccessToken();
-    if (newToken) {
-      headers["Authorization"] = `Bearer ${newToken}`;
-      res = await fetch(`${API_BASE}${path}`, { ...options, headers });
-    }
-  }
-
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ message: res.statusText }));
-    const message = body.error?.message || body.message || res.statusText;
-    const code = body.error?.code || body.code;
-    throw new ApiError(res.status, message, code);
-  }
-
-  return res.json() as Promise<T>;
-}
-
-export class ApiError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-    public code?: string,
-  ) {
-    super(message);
-    this.name = "ApiError";
-  }
-}
+export const setAccessToken = client.setAccessToken;
+export const getAccessToken = client.getAccessToken;
+export const refreshAccessToken = client.refreshAccessToken;
+export const apiFetch = client.apiFetch;
+export { ApiError };
 
 /** Redirect to Stripe Connect onboarding. Returns false if no URL was returned. */
 export async function redirectToStripeOnboard(): Promise<boolean> {
@@ -113,8 +38,8 @@ export function apiUpload<T = unknown>(
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `${API_BASE}${path}`);
 
-    if (accessToken) {
-      xhr.setRequestHeader("Authorization", `Bearer ${accessToken}`);
+    if (client.getAccessToken()) {
+      xhr.setRequestHeader("Authorization", `Bearer ${client.getAccessToken()}`);
     }
     // Do NOT set Content-Type — browser auto-sets multipart boundary
 
@@ -125,7 +50,7 @@ export function apiUpload<T = unknown>(
     };
 
     xhr.onload = async () => {
-      if (xhr.status === 401 && accessToken) {
+      if (xhr.status === 401 && client.getAccessToken()) {
         // Try token refresh and retry
         const newToken = await refreshAccessToken();
         if (newToken) {
@@ -137,8 +62,10 @@ export function apiUpload<T = unknown>(
             if (retryXhr.status >= 200 && retryXhr.status < 300) {
               resolve(JSON.parse(retryXhr.responseText));
             } else {
-              const body = JSON.parse(retryXhr.responseText).catch?.(() => ({})) ?? {};
-              reject(new ApiError(retryXhr.status, body.message || retryXhr.statusText));
+              let body: Record<string, unknown> = {};
+              try { body = JSON.parse(retryXhr.responseText); } catch { /* use empty */ }
+              const msg = (body.error as Record<string, unknown>)?.message || body.message || retryXhr.statusText;
+              reject(new ApiError(retryXhr.status, String(msg)));
             }
           };
           retryXhr.onerror = () => reject(new ApiError(0, "Network error"));
@@ -155,7 +82,7 @@ export function apiUpload<T = unknown>(
         let message = xhr.statusText;
         try {
           const body = JSON.parse(xhr.responseText);
-          message = body.message || message;
+          message = (body.error as Record<string, unknown>)?.message as string || body.message || message;
         } catch { /* use statusText */ }
         reject(new ApiError(xhr.status, message));
       }

@@ -9,6 +9,7 @@ export {
   ForbiddenError,
   ConflictError,
   ValidationError,
+  handleZodError,
 } from "./errors.js";
 export {
   authenticate,

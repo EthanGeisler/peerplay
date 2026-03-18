@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiFetch, ApiError } from "../../api";
 import { apiUpload } from "../../devApi";
-import { resolveCoverUrl } from "../../utils";
 import type { DevGameForm, DevGameDir, DevDetectResult } from "../../types";
+import { GameEditorForm } from "../../components/developer/GameEditorForm";
+import { UploadManager } from "../../components/developer/UploadManager";
+import { ExeDetector } from "../../components/developer/ExeDetector";
 
 const EMPTY_FORM: DevGameForm = {
   title: "",
@@ -11,25 +13,6 @@ const EMPTY_FORM: DevGameForm = {
   priceCents: 0,
   exePath: "",
   coverImageUrl: "",
-};
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "10px 14px",
-  borderRadius: 8,
-  border: "1px solid #0f3460",
-  backgroundColor: "#0f3460",
-  color: "#e0e0e0",
-  fontSize: 14,
-  outline: "none",
-};
-
-const labelStyle: React.CSSProperties = {
-  display: "block",
-  fontSize: 13,
-  fontWeight: 600,
-  color: "#aaa",
-  marginBottom: 6,
 };
 
 export function DevGameEditor() {
@@ -123,7 +106,7 @@ export function DevGameEditor() {
     setCoverUploadPercent(0);
     setCoverError(null);
     const fd = new FormData();
-    fd.append("coverImage", file);
+    fd.append("cover", file);
     try {
       const result = await apiUpload<{ coverImageUrl: string }>(
         `/developer/games/${gameId}/cover`,
@@ -157,6 +140,11 @@ export function DevGameEditor() {
     if (isEditing && id) {
       uploadCover(id, file);
     }
+  };
+
+  const handleCoverRemove = () => {
+    setCoverFile(null);
+    setCoverPreview(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -284,568 +272,43 @@ export function DevGameEditor() {
       )}
 
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-        {/* Title */}
-        <div>
-          <label style={labelStyle}>Title *</label>
-          <input
-            type="text"
-            value={form.title}
-            onChange={(e) => update("title", e.target.value)}
-            placeholder="My Awesome Game"
-            required
-            maxLength={200}
-            style={inputStyle}
-          />
-        </div>
+        <GameEditorForm
+          form={form}
+          onUpdate={update}
+          coverPreview={coverPreview}
+          coverUploadState={coverUploadState}
+          coverUploadPercent={coverUploadPercent}
+          coverError={coverError}
+          showCoverUrl={showCoverUrl}
+          onCoverFileSelected={handleCoverFileSelected}
+          onCoverRemove={handleCoverRemove}
+          onShowCoverUrl={setShowCoverUrl}
+        />
 
-        {/* Description */}
-        <div>
-          <label style={labelStyle}>Description</label>
-          <textarea
-            value={form.description}
-            onChange={(e) => update("description", e.target.value)}
-            placeholder="Describe your game..."
-            maxLength={5000}
-            rows={5}
-            style={{ ...inputStyle, resize: "vertical" }}
-          />
-        </div>
+        <ExeDetector
+          isEditing={isEditing}
+          exePath={form.exePath}
+          onExePathChange={(path) => update("exePath", path)}
+          gameDirs={gameDirs}
+          dirsLoading={dirsLoading}
+          selectedDir={selectedDir}
+          onSelectedDirChange={setSelectedDir}
+          detectResult={detectResult}
+          onDetectResultClear={() => setDetectResult(null)}
+          detecting={detecting}
+          onLoadGameDirs={loadGameDirs}
+          onDetect={handleDetect}
+        />
 
-        {/* Price */}
-        <div>
-          <label style={labelStyle}>Price (USD)</label>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={(form.priceCents / 100).toFixed(2)}
-            onChange={(e) => update("priceCents", Math.round(parseFloat(e.target.value || "0") * 100))}
-            style={inputStyle}
-          />
-          <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>
-            Set to 0 for free
-          </div>
-        </div>
-
-        {/* Copy Protection Guidance */}
-        <div
-          style={{
-            padding: "14px 16px",
-            borderRadius: 8,
-            backgroundColor: "rgba(88, 166, 255, 0.08)",
-            border: "1px solid rgba(88, 166, 255, 0.2)",
-            fontSize: 13,
-            color: "#aaa",
-            lineHeight: 1.6,
-          }}
-        >
-          <div style={{ fontWeight: 600, color: "#58a6ff", marginBottom: 8 }}>
-            Copy Protection
-          </div>
-          <div style={{ marginBottom: 10 }}>
-            BoilerDeck distributes your game build exactly as you upload it via BitTorrent.
-            We do not modify, encrypt, or wrap your files in any way. If your game needs
-            copy protection, apply it before uploading using your engine's built-in tools.
-          </div>
-          <div style={{ marginBottom: 10 }}>
-            <strong style={{ color: "#ccc" }}>Why we don't handle DRM:</strong>{" "}
-            Platform-side DRM that wraps your game from the outside (like a launcher check)
-            doesn't actually protect your files — they still sit unencrypted on the user's disk.
-            Engine-native protection is integrated into your game binary itself, which is
-            significantly harder to bypass and requires zero maintenance from us.
-          </div>
-          <div style={{ fontWeight: 600, color: "#58a6ff", marginBottom: 6, fontSize: 13 }}>
-            Engine-Specific Options
-          </div>
-          <div style={{ fontSize: 12, color: "#888", lineHeight: 1.8 }}>
-            <div style={{ marginBottom: 4 }}>
-              <strong style={{ color: "#aaa" }}>Godot</strong> — Enable PCK encryption in Export &gt; Options. Uses AES-256-CBC with a key
-              embedded in a custom export template. Protects all game assets and scripts in the .pck file.
-            </div>
-            <div style={{ marginBottom: 4 }}>
-              <strong style={{ color: "#aaa" }}>Unity</strong> — Use the IL2CPP scripting backend (converts C# to native code, much harder
-              to reverse than Mono/.NET). Enable "Strip Engine Code" to remove unused modules.
-              Consider Asset Bundle encryption for premium content.
-            </div>
-            <div style={{ marginBottom: 4 }}>
-              <strong style={{ color: "#aaa" }}>Unreal Engine</strong> — Enable Pak file encryption in Project Settings &gt; Packaging.
-              Uses AES-256 to encrypt all packaged assets. The key is embedded in the executable.
-            </div>
-            <div>
-              <strong style={{ color: "#aaa" }}>Any Engine</strong> — Third-party tools like Themida, VMProtect, or Enigma Protector
-              can wrap any Windows executable with anti-tampering and code virtualization,
-              making reverse engineering significantly harder.
-            </div>
-          </div>
-          <div style={{ fontSize: 12, color: "#888", lineHeight: 1.6, marginTop: 10, borderTop: "1px solid rgba(88, 166, 255, 0.15)", paddingTop: 10 }}>
-            <strong style={{ color: "#aaa" }}>What BoilerDeck provides:</strong> License tracking (who bought your game),
-            Stripe payments with 99/1 revenue split, and BitTorrent distribution.
-            Your game's library page shows ownership status — the rest is up to you.
-          </div>
-        </div>
-
-        {/* Executable — auto-detect (edit mode only) */}
-        {isEditing && (
-          <div>
-            <label style={labelStyle}>Executable</label>
-
-            {form.exePath ? (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "10px 14px",
-                  backgroundColor: "#0f3460",
-                  borderRadius: 8,
-                  border: "1px solid #0f3460",
-                }}
-              >
-                <span style={{ fontSize: 14, flex: 1 }}>
-                  <code style={{ color: "#3fb950" }}>{form.exePath}</code>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => update("exePath", "")}
-                  style={{
-                    fontSize: 12,
-                    padding: "4px 10px",
-                    borderRadius: 4,
-                    backgroundColor: "#16213e",
-                    color: "#888",
-                    border: "none",
-                    cursor: "pointer",
-                  }}
-                >
-                  Clear
-                </button>
-              </div>
-            ) : gameDirs.length > 0 ? (
-              <div
-                style={{
-                  padding: 16,
-                  backgroundColor: "#0f3460",
-                  borderRadius: 8,
-                  border: "1px solid #0f3460",
-                }}
-              >
-                <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-                  <select
-                    value={selectedDir}
-                    onChange={(e) => {
-                      setSelectedDir(e.target.value);
-                      setDetectResult(null);
-                    }}
-                    style={{ ...inputStyle, flex: 1 }}
-                  >
-                    <option value="">Select game folder...</option>
-                    {gameDirs.map((d) => (
-                      <option key={d.name} value={d.name}>
-                        {d.name}/ ({d.files.length} files)
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    disabled={!selectedDir || detecting}
-                    onClick={() => handleDetect(selectedDir)}
-                    style={{
-                      padding: "8px 16px",
-                      borderRadius: 8,
-                      backgroundColor: "#58a6ff",
-                      color: "#fff",
-                      fontSize: 13,
-                      fontWeight: 600,
-                      opacity: !selectedDir || detecting ? 0.5 : 1,
-                      border: "none",
-                      cursor: "pointer",
-                    }}
-                  >
-                    {detecting ? "Scanning..." : "Detect"}
-                  </button>
-                </div>
-
-                {detectResult && (
-                  <div>
-                    {detectResult.executables.length === 0 ? (
-                      <div style={{ fontSize: 13, color: "#d29922" }}>
-                        No .exe files found in {detectResult.directory}/
-                      </div>
-                    ) : (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                        {detectResult.executables.map((exe) => (
-                          <button
-                            key={exe}
-                            type="button"
-                            onClick={() => update("exePath", exe)}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 8,
-                              padding: "8px 12px",
-                              borderRadius: 6,
-                              backgroundColor:
-                                exe === detectResult.recommended
-                                  ? "rgba(63, 185, 80, 0.1)"
-                                  : "#16213e",
-                              border:
-                                exe === detectResult.recommended
-                                  ? "1px solid rgba(63, 185, 80, 0.3)"
-                                  : "1px solid #0f3460",
-                              color: "#e0e0e0",
-                              fontSize: 13,
-                              textAlign: "left",
-                              cursor: "pointer",
-                            }}
-                          >
-                            <code style={{ flex: 1 }}>{exe}</code>
-                            {exe === detectResult.recommended && (
-                              <span
-                                style={{
-                                  fontSize: 11,
-                                  color: "#3fb950",
-                                  fontWeight: 600,
-                                }}
-                              >
-                                Recommended
-                              </span>
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={loadGameDirs}
-                disabled={dirsLoading}
-                style={{
-                  width: "100%",
-                  padding: "12px 16px",
-                  borderRadius: 8,
-                  backgroundColor: "#0f3460",
-                  border: "1px dashed #0f3460",
-                  color: "#58a6ff",
-                  fontSize: 14,
-                  fontWeight: 500,
-                  opacity: dirsLoading ? 0.6 : 1,
-                  cursor: "pointer",
-                }}
-              >
-                {dirsLoading ? "Scanning server..." : "Detect Executable from Server"}
-              </button>
-            )}
-
-            <div style={{ fontSize: 11, color: "#888", marginTop: 6 }}>
-              Scans game files on the server to find the main executable automatically.
-            </div>
-          </div>
-        )}
-
-        {/* Cover Image */}
-        <div>
-          <label style={labelStyle}>Cover Image</label>
-          {coverPreview || form.coverImageUrl ? (
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 8 }}>
-              <div
-                style={{
-                  width: 200,
-                  height: 94,
-                  borderRadius: 6,
-                  backgroundImage: `url(${coverPreview || resolveCoverUrl(form.coverImageUrl)})`,
-                  backgroundSize: "cover",
-                  backgroundPosition: "center",
-                  border: "1px solid #0f3460",
-                  flexShrink: 0,
-                }}
-              />
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const input = document.createElement("input");
-                    input.type = "file";
-                    input.accept = "image/jpeg,image/png,image/webp";
-                    input.onchange = () => {
-                      if (input.files?.[0]) handleCoverFileSelected(input.files[0]);
-                    };
-                    input.click();
-                  }}
-                  style={{
-                    fontSize: 12,
-                    padding: "4px 10px",
-                    borderRadius: 4,
-                    backgroundColor: "#0f3460",
-                    color: "#aaa",
-                    border: "none",
-                    cursor: "pointer",
-                  }}
-                >
-                  Change
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCoverFile(null);
-                    setCoverPreview(null);
-                    update("coverImageUrl", "");
-                  }}
-                  style={{
-                    fontSize: 12,
-                    padding: "4px 10px",
-                    borderRadius: 4,
-                    backgroundColor: "#16213e",
-                    color: "#888",
-                    border: "none",
-                    cursor: "pointer",
-                  }}
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div
-              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-              onDrop={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const file = e.dataTransfer.files[0];
-                if (file && file.type.startsWith("image/") && /\.(jpe?g|png|webp)$/i.test(file.name)) handleCoverFileSelected(file);
-              }}
-              onClick={() => {
-                const input = document.createElement("input");
-                input.type = "file";
-                input.accept = "image/jpeg,image/png,image/webp";
-                input.onchange = () => {
-                  if (input.files?.[0]) handleCoverFileSelected(input.files[0]);
-                };
-                input.click();
-              }}
-              style={{
-                border: "2px dashed #0f3460",
-                borderRadius: 8,
-                padding: 24,
-                textAlign: "center",
-                cursor: "pointer",
-                backgroundColor: "#0f3460",
-              }}
-            >
-              <div style={{ fontSize: 14, color: "#888" }}>
-                Drop image here or click to browse
-              </div>
-              <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>
-                JPG, PNG, or WebP — max 10 MB
-              </div>
-            </div>
-          )}
-          {coverUploadState === "uploading" && (
-            <div style={{ marginTop: 8 }}>
-              <div
-                style={{
-                  height: 6,
-                  backgroundColor: "#16213e",
-                  borderRadius: 3,
-                  overflow: "hidden",
-                  marginBottom: 4,
-                }}
-              >
-                <div
-                  style={{
-                    height: "100%",
-                    width: `${coverUploadPercent}%`,
-                    backgroundColor: "#58a6ff",
-                    borderRadius: 3,
-                    transition: "width 0.3s ease",
-                  }}
-                />
-              </div>
-              <div style={{ fontSize: 11, color: "#888" }}>Uploading cover... {coverUploadPercent}%</div>
-            </div>
-          )}
-          {coverUploadState === "error" && (
-            <div style={{ fontSize: 12, color: "#e94560", marginTop: 6 }}>{coverError}</div>
-          )}
-          {!showCoverUrl ? (
-            <button
-              type="button"
-              onClick={() => setShowCoverUrl(true)}
-              style={{
-                fontSize: 11,
-                color: "#888",
-                backgroundColor: "transparent",
-                marginTop: 6,
-                padding: 0,
-                textDecoration: "underline",
-                border: "none",
-                cursor: "pointer",
-              }}
-            >
-              or enter URL manually
-            </button>
-          ) : (
-            <div style={{ marginTop: 8 }}>
-              <input
-                type="url"
-                value={form.coverImageUrl}
-                onChange={(e) => {
-                  update("coverImageUrl", e.target.value);
-                  setCoverFile(null);
-                  setCoverPreview(null);
-                }}
-                placeholder="https://..."
-                style={{ ...inputStyle, fontSize: 13 }}
-              />
-              <button
-                type="button"
-                onClick={() => setShowCoverUrl(false)}
-                style={{
-                  fontSize: 11,
-                  color: "#888",
-                  backgroundColor: "transparent",
-                  marginTop: 4,
-                  padding: 0,
-                  textDecoration: "underline",
-                  border: "none",
-                  cursor: "pointer",
-                }}
-              >
-                hide URL input
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Game Build (create mode only) */}
-        {!isEditing && (
-          <div>
-            <label style={labelStyle}>Game Build *</label>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 12 }}>
-              <div>
-                <label style={{ display: "block", fontSize: 12, color: "#888", marginBottom: 4 }}>
-                  Version (semver)
-                </label>
-                <input
-                  type="text"
-                  value={initialVersion}
-                  onChange={(e) => setInitialVersion(e.target.value)}
-                  placeholder="1.0.0"
-                  pattern="^\d+\.\d+\.\d+$"
-                  required
-                  style={inputStyle}
-                />
-              </div>
-            </div>
-
-            <div
-              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-              onDrop={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const file = e.dataTransfer.files[0];
-                if (file && file.name.endsWith(".zip")) setZipFile(file);
-              }}
-              onClick={() => {
-                const input = document.createElement("input");
-                input.type = "file";
-                input.accept = ".zip";
-                input.onchange = () => {
-                  if (input.files?.[0]) setZipFile(input.files[0]);
-                };
-                input.click();
-              }}
-              style={{
-                border: "2px dashed #0f3460",
-                borderRadius: 8,
-                padding: 24,
-                textAlign: "center",
-                cursor: "pointer",
-                backgroundColor: "#0f3460",
-              }}
-            >
-              {zipFile ? (
-                <div>
-                  <div style={{ fontSize: 14, color: "#e0e0e0", fontWeight: 600 }}>
-                    {zipFile.name}
-                  </div>
-                  <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
-                    {(zipFile.size / (1024 * 1024)).toFixed(1)} MB
-                  </div>
-                </div>
-              ) : (
-                <div style={{ fontSize: 14, color: "#888" }}>
-                  Drop .zip here or click to browse
-                </div>
-              )}
-            </div>
-            <div style={{ fontSize: 11, color: "#888", marginTop: 6 }}>
-              Zip your game folder and upload it. The server will extract it, create a torrent, and start seeding automatically.
-            </div>
-          </div>
-        )}
-
-        {/* Upload progress (create mode) */}
-        {!isEditing && uploadState !== "idle" && uploadState !== "error" && (
-          <div
-            style={{
-              padding: 20,
-              backgroundColor: "#0f3460",
-              borderRadius: 8,
-              textAlign: "center",
-            }}
-          >
-            {uploadState === "creating" && (
-              <div style={{ fontSize: 14, color: "#aaa" }}>Creating game...</div>
-            )}
-            {uploadState === "uploading" && (
-              <>
-                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>
-                  Uploading v{initialVersion}...
-                </div>
-                <div
-                  style={{
-                    height: 8,
-                    backgroundColor: "#16213e",
-                    borderRadius: 4,
-                    overflow: "hidden",
-                    marginBottom: 8,
-                  }}
-                >
-                  <div
-                    style={{
-                      height: "100%",
-                      width: `${uploadPercent}%`,
-                      backgroundColor: "#e94560",
-                      borderRadius: 4,
-                      transition: "width 0.3s ease",
-                    }}
-                  />
-                </div>
-                <div style={{ fontSize: 13, color: "#888" }}>{uploadPercent}%</div>
-                <div style={{ fontSize: 12, color: "#888", marginTop: 8 }}>
-                  Do not close this window.
-                </div>
-              </>
-            )}
-            {uploadState === "processing" && (
-              <>
-                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>
-                  Processing — creating torrent & seeding
-                </div>
-                <div style={{ fontSize: 24, letterSpacing: 4, color: "#888" }}>...</div>
-              </>
-            )}
-            {uploadState === "done" && (
-              <div style={{ fontSize: 14, color: "#3fb950", fontWeight: 600 }}>
-                Done! Redirecting...
-              </div>
-            )}
-          </div>
-        )}
+        <UploadManager
+          isEditing={isEditing}
+          initialVersion={initialVersion}
+          onInitialVersionChange={setInitialVersion}
+          zipFile={zipFile}
+          onZipFileChange={setZipFile}
+          uploadState={uploadState}
+          uploadPercent={uploadPercent}
+        />
 
         {/* Actions */}
         <div style={{ display: "flex", gap: 12, marginTop: 8 }}>

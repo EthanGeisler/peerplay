@@ -2,19 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch, redirectToStripeOnboard } from "../api";
 import { useAuthStore } from "../stores/authStore";
-
-interface GameSummary {
-  id: string;
-  slug: string;
-  title: string;
-  status: string;
-  priceCents: number;
-  coverImageUrl: string | null;
-  versionsCount: number;
-  licensesCount: number;
-  salesCount: number;
-  createdAt: string;
-}
+import type { GameSummary } from "../types";
 
 const STATUS_COLORS: Record<string, string> = {
   DRAFT: "var(--text-muted)",

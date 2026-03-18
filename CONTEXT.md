@@ -250,7 +250,7 @@ The production environment runs on a Hetzner VPS. All services auto-start on boo
 **Project location on VPS:** `/opt/boilerdeck/`
 **Game files on VPS:** `/opt/boilerdeck/games/<game-slug>/` (created automatically by upload pipeline)
 **Upload temp dir:** `/opt/boilerdeck/games/.tmp/` (auto-created by multer on first upload)
-**Downloads dir:** `/opt/boilerdeck/downloads/` — contains `BoilerDeck Setup 0.1.0.exe` (91MB installer, served at `/downloads/`)
+**Downloads dir:** `/opt/boilerdeck/downloads/` — contains `BoilerDeck Setup 0.2.1.exe` (~90MB installer, served at `/downloads/`)
 **Torrent file on VPS:** Stored in DB as `Torrent.torrentFile` (Bytes column), no longer loose files
 **Nginx config:** `/etc/nginx/sites-available/boilerdeck`
 **Note:** PostgreSQL DB/user are still named `peerplay` — renaming would require a migration.
@@ -322,7 +322,7 @@ npm run dev:web       # runs on port 5173
 
 ## Games on the Platform
 
-**8 published games** as of 2026-03-17. All seeded from VPS Transmission daemon on `204.168.133.38:6881`. All games are distributed DRM-free.
+**8 published games** as of 2026-03-18. All seeded from VPS Transmission daemon on `204.168.133.38:6881`. All games are distributed DRM-free. 6 DRAFT duplicates cleaned up 2026-03-18.
 
 ### Original Games
 
@@ -356,7 +356,7 @@ npm run dev:web       # runs on port 5173
 
 All have cover images uploaded. All are free ($0).
 
-> **Note:** There are also 6 DRAFT duplicate games from an accidental double-run of the upload script. These are invisible to users (only PUBLISHED games appear in the store) but should be cleaned up via the dev portal.
+> **Note:** 6 DRAFT duplicates from an accidental double-run were cleaned up on 2026-03-18 (deleted versions, torrents, and game rows).
 
 ### Accounts on VPS (DB wiped 2026-03-17, only real accounts exist)
 - **Developer:** `eface` — uploaded all games via dev portal and scripts
@@ -467,11 +467,13 @@ git tag v0.x.x && git push origin v0.x.x
 The version in `client/package.json` (`"version": "0.2.0"`) controls the installer filename and auto-update version comparison. The git tag should match (e.g., `v0.2.0`). Bump both together.
 
 ### Current Release
-- **v0.2.0** — https://github.com/EthanGeisler/peerplay/releases/tag/v0.2.0
-- Published 2026-03-17, built via CI (GitHub Actions on `v0.2.0` tag push)
-- NSIS installer (90MB) + portable exe (89MB) + blockmap (delta updates)
+- **v0.2.1** — https://github.com/EthanGeisler/peerplay/releases/tag/v0.2.1
+- Published 2026-03-18, built via CI (GitHub Actions on `v0.2.1` tag push)
+- NSIS installer (~90MB) + portable exe (~89MB) + blockmap (delta updates)
 - Not code-signed (SmartScreen warning expected)
-- **v0.1.0** — https://github.com/EthanGeisler/peerplay/releases/tag/v0.1.0 (superseded, auto-update prompts users to v0.2.0)
+- Includes: Phase 1 identity system, DRM removal, mnemonic flows, Phase 2 event system, cover image fixes, Settings update UI
+- **v0.2.0** — superseded, auto-update prompts users to v0.2.1
+- **v0.1.0** — superseded
 
 ### Auto-Update (electron-updater) — fully working
 - **Main process** (`client/src/main/index.ts` `setupAutoUpdater()`): checks GitHub Releases on startup, auto-downloads in background. Forwards 5 events to renderer: `app:update-available`, `app:update-not-available`, `app:update-progress` (percent/speed/transferred/total), `app:update-downloaded`, `app:update-error`. Also has `app:check-for-update` IPC handler for manual checks.
@@ -485,7 +487,7 @@ The version in `client/package.json` (`"version": "0.2.0"`) controls the install
 ### Download Buttons (Web Storefront)
 - **Header button** (`web/src/App.tsx`): Green "Download for Windows" button, text hidden below 768px via CSS `.download-label` class
 - **Store page banner** (`web/src/pages/Store.tsx`): Full-width CTA banner below search bar, hidden during search, wraps on mobile via `flexWrap`
-- Both link to `/downloads/BoilerDeck%20Setup%200.2.0.exe` — served directly from VPS. nginx serves from `/opt/boilerdeck/downloads/` with `Content-Disposition: attachment`.
+- Both link to `/downloads/BoilerDeck%20Setup%200.2.1.exe` — served directly from VPS. nginx serves from `/opt/boilerdeck/downloads/` with `Content-Disposition: attachment`.
 
 ### Releasing a New Client Version (full process)
 ```bash
@@ -527,7 +529,67 @@ ssh root@204.168.133.38 "cd /opt/boilerdeck && git pull origin main && npx vite 
   5. `912f091` `Bump client version to 0.2.0 and update download links`
   6+ (earlier commits omitted — see `git log` for full history)
 - **Git identity:** `EthanGeisler` / `25466222+EthanGeisler@users.noreply.github.com`
-- **Tags:** `v0.1.0` (first release), `v0.2.0` (auto-update, bug fixes), `v0.2.1` (current release — Phase 1 identity, DRM removal, mnemonic flows)
+- **Tags:** `v0.1.0` (first release), `v0.2.0` (auto-update, bug fixes), `v0.2.1` (current release — Phase 1 identity, DRM removal, mnemonic flows, Phase 2 event system)
+
+---
+
+## URGENT: Uncommitted Refactoring (2026-03-18)
+
+**There are uncommitted local changes that need to be committed, pushed, and deployed.** All type-checks pass (server, web, dev-portal, client — zero errors). Changes have been reviewed by `@server-reviewer`.
+
+### What changed (not yet committed):
+
+1. **New package: `shared-ui/` (`@boilerdeck/ui-shared`)** — Shared API client core (token refresh, `apiFetch`, `ApiError`, `TokenStorage` adapter interface). Each frontend's `api.ts` is now a thin wrapper that provides a platform-specific `TokenStorage` (localStorage or IPC). Added to root `package.json` workspaces.
+
+2. **`handleZodError` extracted to `shared/src/errors.ts`** — Was duplicated in `auth/routes.ts`, `catalog/routes.ts`, `payment/routes.ts`. Now imported from `@boilerdeck/shared`.
+
+3. **`dev-portal/src/types.ts` created** — 10 interfaces extracted from inline definitions across authStore, GameEditor, GameDetail, Dashboard.
+
+4. **`catalog/src/service.ts` split** — Game CRUD stays in `service.ts` (365 lines), upload/zip processing moved to `upload.ts` (~210 lines). Routes import from both.
+
+5. **GameEditor component split (both dev-portal and client)** — Each ~880-line monolith split into 4 files: main page + `GameEditorForm` + `UploadManager` + `ExeDetector`. State stays in page, sub-components receive props.
+   - dev-portal: `dev-portal/src/components/{GameEditorForm,UploadManager,ExeDetector}.tsx`
+   - client: `client/src/renderer/components/developer/{GameEditorForm,UploadManager,ExeDetector}.tsx`
+
+6. **Phase 1 spec archived** — Detailed sub-task specs moved to `docs/Phase_1_Spec.md`. `DECENTRALIZATION_PLAN.md` has a compact summary.
+
+7. **Bug fixes caught by `@server-reviewer`:**
+   - Cover upload field name `"coverImage"` → `"cover"` in both GameEditor files (was silently failing)
+   - `dev-portal/src/api.ts` `apiUpload` retry: `.catch` on non-Promise replaced with try/catch
+   - `dev-portal/src/api.ts` `apiUpload` error parsing: added `body.error?.message` per server error shape convention
+
+8. **CONTEXT.md updates:** Marked DRM deploy, v0.2.1 release, DRAFT game cleanup as done. Updated release refs to v0.2.1.
+
+### To commit and deploy:
+
+```bash
+# Stage all changes
+git add shared-ui/ server/packages/catalog/src/upload.ts dev-portal/src/types.ts \
+  dev-portal/src/components/ client/src/renderer/components/developer/ docs/Phase_1_Spec.md \
+  CLAUDE.md CONTEXT.md DECENTRALIZATION_PLAN.md package.json package-lock.json \
+  web/package.json dev-portal/package.json client/package.json \
+  web/src/api.ts dev-portal/src/api.ts client/src/renderer/api.ts \
+  dev-portal/src/stores/authStore.ts dev-portal/src/pages/ \
+  client/src/renderer/pages/developer/DevGameEditor.tsx \
+  server/packages/shared/src/errors.ts server/packages/shared/src/index.ts \
+  server/packages/auth/src/routes.ts server/packages/catalog/src/routes.ts \
+  server/packages/catalog/src/service.ts server/packages/payment/src/routes.ts
+
+# Commit
+git commit -m "Refactor: extract shared API client, split large files, fix cover upload bug"
+
+# Push
+git push origin main
+
+# Deploy (server + both frontends changed)
+# @deploy or manually:
+ssh root@204.168.133.38 "cd /opt/boilerdeck && git stash --include-untracked 2>/dev/null; git pull origin main && npm install"
+ssh root@204.168.133.38 "cd /opt/boilerdeck && npx vite build web && npx vite build dev-portal"
+ssh root@204.168.133.38 "systemctl restart boilerdeck"
+curl -s https://boilerdeck.com/api/health
+```
+
+**After committing, delete this "URGENT" section** — it's only relevant until the changes are committed.
 
 ---
 
@@ -624,9 +686,9 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 - [x] Open-source game library — 6 free GPL games uploaded, cover images added, seeding on VPS (2026-03-17)
 - [x] Settings page manual update UI — check for updates button, progress bar, restart button (2026-03-17, in local build, needs v0.2.1 release)
 - [x] DRM system removed — platform distributes builds as-is, developers handle copy protection (2026-03-17)
-- [ ] Commit + deploy DRM removal to VPS (run migration, remove `DRM_MASTER_KEK` from .env, rebuild frontends, restart)
-- [ ] Cut v0.2.1 release — includes cover image fixes, Settings update UI, DRM removal, and other post-v0.2.0 fixes. Bump version, tag, CI build, SCP to VPS.
-- [ ] Clean up 6 DRAFT duplicate games from accidental double-upload (delete via dev portal)
+- [x] Commit + deploy DRM removal to VPS (run migration, remove `DRM_MASTER_KEK` from .env, rebuild frontends, restart) — done 2026-03-18
+- [x] Cut v0.2.1 release — includes cover image fixes, Settings update UI, DRM removal, Phase 1 identity, and other post-v0.2.0 fixes — done 2026-03-18
+- [x] Clean up 6 DRAFT duplicate games from accidental double-upload — deleted via DB 2026-03-18
 - [ ] Real cover art / screenshots for Player Character 01 (currently using placehold.co)
 - [ ] Real app icon for Electron client (currently a placeholder — `client/resources/icon.ico`)
 - [x] Electron client: fetch `.torrent` file from `/api/torrents/:gameId/latest/file` instead of using magnet URI — done 2026-03-17 (client fetches .torrent bytes, falls back to magnet)
@@ -707,7 +769,7 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 | Build workflow (Electron) | `.github/workflows/build-client.yml` |
 | Electron build config | `client/package.json` (`"build"` field) |
 | Electron app icon | `client/resources/icon.ico` (placeholder — replace with real branding) |
-| GitHub Release (current) | https://github.com/EthanGeisler/peerplay/releases/tag/v0.2.0 |
+| GitHub Release (current) | https://github.com/EthanGeisler/peerplay/releases/tag/v0.2.1 |
 | Auto-update UI component | `client/src/renderer/components/UpdateBanner.tsx` |
 | Auto-update main process | `client/src/main/index.ts` (`setupAutoUpdater()`) |
 | Electron client API client | `client/src/renderer/api.ts` |
