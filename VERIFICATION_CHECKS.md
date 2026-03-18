@@ -319,11 +319,11 @@
 
 ### 2.11 — Frontend types and API updates
 
-- [ ] `[CODE]` `web/src/types.ts` has `pubkey?: string` and `custodyMode?: string` on `ApiUser`
-- [ ] `[CODE]` `web/src/types.ts` has `eventId?: string` on `ApiGame` / `ApiGameDetail`
-- [ ] `[CODE]` `client/src/renderer/types.ts` has matching type changes
-- [ ] `[CODE]` An `Event` type is defined matching `{ id, pubkey, created_at, kind, tags, content, sig }`
-- [ ] `[AUTO]` `npx tsc --noEmit` exits 0 for both `web/` and `client/`
+- [x] `[CODE]` `web/src/types.ts` has `pubkey?: string` and `custodyMode?: string` on `ApiUser` ✓
+- [x] `[CODE]` `web/src/types.ts` has `eventId?: string` on `ApiGame` / `ApiGameDetail` ✓ eventId on ApiGame, pubkey on ApiGameDetail
+- [x] `[CODE]` `client/src/renderer/types.ts` has matching type changes ✓
+- [x] `[CODE]` An `Event` type is defined matching `{ id, pubkey, created_at, kind, tags, content, sig }` ✓ NostrEvent interface in both files
+- [x] `[AUTO]` `npx tsc --noEmit` exits 0 for both `web/` and `client/` ✓ Confirmed locally 2026-03-18
 
 ---
 
