@@ -26,6 +26,7 @@ const envSchema = z.object({
   TRANSMISSION_RPC_URL: z.string().default("http://127.0.0.1:9091/transmission/rpc"),
   SIGNING_CACHE_KEY: z.string().length(64).regex(/^[0-9a-f]+$/),
   EXTERNAL_RELAYS: z.string().default(""),
+  RELAY_ADMIN_PRIVKEY: z.string().regex(/^[0-9a-f]{64}$/).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

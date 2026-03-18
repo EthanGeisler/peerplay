@@ -16,7 +16,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Server as HttpServer } from "node:http";
-import { verifyEvent, materializeEvent } from "@boilerdeck/shared";
+import { verifyEvent, materializeEvent, redis } from "@boilerdeck/shared";
 import type { SignedEvent } from "@boilerdeck/shared";
 import { storeEvent, queryEvents } from "./service.js";
 import { federateOutbound, isImported } from "./federation.js";
@@ -45,6 +45,8 @@ const MAX_FILTER_VALUES = 1000;
 interface ConnectionState {
   id: string;
   subscriptions: Map<string, EventFilter[]>;
+  /** User ID associated with this connection (set via setConnectionUser). */
+  userId?: string;
 }
 
 /** All active connections, keyed by connection ID. */
@@ -271,7 +273,7 @@ async function handleEvent(
     sendOk(ws, event.id, true, "");
 
     // Fan out to all subscribers with matching filters
-    fanOutEvent(event);
+    await fanOutEvent(event);
 
     // Forward to external relays (skips imported events)
     federateOutbound(event);
@@ -299,11 +301,18 @@ function handleClose(
 
 /**
  * Push an event to all connections with a subscription that matches it.
+ * Checks mute lists: if the subscriber has muted the event's author, skip.
  * Exported for use by sign-and-publish and federation modules.
  */
-export function fanOutEvent(event: SignedEvent): void {
+export async function fanOutEvent(event: SignedEvent): Promise<void> {
   for (const [, { ws, state }] of connections) {
     if (ws.readyState !== WebSocket.OPEN) continue;
+
+    // Check if this subscriber has muted the event author
+    if (state.userId) {
+      const isMuted = await redis.sismember(`mute_list:${state.userId}`, event.pubkey);
+      if (isMuted) continue;
+    }
 
     for (const [subId, filters] of state.subscriptions) {
       for (const filter of filters) {
@@ -314,6 +323,24 @@ export function fanOutEvent(event: SignedEvent): void {
       }
     }
   }
+}
+
+/**
+ * Associate a WebSocket connection with a user ID for mute list filtering.
+ * Called when a user authenticates and connects via WebSocket.
+ */
+export function setConnectionUser(connId: string, userId: string): void {
+  const conn = connections.get(connId);
+  if (conn) {
+    conn.state.userId = userId;
+  }
+}
+
+/**
+ * Get all connection IDs (for external use).
+ */
+export function getConnectionIds(): string[] {
+  return Array.from(connections.keys());
 }
 
 // ─── Filter Matching ──────────────────────────────────────────────────────────

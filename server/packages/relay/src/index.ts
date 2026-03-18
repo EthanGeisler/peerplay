@@ -6,7 +6,7 @@ export type { DeleteResult } from "./service.js";
 export { relayRouter, nip11Router } from "./routes.js";
 
 // WebSocket
-export { attachRelayWebSocket, fanOutEvent } from "./ws.js";
+export { attachRelayWebSocket, fanOutEvent, setConnectionUser, getConnectionIds } from "./ws.js";
 
 // Crypto (re-exports for relay consumers)
 export {

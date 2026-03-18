@@ -1,5 +1,5 @@
 /**
- * Relay REST routes for event management, key management, and profiles.
+ * Relay REST routes for event management, key management, profiles, and moderation.
  *
  * Event routes:
  * - POST /events — submit a pre-signed event (authenticated, pubkey must match)
@@ -16,6 +16,12 @@
  * Profile routes:
  * - PUT /profiles/me — set/update profile (authenticated, creates kind 0 event)
  * - GET /profiles/:pubkey — get profile data from latest kind 0 event (public)
+ *
+ * Moderation routes:
+ * - POST /moderation/mute — mute a pubkey (authenticated)
+ * - DELETE /moderation/mute/:pubkey — unmute a pubkey (authenticated)
+ * - GET /moderation/mute — get mute list (authenticated)
+ * - POST /moderation/delete — admin delete event via kind 5 (authenticated, ADMIN only)
  */
 
 import * as nodeCrypto from "node:crypto";
@@ -23,10 +29,13 @@ import { Router } from "express";
 import { schnorr } from "@noble/curves/secp256k1.js";
 import {
   authenticate,
+  requireRole,
   verifyEvent,
+  createEvent,
   db,
   redis,
   getConfig,
+  AppError,
   ValidationError,
   ForbiddenError,
   NotFoundError,
@@ -35,10 +44,10 @@ import {
 } from "@boilerdeck/shared";
 import type { SignedEvent } from "@boilerdeck/shared";
 import { signEventForUser } from "@boilerdeck/auth";
-import { storeEvent, getEvent, queryEvents } from "./service.js";
+import { storeEvent, getEvent, queryEvents, deleteEvent } from "./service.js";
 import { fanOutEvent } from "./ws.js";
 import { federateOutbound, getExternalRelayUrls } from "./federation.js";
-import { KIND_PROFILE, KIND_TEXT_NOTE, KIND_REVIEW, KIND_FOLLOW_LIST } from "./kinds.js";
+import { KIND_PROFILE, KIND_TEXT_NOTE, KIND_REVIEW, KIND_FOLLOW_LIST, KIND_DELETION } from "./kinds.js";
 
 export const relayRouter = Router();
 
@@ -319,7 +328,7 @@ relayRouter.post("/events/sign-and-publish", authenticate, async (req, res, next
     }
 
     // Broadcast to WebSocket subscribers
-    fanOutEvent(event);
+    await fanOutEvent(event);
 
     // Forward to external relays
     federateOutbound(event);
@@ -394,7 +403,7 @@ relayRouter.put("/profiles/me", authenticate, async (req, res, next) => {
     await storeEvent(event);
 
     // Broadcast to WebSocket subscribers
-    fanOutEvent(event);
+    await fanOutEvent(event);
 
     // Forward to external relays
     federateOutbound(event);
@@ -511,7 +520,7 @@ relayRouter.post("/games/:slug/reviews", authenticate, async (req, res, next) =>
     await storeEvent(event);
 
     // Broadcast to WebSocket subscribers
-    fanOutEvent(event);
+    await fanOutEvent(event);
 
     // Forward to external relays
     federateOutbound(event);
@@ -698,7 +707,7 @@ relayRouter.post("/follows", authenticate, async (req, res, next) => {
     await storeEvent(event);
 
     // Broadcast + federate
-    fanOutEvent(event);
+    await fanOutEvent(event);
     federateOutbound(event);
 
     // Return updated follow list
@@ -800,7 +809,7 @@ relayRouter.delete("/follows/:pubkey", authenticate, async (req, res, next) => {
     await storeEvent(event);
 
     // Broadcast + federate
-    fanOutEvent(event);
+    await fanOutEvent(event);
     federateOutbound(event);
 
     // Return updated follow list
@@ -843,7 +852,7 @@ relayRouter.post("/events/:eventId/replies", authenticate, async (req, res, next
     await storeEvent(event);
 
     // Broadcast to WebSocket subscribers
-    fanOutEvent(event);
+    await fanOutEvent(event);
 
     // Forward to external relays
     federateOutbound(event);
@@ -959,6 +968,161 @@ relayRouter.get("/events/:eventId/replies", async (req, res, next) => {
     next(err);
   }
 });
+
+// ── POST /moderation/mute — mute a pubkey ────────────────────────────────────
+
+relayRouter.post("/moderation/mute", authenticate, async (req, res, next) => {
+  try {
+    const { pubkey: targetPubkey } = req.body;
+
+    // Validate target pubkey format (64-char hex)
+    if (
+      !targetPubkey ||
+      typeof targetPubkey !== "string" ||
+      targetPubkey.length !== 64 ||
+      !/^[0-9a-f]+$/i.test(targetPubkey)
+    ) {
+      throw new ValidationError("pubkey must be a 64-character hex string");
+    }
+
+    // Load user's pubkey to check self-mute
+    const user = await db.user.findUnique({
+      where: { id: req.user!.sub },
+      select: { nostrPubkey: true },
+    });
+
+    if (!user?.nostrPubkey) {
+      throw new UnauthorizedError(
+        "User has no cryptographic identity. Log in to generate a keypair.",
+      );
+    }
+
+    // Prevent self-mute
+    if (user.nostrPubkey.toLowerCase() === targetPubkey.toLowerCase()) {
+      throw new ValidationError("Cannot mute yourself");
+    }
+
+    // Add to mute list in Redis (set per userId)
+    await redis.sadd(`mute_list:${req.user!.sub}`, targetPubkey.toLowerCase());
+
+    // Return updated mute list
+    const mutedPubkeys = await redis.smembers(`mute_list:${req.user!.sub}`);
+    res.json({ muted: mutedPubkeys });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── DELETE /moderation/mute/:pubkey — unmute a pubkey ────────────────────────
+
+relayRouter.delete("/moderation/mute/:pubkey", authenticate, async (req, res, next) => {
+  try {
+    const targetPubkey = String(req.params.pubkey);
+
+    // Validate target pubkey format (64-char hex)
+    if (targetPubkey.length !== 64 || !/^[0-9a-f]+$/i.test(targetPubkey)) {
+      throw new ValidationError("pubkey must be a 64-character hex string");
+    }
+
+    // Remove from mute list in Redis
+    await redis.srem(`mute_list:${req.user!.sub}`, targetPubkey.toLowerCase());
+
+    // Return updated mute list
+    const mutedPubkeys = await redis.smembers(`mute_list:${req.user!.sub}`);
+    res.json({ muted: mutedPubkeys });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── GET /moderation/mute — get mute list ─────────────────────────────────────
+
+relayRouter.get("/moderation/mute", authenticate, async (req, res, next) => {
+  try {
+    const mutedPubkeys = await redis.smembers(`mute_list:${req.user!.sub}`);
+    res.json({ muted: mutedPubkeys });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── POST /moderation/delete — admin event deletion via kind 5 ────────────────
+
+relayRouter.post(
+  "/moderation/delete",
+  authenticate,
+  requireRole("ADMIN"),
+  async (req, res, next) => {
+    try {
+      const { eventId: targetEventId } = req.body;
+
+      // Validate target event ID
+      if (
+        !targetEventId ||
+        typeof targetEventId !== "string" ||
+        targetEventId.length !== 64 ||
+        !/^[0-9a-f]+$/i.test(targetEventId)
+      ) {
+        throw new ValidationError("eventId must be a 64-character hex string");
+      }
+
+      // Check that RELAY_ADMIN_PRIVKEY is configured
+      const config = getConfig();
+      if (!config.RELAY_ADMIN_PRIVKEY) {
+        throw new AppError(
+          503,
+          "Admin deletion not configured: RELAY_ADMIN_PRIVKEY env var is not set",
+          "NOT_CONFIGURED",
+        );
+      }
+
+      // Verify target event exists
+      const targetEvent = await getEvent(targetEventId);
+      if (!targetEvent) {
+        throw new NotFoundError("Event");
+      }
+
+      // Derive admin pubkey from RELAY_ADMIN_PRIVKEY
+      const adminPrivkeyBytes = Uint8Array.from(
+        Buffer.from(config.RELAY_ADMIN_PRIVKEY, "hex"),
+      );
+      const adminPubkeyBytes = schnorr.getPublicKey(adminPrivkeyBytes);
+      const adminPubkey = Buffer.from(adminPubkeyBytes).toString("hex");
+
+      // Create kind 5 deletion event signed by relay admin keypair
+      const deletionEvent = createEvent(
+        {
+          pubkey: adminPubkey,
+          created_at: Math.floor(Date.now() / 1000),
+          kind: KIND_DELETION,
+          tags: [["e", targetEventId]],
+          content: "Admin deletion",
+        },
+        adminPrivkeyBytes,
+      );
+
+      // Delete the target event from DB
+      await deleteEvent(targetEventId);
+
+      // Store the kind 5 deletion event
+      await storeEvent(deletionEvent);
+
+      // Fan out the deletion event to WS subscribers
+      await fanOutEvent(deletionEvent);
+
+      // Federate the kind 5 deletion event outbound
+      federateOutbound(deletionEvent);
+
+      res.json({
+        deleted: true,
+        targetEventId,
+        deletionEventId: deletionEvent.id,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // ── Relay info helper ───────────────────────────────────────────────────────
 

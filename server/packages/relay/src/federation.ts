@@ -312,7 +312,7 @@ async function handleInboundEvent(
     console.log(`[federation] Imported event ${event.id.substring(0, 16)}... (kind ${event.kind})`);
 
     // Fan out to local WebSocket subscribers
-    fanOutEvent(event);
+    await fanOutEvent(event);
   } catch (err) {
     console.error(`[federation] Error storing inbound event:`, err);
   }
