@@ -38,7 +38,7 @@ import { signEventForUser } from "@boilerdeck/auth";
 import { storeEvent, getEvent, queryEvents } from "./service.js";
 import { fanOutEvent } from "./ws.js";
 import { federateOutbound, getExternalRelayUrls } from "./federation.js";
-import { KIND_PROFILE, KIND_REVIEW } from "./kinds.js";
+import { KIND_PROFILE, KIND_REVIEW, KIND_FOLLOW_LIST } from "./kinds.js";
 
 export const relayRouter = Router();
 
@@ -624,6 +624,191 @@ relayRouter.get("/games/:slug/reviews", async (req, res, next) => {
       limit: clampedLimit,
       offset: clampedOffset,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── POST /follows — follow a user (add to kind 3 event) ─────────────────────
+
+relayRouter.post("/follows", authenticate, async (req, res, next) => {
+  try {
+    const { pubkey: targetPubkey } = req.body;
+
+    // Validate target pubkey
+    if (
+      !targetPubkey ||
+      typeof targetPubkey !== "string" ||
+      targetPubkey.length !== 64 ||
+      !/^[0-9a-f]+$/i.test(targetPubkey)
+    ) {
+      throw new ValidationError(
+        "pubkey must be a 64-character hex string",
+      );
+    }
+
+    // Load user's pubkey
+    const user = await db.user.findUnique({
+      where: { id: req.user!.sub },
+      select: { nostrPubkey: true },
+    });
+
+    if (!user?.nostrPubkey) {
+      throw new UnauthorizedError(
+        "User has no cryptographic identity. Log in to generate a keypair.",
+      );
+    }
+
+    // Prevent self-follow
+    if (user.nostrPubkey === targetPubkey.toLowerCase()) {
+      throw new ValidationError("Cannot follow yourself");
+    }
+
+    // Load existing kind 3 event for this user (if any)
+    const existingEvents = await queryEvents({
+      kinds: [KIND_FOLLOW_LIST],
+      authors: [user.nostrPubkey],
+      limit: 1,
+    });
+
+    // Build updated tags from existing event + new follow
+    let tags: string[][] = [];
+    if (existingEvents.length > 0) {
+      tags = existingEvents[0]!.tags.filter(
+        (t) => t[0] === "p" && typeof t[1] === "string" && t[1].length > 0,
+      );
+    }
+
+    // Add target if not already present
+    const alreadyFollowing = tags.some(
+      (t) => t[1]?.toLowerCase() === targetPubkey.toLowerCase(),
+    );
+    if (!alreadyFollowing) {
+      tags.push(["p", targetPubkey.toLowerCase()]);
+    }
+
+    // Create new kind 3 event with updated tags
+    const event = await signEventForUser(req.user!.sub, {
+      kind: KIND_FOLLOW_LIST,
+      tags,
+      content: "",
+    });
+
+    // Store event (replaceable — replaces existing kind 3 for this pubkey)
+    await storeEvent(event);
+
+    // Broadcast + federate
+    fanOutEvent(event);
+    federateOutbound(event);
+
+    // Return updated follow list
+    const follows = tags
+      .filter((t) => t[0] === "p")
+      .map((t) => t[1]!);
+
+    res.json({ follows });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── GET /follows/:pubkey — get follow list for a user ────────────────────────
+
+relayRouter.get("/follows/:pubkey", async (req, res, next) => {
+  try {
+    const { pubkey } = req.params;
+
+    // Validate pubkey format (64-char hex)
+    if (!pubkey || pubkey.length !== 64 || !/^[0-9a-f]+$/i.test(pubkey)) {
+      throw new ValidationError("pubkey must be a 64-character hex string");
+    }
+
+    // Query latest kind 3 event for this pubkey
+    const events = await queryEvents({
+      kinds: [KIND_FOLLOW_LIST],
+      authors: [pubkey],
+      limit: 1,
+    });
+
+    // Return empty list if no kind 3 event exists (not 404)
+    if (events.length === 0) {
+      res.json({ follows: [] });
+      return;
+    }
+
+    // Extract followed pubkeys from p tags
+    const follows = events[0]!.tags
+      .filter((t) => t[0] === "p" && typeof t[1] === "string" && t[1].length > 0)
+      .map((t) => t[1]!);
+
+    res.json({ follows });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── DELETE /follows/:pubkey — unfollow a user ────────────────────────────────
+
+relayRouter.delete("/follows/:pubkey", authenticate, async (req, res, next) => {
+  try {
+    const targetPubkey = String(req.params.pubkey);
+
+    // Validate target pubkey format
+    if (targetPubkey.length !== 64 || !/^[0-9a-f]+$/i.test(targetPubkey)) {
+      throw new ValidationError("pubkey must be a 64-character hex string");
+    }
+
+    // Load user's pubkey
+    const user = await db.user.findUnique({
+      where: { id: req.user!.sub },
+      select: { nostrPubkey: true },
+    });
+
+    if (!user?.nostrPubkey) {
+      throw new UnauthorizedError(
+        "User has no cryptographic identity. Log in to generate a keypair.",
+      );
+    }
+
+    // Load existing kind 3 event for this user
+    const existingEvents = await queryEvents({
+      kinds: [KIND_FOLLOW_LIST],
+      authors: [user.nostrPubkey],
+      limit: 1,
+    });
+
+    // Build updated tags without the target pubkey
+    let tags: string[][] = [];
+    if (existingEvents.length > 0) {
+      tags = existingEvents[0]!.tags.filter(
+        (t) =>
+          t[0] === "p" &&
+          typeof t[1] === "string" &&
+          t[1].length > 0 &&
+          t[1].toLowerCase() !== targetPubkey.toLowerCase(),
+      );
+    }
+
+    // Create new kind 3 event with updated tags (even if empty — replaces old)
+    const event = await signEventForUser(req.user!.sub, {
+      kind: KIND_FOLLOW_LIST,
+      tags,
+      content: "",
+    });
+
+    // Store event (replaceable)
+    await storeEvent(event);
+
+    // Broadcast + federate
+    fanOutEvent(event);
+    federateOutbound(event);
+
+    // Return updated follow list
+    const follows = tags
+      .filter((t) => t[0] === "p")
+      .map((t) => t[1]!);
+
+    res.json({ follows });
   } catch (err) {
     next(err);
   }
