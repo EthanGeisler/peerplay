@@ -67,7 +67,12 @@
       "node_modules/webtorrent/**",
       "node_modules/utp-native/**",
       "node_modules/bufferutil/**/*.node",
-      "node_modules/utf-8-validate/**/*.node"
+      "node_modules/utf-8-validate/**/*.node",
+      "node_modules/socks-proxy-agent/**",
+      "node_modules/agent-base/**",
+      "node_modules/socks/**",
+      "node_modules/smart-buffer/**",
+      "node_modules/ws/**"
     ],
     "win": {
       "target": [
