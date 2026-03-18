@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Check the conversation: did Claude write or edit code files (via Edit or Write tools) in this session? If yes, check whether ALL of the following post-implementation steps were completed:\n\n1. @server-reviewer and/or @frontend-reviewer (depending on what changed)\n2. @verify <sub-task-id> (if working on a decentralization sub-task)\n3. git commit\n4. git push\n5. Deploy to VPS (@deploy or manual SSH)\n\nIf code was written/edited but any of these steps were skipped, respond with:\n\"STOP: Post-implementation workflow incomplete. Still need: [list missing steps]. Run these before ending.\"\n\nIf no code was written, or all steps were completed, respond with nothing (empty)."
+          }
+        ]
+      }
+    ]
+  }
+}

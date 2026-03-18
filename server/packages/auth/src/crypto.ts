@@ -1,5 +1,5 @@
 /**
- * Cryptographic utilities for Nostr-compatible keypair identity.
+ * Cryptographic utilities for Nostr-compatible keypair identity (Phase 1.2).
  *
  * Curve: secp256k1 (Schnorr signatures, NIP-01)
  * Key derivation: BIP39 mnemonic → BIP32 HD key → NIP-06 path m/44'/1237'/0'/0/0
