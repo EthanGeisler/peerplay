@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 import crypto from "node:crypto";
 import { db, redis, getConfig, ConflictError, UnauthorizedError, NotFoundError, ValidationError } from "@boilerdeck/shared";
 import type { JwtPayload } from "@boilerdeck/shared";
-import type { RegisterInput, LoginInput, PubkeyLoginInput } from "./schemas.js";
+import type { RegisterInput, LoginInput, PubkeyLoginInput, ChangePasswordInput } from "./schemas.js";
 import { generateKeypair, encryptPrivateKey, encryptMnemonic, decryptPrivateKey, decryptMnemonic, schnorrVerify, pubkeyHex, pubkeyToNpub, privkeyToNsec } from "./crypto.js";
 
 const SALT_ROUNDS = 12;
@@ -351,6 +351,52 @@ export async function switchCustody(userId: string, password: string) {
     message: "Switched to self-custody mode. This is irreversible — the server no longer holds your private key.",
     warning: "If you have not exported your keys, you will lose access to your cryptographic identity.",
   };
+}
+
+export async function changePassword(userId: string, input: ChangePasswordInput) {
+  const user = await db.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    throw new UnauthorizedError("User not found");
+  }
+
+  const valid = await bcrypt.compare(input.currentPassword, user.passwordHash);
+  if (!valid) {
+    throw new UnauthorizedError("Invalid current password");
+  }
+
+  const newPasswordHash = await bcrypt.hash(input.newPassword, SALT_ROUNDS);
+
+  // Re-encrypt private key and mnemonic with new password (custodial users only)
+  let newEncryptedNsec: string | null = null;
+  let newEncryptedMnemonic: string | null = null;
+
+  if (user.encryptedNsec) {
+    const privateKey = decryptPrivateKey(user.encryptedNsec, input.currentPassword);
+    newEncryptedNsec = encryptPrivateKey(privateKey, input.newPassword);
+  }
+
+  if (user.encryptedMnemonic) {
+    const mnemonic = decryptMnemonic(user.encryptedMnemonic, input.currentPassword);
+    newEncryptedMnemonic = encryptMnemonic(mnemonic, input.newPassword);
+  }
+
+  // Update password hash and re-encrypted keys
+  await db.user.update({
+    where: { id: userId },
+    data: {
+      passwordHash: newPasswordHash,
+      ...(newEncryptedNsec !== null ? { encryptedNsec: newEncryptedNsec } : {}),
+      ...(newEncryptedMnemonic !== null ? { encryptedMnemonic: newEncryptedMnemonic } : {}),
+    },
+  });
+
+  // Invalidate all refresh tokens (force re-login on all devices)
+  await db.refreshToken.deleteMany({ where: { userId } });
+
+  // Clear cached signing key from Redis
+  await redis.del(`signing_key:${userId}`);
+
+  return { message: "Password changed successfully" };
 }
 
 export async function getMe(userId: string) {
