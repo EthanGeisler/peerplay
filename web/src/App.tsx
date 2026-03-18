@@ -7,6 +7,7 @@ import { About } from "./pages/About";
 import { Login } from "./pages/Login";
 import { CheckoutSuccess } from "./pages/CheckoutSuccess";
 import { CheckoutCancel } from "./pages/CheckoutCancel";
+import { Profile } from "./pages/Profile";
 import { useAuthStore } from "./stores/authStore";
 
 const NAV_ITEMS = [
@@ -188,6 +189,7 @@ export function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/checkout/success" element={<CheckoutSuccess />} />
           <Route path="/checkout/cancel" element={<CheckoutCancel />} />
+          <Route path="/profile/:pubkey" element={<Profile />} />
         </Routes>
       </main>
 

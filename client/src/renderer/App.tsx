@@ -8,6 +8,7 @@ import { Login } from "./pages/Login";
 import { GameDetail } from "./pages/GameDetail";
 import { useAuthStore } from "./stores/authStore";
 import { UpdateBanner } from "./components/UpdateBanner";
+import { Profile } from "./pages/Profile";
 import { SetupDeveloper, DevDashboard, DevGameDetail, DevGameEditor } from "./pages/developer";
 
 const NAV_ITEMS = [
@@ -238,6 +239,7 @@ export function App() {
           <Route path="/developer/games/new" element={<DevGameEditor />} />
           <Route path="/developer/games/:id" element={<DevGameDetail />} />
           <Route path="/developer/games/:id/edit" element={<DevGameEditor />} />
+          <Route path="/profile/:pubkey" element={<Profile />} />
           <Route
             path="*"
             element={

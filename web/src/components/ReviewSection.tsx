@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { Link } from "react-router-dom";
 import { apiFetch } from "../api";
 import type { ApiReview, ApiReviewsResponse } from "../types";
 
@@ -116,7 +117,8 @@ export function ReviewSection({ slug, refreshKey }: { slug: string; refreshKey?:
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span
+              <Link
+                to={`/profile/${review.pubkey}`}
                 style={{
                   fontSize: 12,
                   color: "var(--text-muted)",
@@ -124,10 +126,14 @@ export function ReviewSection({ slug, refreshKey }: { slug: string; refreshKey?:
                   backgroundColor: "var(--bg-primary)",
                   padding: "2px 6px",
                   borderRadius: "var(--radius)",
+                  textDecoration: "none",
+                  transition: "color 0.15s",
                 }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "var(--accent)")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-muted)")}
               >
                 {truncatePubkey(review.pubkey)}
-              </span>
+              </Link>
               <StarRating rating={review.rating} size={14} />
             </div>
             <span style={{ fontSize: 12, color: "var(--text-muted)" }}>

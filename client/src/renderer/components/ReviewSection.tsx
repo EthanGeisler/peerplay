@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api";
 import type { ApiReview, ApiReviewsResponse } from "../types";
 
@@ -116,6 +117,7 @@ const sectionStyles = {
 };
 
 export function ReviewSection({ slug, refreshKey }: { slug: string; refreshKey?: number }) {
+  const navigate = useNavigate();
   const [reviews, setReviews] = useState<ApiReview[]>([]);
   const [averageRating, setAverageRating] = useState(0);
   const [reviewCount, setReviewCount] = useState(0);
@@ -184,7 +186,17 @@ export function ReviewSection({ slug, refreshKey }: { slug: string; refreshKey?:
         <div key={review.eventId} style={sectionStyles.card}>
           <div style={sectionStyles.cardHeader}>
             <div style={sectionStyles.cardAuthorRow}>
-              <span style={sectionStyles.pubkey}>{truncatePubkey(review.pubkey)}</span>
+              <span
+                style={{ ...sectionStyles.pubkey, cursor: "pointer", transition: "color 0.15s" }}
+                onClick={() => navigate(`/profile/${review.pubkey}`)}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "#e94560")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "#888")}
+                role="link"
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === "Enter") navigate(`/profile/${review.pubkey}`); }}
+              >
+                {truncatePubkey(review.pubkey)}
+              </span>
               <StarRating rating={review.rating} size={14} />
             </div>
             <span style={sectionStyles.timestamp}>{formatTimestamp(review.created_at)}</span>
