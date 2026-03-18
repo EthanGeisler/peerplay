@@ -1,7 +1,7 @@
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { authenticate, ValidationError } from "@boilerdeck/shared";
-import { registerSchema, loginSchema, recoverMnemonicSchema, pubkeyLoginSchema } from "./schemas.js";
+import { registerSchema, loginSchema, recoverMnemonicSchema, pubkeyLoginSchema, exportKeysSchema, switchCustodySchema } from "./schemas.js";
 import * as authService from "./service.js";
 import { ZodError } from "zod";
 
@@ -110,6 +110,36 @@ authRouter.post("/recover-mnemonic", authenticate, async (req, res, next) => {
       handleZodError(err);
     }
     const result = await authService.recoverMnemonic(req.user!.sub, input.password);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+authRouter.post("/export-keys", authenticate, async (req, res, next) => {
+  try {
+    let input;
+    try {
+      input = exportKeysSchema.parse(req.body);
+    } catch (err) {
+      handleZodError(err);
+    }
+    const result = await authService.exportKeys(req.user!.sub, input.password);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+authRouter.post("/switch-custody", authenticate, async (req, res, next) => {
+  try {
+    let input;
+    try {
+      input = switchCustodySchema.parse(req.body);
+    } catch (err) {
+      handleZodError(err);
+    }
+    const result = await authService.switchCustody(req.user!.sub, input.password);
     res.json(result);
   } catch (err) {
     next(err);

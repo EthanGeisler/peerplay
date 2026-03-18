@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import { db, redis, getConfig, ConflictError, UnauthorizedError, NotFoundError, ValidationError } from "@boilerdeck/shared";
 import type { JwtPayload } from "@boilerdeck/shared";
 import type { RegisterInput, LoginInput, PubkeyLoginInput } from "./schemas.js";
-import { generateKeypair, encryptPrivateKey, encryptMnemonic, decryptPrivateKey, decryptMnemonic, schnorrVerify, pubkeyHex } from "./crypto.js";
+import { generateKeypair, encryptPrivateKey, encryptMnemonic, decryptPrivateKey, decryptMnemonic, schnorrVerify, pubkeyHex, pubkeyToNpub, privkeyToNsec } from "./crypto.js";
 
 const SALT_ROUNDS = 12;
 
@@ -290,6 +290,66 @@ export async function loginWithPubkey(input: PubkeyLoginInput) {
     user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, nostrPubkey: user.nostrPubkey },
     accessToken,
     refreshToken,
+  };
+}
+
+export async function exportKeys(userId: string, password: string) {
+  const user = await db.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    throw new UnauthorizedError("User not found");
+  }
+
+  if (user.custodyMode === "SELF_CUSTODY" || !user.encryptedNsec) {
+    throw new ValidationError("No keys to export — self-custody users already hold their own keys");
+  }
+
+  const valid = await bcrypt.compare(password, user.passwordHash);
+  if (!valid) {
+    throw new UnauthorizedError("Invalid password");
+  }
+
+  const privateKey = decryptPrivateKey(user.encryptedNsec, password);
+  const pubkey = new Uint8Array(Buffer.from(user.nostrPubkey!, "hex"));
+
+  return {
+    privateKey: Buffer.from(privateKey).toString("hex"),
+    nsec: privkeyToNsec(privateKey),
+    pubkey: user.nostrPubkey!,
+    npub: pubkeyToNpub(pubkey),
+  };
+}
+
+export async function switchCustody(userId: string, password: string) {
+  const user = await db.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    throw new UnauthorizedError("User not found");
+  }
+
+  if (user.custodyMode === "SELF_CUSTODY") {
+    throw new ValidationError("Already in self-custody mode");
+  }
+
+  const valid = await bcrypt.compare(password, user.passwordHash);
+  if (!valid) {
+    throw new UnauthorizedError("Invalid password");
+  }
+
+  // Delete encrypted keys from DB
+  await db.user.update({
+    where: { id: userId },
+    data: {
+      encryptedNsec: null,
+      encryptedMnemonic: null,
+      custodyMode: "SELF_CUSTODY",
+    },
+  });
+
+  // Delete cached signing key from Redis
+  await redis.del(`signing_key:${userId}`);
+
+  return {
+    message: "Switched to self-custody mode. This is irreversible — the server no longer holds your private key.",
+    warning: "If you have not exported your keys, you will lose access to your cryptographic identity.",
   };
 }
 

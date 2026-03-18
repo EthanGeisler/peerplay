@@ -22,6 +22,15 @@ export const pubkeyLoginSchema = z.object({
   signature: z.string().length(128).regex(/^[0-9a-f]+$/),
 });
 
+export const exportKeysSchema = z.object({
+  password: z.string(),
+});
+
+export const switchCustodySchema = z.object({
+  mode: z.literal("SELF_CUSTODY"),
+  password: z.string(),
+});
+
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RecoverMnemonicInput = z.infer<typeof recoverMnemonicSchema>;
