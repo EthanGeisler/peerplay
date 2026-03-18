@@ -550,8 +550,8 @@ ssh root@204.168.133.38 "cd /opt/boilerdeck && git pull origin main && npx vite 
 | 1.8 | Key export + custody switch | DONE | `4f20e9e` |
 | 1.9 | Frontend: mnemonic modal on registration (web) | DONE | `3faf876` |
 | 1.10 | Frontend: mnemonic modal on login migration (web) | DONE | `84f90a0` |
-| 1.11 | Electron client: mnemonic flow | **NEXT** | — |
-| 1.12 | Electron client: client-side keypair generation | Not started | — |
+| 1.11 | Electron client: mnemonic flow | DONE | `dede4dd` |
+| 1.12 | Electron client: client-side keypair generation | **NEXT** | — |
 | 1.13 | Password change flow | Not started | — |
 
 ### Implementation Workflow
