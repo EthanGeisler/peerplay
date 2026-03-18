@@ -126,6 +126,7 @@ function LibraryCard({ license }: { license: ApiLicense }) {
         gameId: game.id,
         title: game.title,
         downloadPath,
+        developerPubkey: detail?.pubkey ?? undefined,
         meta: {
           gameId: game.id,
           title: game.title,

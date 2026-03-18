@@ -1,4 +1,5 @@
 import type { BrowserWindow } from "electron";
+import { publishAttestation } from "./attestation.js";
 
 // Lazy-import WebTorrent to avoid top-level-await ESM issues when loaded
 // via require() (e.g., Playwright's Electron launcher injects a -r flag).
@@ -20,6 +21,8 @@ interface ActiveDownload {
   title: string;
   infoHash: string;
   downloadPath: string;
+  developerPubkey?: string;
+  startedAt: number; // Unix timestamp in seconds (for duration calculation)
 }
 
 let client: any | null = null;
@@ -80,6 +83,7 @@ export interface StartDownloadOpts {
   gameId: string;
   title: string;
   downloadPath: string;
+  developerPubkey?: string;
 }
 
 export async function startDownload(opts: StartDownloadOpts): Promise<{ success: boolean; infoHash: string }> {
@@ -99,6 +103,8 @@ export async function startDownload(opts: StartDownloadOpts): Promise<{ success:
         title: opts.title,
         infoHash: torrent.infoHash,
         downloadPath: opts.downloadPath,
+        developerPubkey: opts.developerPubkey,
+        startedAt: Math.floor(Date.now() / 1000),
       });
       startProgressBroadcast();
       resolve({ success: true, infoHash: torrent.infoHash });
@@ -120,6 +126,23 @@ export async function startDownload(opts: StartDownloadOpts): Promise<{ success:
           downloadPath: meta.downloadPath,
         });
       }
+
+      // Auto-generate attestation event (best-effort, never blocks download)
+      if (meta?.developerPubkey) {
+        const durationSeconds = Math.floor(Date.now() / 1000) - meta.startedAt;
+        const bytesDownloaded = torrent.downloaded || torrent.length || 0;
+        publishAttestation({
+          infoHash: torrent.infoHash,
+          bytesDownloaded,
+          durationSeconds,
+          developerPubkey: meta.developerPubkey,
+        }).catch((err: unknown) => {
+          console.warn("[torrent] Attestation generation failed (non-fatal):", err instanceof Error ? err.message : err);
+        });
+      } else {
+        console.log("[torrent] No developer pubkey available — skipping attestation");
+      }
+
       // Release file handles so the exe can be launched
       activeDownloads.delete(torrent.infoHash);
       torrent.destroy({ destroyStore: false });

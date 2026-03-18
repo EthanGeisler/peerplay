@@ -120,6 +120,7 @@ contextBridge.exposeInMainWorld("boilerdeck", {
       gameId: string;
       title: string;
       downloadPath: string;
+      developerPubkey?: string;
     }): Promise<{ success: boolean; infoHash?: string }> =>
       ipcRenderer.invoke("downloads:start", opts),
     pauseDownload: (infoHash: string): Promise<{ success: boolean }> =>
@@ -220,6 +221,7 @@ declare global {
           gameId: string;
           title: string;
           downloadPath: string;
+          developerPubkey?: string;
         }) => Promise<{ success: boolean; infoHash?: string }>;
         pauseDownload: (infoHash: string) => Promise<{ success: boolean }>;
         resumeDownload: (infoHash: string) => Promise<{ success: boolean }>;

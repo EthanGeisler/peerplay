@@ -24,6 +24,7 @@ interface DownloadState {
     gameId: string;
     title: string;
     downloadPath: string;
+    developerPubkey?: string;
     meta: DownloadMeta;
   }) => Promise<void>;
   pauseDownload: (infoHash: string) => Promise<void>;
@@ -46,6 +47,7 @@ export const useDownloadStore = create<DownloadState>((set, get) => ({
       gameId: opts.gameId,
       title: opts.title,
       downloadPath: opts.downloadPath,
+      developerPubkey: opts.developerPubkey,
     });
     if (result.success && result.infoHash) {
       const downloads = new Map(get().downloads);

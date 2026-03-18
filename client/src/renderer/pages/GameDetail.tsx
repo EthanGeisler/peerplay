@@ -212,6 +212,7 @@ export function GameDetail() {
         gameId: game.id,
         title: game.title,
         downloadPath,
+        developerPubkey: game.pubkey ?? undefined,
         meta: {
           gameId: game.id,
           title: game.title,
