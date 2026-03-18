@@ -425,9 +425,9 @@
 
 ### 3.10 — Relay Discovery Endpoint
 
-- [ ] `[AUTO]` **REST info:** `GET /api/relay/info` returns JSON with `relay_url`, `name`, `description`, `supported_nips`, `version`
-- [ ] `[AUTO]` **NIP-11:** HTTP GET to `/relay` with `Accept: application/nostr+json` header returns relay info document (not WebSocket upgrade)
-- [ ] `[CODE]` External relays list included in info response
+- [x] `[AUTO]` **REST info:** `GET /api/relay/info` returns JSON with `relay_url`, `name`, `description`, `supported_nips`, `version`
+- [x] `[AUTO]` **NIP-11:** HTTP GET to `/relay` with `Accept: application/nostr+json` header returns relay info document (not WebSocket upgrade)
+- [x] `[CODE]` External relays list included in info response
 
 ---
 
