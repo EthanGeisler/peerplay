@@ -586,7 +586,13 @@ See `CLAUDE.md` for updated conventions reflecting these changes.
 | 3.2 | Relay: Prisma schema compound index | DONE | `88bdfd5` |
 | 3.3 | Relay: package skeleton (service + routes) | DONE | `88bdfd5` |
 | 3.4 | WebSocket relay endpoint | DONE | `e562fd4` |
-| 3.5 | Keypair generation + key management | **NEXT** | — |
+| 3.5 | Key management endpoints | DONE | `46df7e8` |
+| 3.6 | Sign-and-publish + WS broadcast | DONE | `abe878c` |
+| 3.7 | Electron relay connection manager | DONE | `2f5d55e` |
+| 3.8 | External relay federation (outbound) | DONE | `2248cd6` |
+| 3.9 | External relay federation (inbound) | DONE | `2248cd6` |
+| 3.10 | Relay discovery + NIP-11 | DONE | `3e99211` |
+| 4.1 | Event kind definitions and validation | **NEXT** | — |
 
 ### Implementation Workflow
 
@@ -618,9 +624,9 @@ These are in `server/packages/auth/package.json`. See `docs/handoff/1.1.md` for 
 - `@scure/bip39` ^2.0.1 — BIP39 mnemonic generation (12-word recovery phrases)
 - `@scure/base` ^2.0.0 — Hex/bech32 encoding (npub/nsec)
 
-### Phase 3 In Progress — What's Built So Far
+### Phase 3 COMPLETE — Relay Infrastructure
 
-Phase 3 is COMPLETE (3.1-3.10). The `@boilerdeck/relay` package includes:
+The `@boilerdeck/relay` package (1282 lines across 7 files) includes:
 - **crypto.ts** — re-exports from shared + auth (no duplication)
 - **types.ts** — NIP-01 protocol message types (ClientMessage, RelayMessage, Subscription, EventFilter)
 - **service.ts** — wraps shared eventStore + adds `deleteEvent`

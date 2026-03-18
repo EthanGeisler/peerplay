@@ -17,7 +17,7 @@ If any step fails, fix the issue and retry. Do not skip steps. Do not ask the us
 
 ## Project Structure
 - `server/` — Node.js + TypeScript backend monorepo (Express, Prisma, PostgreSQL)
-- `server/packages/` — Modular service packages (auth, catalog, license, payment, saves, torrent, shared)
+- `server/packages/` — Modular service packages (auth, catalog, license, payment, saves, torrent, shared, relay)
 - `server/prisma/` — Database schema and migrations
 - `shared-ui/` — Shared frontend package (`@boilerdeck/ui-shared`) — API client core (token refresh, apiFetch, ApiError)
 - `client/` — Electron + React desktop app (Vite, zustand, WebTorrent)
@@ -54,6 +54,21 @@ If any step fails, fix the issue and retry. Do not skip steps. Do not ask the us
 - **`GET /api/licenses` returns `{ licenses: [...] }`** — not a bare array. Always unwrap `data.licenses` and add `Array.isArray()` guard before calling array methods.
 - **No DRM enforcement:** BoilerDeck distributes game builds as-is. There is no DRM system — developers handle their own copy protection before uploading. The license package only tracks ownership (who bought what). See CONTEXT.md "Copy Protection Philosophy" for details.
 - **Nostr identity system (Phase 1 complete):** Every user has a secp256k1 keypair. Crypto module at `server/packages/auth/src/crypto.ts`. Pubkeys are immutable. Custodial users have encrypted privkey/mnemonic in DB (AES-256-GCM, format `v1:salt:nonce:tag:ciphertext`). Self-custody users only have pubkey stored. Signing keys cached in Redis encrypted with `SIGNING_CACHE_KEY`. See memory file `boilerdeck_decentralization.md` for full architecture summary.
+
+## Relay Package Conventions (`server/packages/relay/`)
+- **Package:** `@boilerdeck/relay` — owns ALL event-related endpoints and the WebSocket relay
+- **WebSocket path:** `/relay` — NIP-01 protocol (REQ/EVENT/CLOSE → EVENT/EOSE/OK/NOTICE)
+- **Live relay:** `wss://boilerdeck.com/relay` (nginx proxies with `Upgrade` headers, 24h timeout)
+- **`fanOutEvent(event)`** is exported from `ws.ts` — call it when publishing events from REST endpoints (e.g., sign-and-publish) so WS subscribers get them
+- **`federateOutbound(event)`** is called automatically in ws.ts EVENT handler — also call from REST publish paths if federation should include REST-published events
+- **`isImported(eventId)`** prevents re-federation of imported events (loop prevention)
+- **`initFederation()`** called in `server/src/index.ts` at startup — reads `EXTERNAL_RELAYS` env var (comma-separated WSS URLs)
+- **NIP-11:** `GET /relay` with `Accept: application/nostr+json` returns relay info (handled by `nip11Router` mounted before error handler)
+- **Key management routes:** `GET /api/relay/me/keys` (export), `POST /api/relay/me/import-key` (import) — both authenticated
+- **Sign-and-publish:** `POST /api/events/sign-and-publish` — server signs with user's Redis-cached key, stores, fans out, federates
+- **Subscription limits:** Max 20 per connection, max sub ID 128 chars, max 10 filters per REQ
+- **Message limits:** 1MB max WebSocket frame, 1MB max event content, 1000 max tags
+- **Filter matching supports:** `ids` (prefix), `authors` (prefix), `kinds`, `since`, `until`, `#e`, `#p` tag filters — DB handles basic fields, in-memory handles tag/id/author prefix matching
 
 ## Electron Client Conventions
 - **IPC handlers** go in `client/src/main/index.ts` `setupIpcHandlers()` — namespaced like `store:get`, `downloads:start`, `games:launch`
