@@ -52,6 +52,28 @@ declare global {
         onNotice: (callback: (data: { message: string }) => void) => void;
         removeListeners: () => void;
       };
+      privacy: {
+        getSettings: () => Promise<{
+          mode: "off" | "tor" | "socks5";
+          socksHost: string;
+          socksPort: number;
+          socksUsername?: string;
+          socksPassword?: string;
+          routeApiTraffic: boolean;
+          routeTorrentTraffic: boolean;
+        }>;
+        saveSettings: (settings: {
+          mode: "off" | "tor" | "socks5";
+          socksHost: string;
+          socksPort: number;
+          socksUsername?: string;
+          socksPassword?: string;
+          routeApiTraffic: boolean;
+          routeTorrentTraffic: boolean;
+        }) => Promise<{ success: boolean }>;
+        getStatus: () => Promise<{ mode: string; proxyActive: boolean }>;
+        testConnection: () => Promise<{ success: boolean; error?: string }>;
+      };
       shell: {
         openExternal: (url: string) => Promise<void>;
       };

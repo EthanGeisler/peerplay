@@ -513,52 +513,92 @@ Client also has: InstalledGame, DownloadProgress, Dev* types
 
 ## Phase 6: Privacy Layer
 
-**Goal:** Tor/SOCKS5 support in Electron client. No server changes needed.
+**Goal:** IP privacy in the Electron client via SOCKS5 proxy support (for VPN providers like PIA, Mullvad, NordVPN) and optional Tor for lightweight API traffic. No server changes needed.
+
+**Key design decision:** Tor is viable for small API requests (auth, browsing, social) but **not viable for game downloads** — Tor relays cap at ~1-5 MB/s, many exit nodes block BitTorrent, and the Tor Project explicitly discourages torrenting. For torrent privacy, users should use a VPN provider's SOCKS5 proxy (full speed, single hop to datacenter). The UI enforces this: Tor mode only routes API traffic; torrent routing requires Custom SOCKS5.
+
+### Two privacy modes
+
+| Mode | API traffic | Torrent traffic | Use case |
+|------|------------|-----------------|----------|
+| **Tor (built-in)** | Through Tor (port 9150) | Direct (not proxied) | Hide identity from BoilerDeck server. Lightweight. |
+| **Custom SOCKS5** | Through user's proxy | Through user's proxy (optional) | Full privacy via VPN provider (PIA, Mullvad, etc.). Full speed. |
 
 ### 6.1 — Privacy settings store schema and IPC
-- `StoreData` interface includes `privacySettings: { enabled, mode, socksHost, socksPort, routeApiTraffic, routeTorrentTraffic }`
+- `StoreData` interface includes `privacySettings`:
+  ```ts
+  {
+    mode: "off" | "tor" | "socks5",   // "off" = no proxy (default)
+    socksHost: string,                 // Custom SOCKS5 host (e.g., "proxy-nl.privateinternetaccess.com")
+    socksPort: number,                 // Custom SOCKS5 port (e.g., 1080)
+    socksUsername?: string,            // Optional SOCKS5 auth username
+    socksPassword?: string,            // Optional SOCKS5 auth password
+    routeApiTraffic: boolean,          // Route API calls through proxy (default: true when mode != "off")
+    routeTorrentTraffic: boolean       // Route torrent downloads through proxy (only available in socks5 mode)
+  }
+  ```
 - `"privacySettings"` in `STORE_KEY_WHITELIST`
-- IPC channels: `privacy:get-status`, `privacy:test-connection`
+- IPC channels: `privacy:get-settings`, `privacy:save-settings`, `privacy:get-status`, `privacy:test-connection`
 - Preload bridge and `env.d.ts` updated
 - **Test:** Store round-trip for privacy settings
 
 ### 6.2 — SOCKS5 proxy module for HTTP traffic
-- **File:** `client/src/main/proxyManager.ts` — `getProxyAgent`, `testProxyConnection`
-- Uses `socks-proxy-agent` package
+- **File:** `client/src/main/proxyManager.ts` — `getProxyAgent(settings)`, `testProxyConnection(settings)`
+- Uses `socks-proxy-agent` package (supports SOCKS5 with optional username/password auth)
+- `getProxyAgent` returns an `http.Agent` configured for the active proxy (Tor on `127.0.0.1:9150` or custom SOCKS5)
+- `testProxyConnection` attempts a test request (e.g., fetch `https://boilerdeck.com/api/health`) through the proxy and returns `{ success, latencyMs, ip? }` or `{ success: false, error }`
 - `privacy:test-connection` IPC handler wired up
-- **Test:** Valid proxy → success. Invalid proxy → failure (not crash).
+- **Test:** Valid proxy → success with latency. Invalid proxy → failure (not crash).
 
 ### 6.3 — Route API traffic through proxy
-- IPC channel `api:proxied-fetch` in main process
-- Preload exposes `window.boilerdeck.api.fetch`
-- Renderer's `apiFetch` checks privacy mode, routes through IPC when enabled
-- **Test:** Privacy on → API calls through proxy. Privacy off → direct.
+- IPC channel `api:proxied-fetch` in main process — accepts `{ url, method, headers, body }`, performs fetch through proxy agent, returns response
+- Preload exposes `window.boilerdeck.api.proxiedFetch`
+- Renderer's `apiFetch` checks privacy settings: if `mode !== "off"` and `routeApiTraffic === true`, routes through IPC `api:proxied-fetch`; otherwise direct fetch
+- Works with both Tor and Custom SOCKS5 modes
+- **Test:** Privacy on → API calls through proxy (verify external IP differs). Privacy off → direct.
 
 ### 6.4 — Route BitTorrent traffic through SOCKS5
-- `torrentManager.ts` accepts privacy config, disables `dht`, `lsd`, `webSeeds` in privacy mode
-- Warning about reduced speed in code/UI
-- **Test:** Privacy mode download completes. No DHT when privacy enabled.
+- **Only available in Custom SOCKS5 mode** — greyed out / disabled when mode is "tor" or "off"
+- `torrentManager.ts` accepts privacy config: when `routeTorrentTraffic === true` and mode is `socks5`:
+  - Passes SOCKS5 proxy config to WebTorrent client options
+  - Disables `dht`, `lsd`, `webSeeds` (leak real IP via UDP)
+  - Tracker announces go through the proxy
+- UI shows info text: "Torrent downloads will use your SOCKS5 proxy. Speed depends on your provider."
+- When mode is "tor": UI shows disabled checkbox with tooltip "Tor is too slow for game downloads — use a SOCKS5 proxy from your VPN provider instead"
+- **Test:** SOCKS5 mode + torrent routing on → download completes through proxy. No DHT/LSD when enabled.
 
 ### 6.5 — Tor binary bundling and management
-- **File:** `client/src/main/torManager.ts` — `startTor`, `stopTor`, `isTorRunning`, `getTorStatus`
-- `electron-builder` config includes `tor.exe` as `extraResource`
-- Graceful shutdown on `app.on("before-quit")`
-- Tor data directory in app userData (not temp)
-- **Test:** Set mode to "tor" → Tor spawns, SOCKS5 port 9150 reachable. Stop → port closed.
+- **File:** `client/src/main/torManager.ts` — `startTor()`, `stopTor()`, `isTorRunning()`, `getTorStatus()`
+- Uses **Tor Expert Bundle** (smaller than full Tor Browser, ~15 MB) — `tor.exe` + essential DLLs
+- `electron-builder` config includes Tor files as `extraResources`
+- `startTor()` spawns `tor.exe` with `SocksPort 9150`, `DataDirectory` in app userData
+- Parses Tor bootstrap progress from stdout (0-100%)
+- `getTorStatus()` returns `{ running, bootstrapProgress, socksPort }`
+- Graceful shutdown: `stopTor()` sends SIGTERM, called on `app.on("before-quit")`
+- Tor data directory in `app.getPath("userData")/tor-data/` (persists circuit state across sessions)
+- **Test:** Set mode to "tor" → Tor spawns, bootstrap reaches 100%, SOCKS5 port 9150 reachable. `stopTor()` → port closed.
 
 ### 6.6 — Privacy settings UI page
 - Settings page "Privacy & Network" section
-- Toggle for Private Mode, radio group (Tor/Custom SOCKS5/Off)
-- Custom SOCKS5 shows host/port fields
-- "Route API traffic" and "Route torrent traffic" checkboxes
-- "Test Connection" button with status indicator
-- Tor bootstrap progress display
-- **Test:** Toggle on/off → settings persist across restart
+- **Mode selector** (radio group):
+  - **Off** (default) — all traffic direct
+  - **Tor (built-in)** — shows Tor bootstrap progress bar, auto-starts `tor.exe`
+  - **Custom SOCKS5** — shows host, port, username, password fields
+- **Traffic routing checkboxes:**
+  - "Route API traffic through proxy" — enabled for both Tor and SOCKS5 modes, default checked
+  - "Route game downloads through proxy" — **only enabled in SOCKS5 mode**; disabled with tooltip in Tor mode ("Tor is too slow for game downloads")
+- **"Test Connection" button** — shows spinner → result: success (latency + exit IP) or failure (error message)
+- **Tor status display** — when Tor mode active: bootstrap progress bar (0-100%), "Connected" / "Connecting..." / "Error" status, circuit info
+- **Info box** — brief explainer: "Tor hides your identity from the BoilerDeck server. For private game downloads, use a VPN provider's SOCKS5 proxy (PIA, Mullvad, NordVPN, etc.) for full-speed downloads."
+- **Test:** Toggle modes → settings persist across restart. Tor mode starts/stops tor.exe. SOCKS5 fields validate.
 
 ### 6.7 — Gateway .onion endpoint documentation
-- `ONION_ADDRESS` config option in server config
-- `docs/privacy.md` with Tor hidden service setup instructions
-- Client uses `.onion` address when in Tor mode (if configured)
+- `ONION_ADDRESS` config option in server config (optional, no server code changes needed)
+- `docs/privacy.md` with:
+  - How to set up a Tor hidden service pointing at the BoilerDeck API (for server operators)
+  - How the client auto-detects and uses `.onion` address when in Tor mode
+  - Privacy guarantees and limitations (API metadata vs torrent IP)
+- Client: when Tor mode active and `ONION_ADDRESS` is configured in relay info, API base URL switches to `.onion` address (end-to-end Tor, no exit node needed for API calls)
 
 ---
 

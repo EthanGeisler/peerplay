@@ -7,6 +7,24 @@ import * as path from "path";
  * Stores: refresh token, install directory, installed games registry, settings.
  */
 
+export interface PrivacySettings {
+  mode: "off" | "tor" | "socks5";
+  socksHost: string;
+  socksPort: number;
+  socksUsername?: string;
+  socksPassword?: string;
+  routeApiTraffic: boolean;
+  routeTorrentTraffic: boolean;
+}
+
+export const DEFAULT_PRIVACY_SETTINGS: PrivacySettings = {
+  mode: "off",
+  socksHost: "",
+  socksPort: 1080,
+  routeApiTraffic: false,
+  routeTorrentTraffic: false,
+};
+
 interface StoreData {
   refreshToken?: string;
   installDir?: string;
@@ -18,6 +36,7 @@ interface StoreData {
   selfCustodyKey?: string;
   relayPrivkey?: string;
   relayPubkey?: string;
+  privacySettings?: PrivacySettings;
 }
 
 interface InstalledGameEntry {
@@ -42,6 +61,7 @@ export const STORE_KEY_WHITELIST = new Set([
   "selfCustodyKey",
   "relayPrivkey",
   "relayPubkey",
+  "privacySettings",
 ]);
 
 export function isAllowedStoreKey(key: string): boolean {

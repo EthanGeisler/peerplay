@@ -598,69 +598,79 @@
 
 ### 6.1 — Privacy settings store schema and IPC
 
-- [ ] `[CODE]` `StoreData` interface includes `privacySettings: { enabled, mode, socksHost, socksPort, routeApiTraffic, routeTorrentTraffic }`
+- [ ] `[CODE]` `StoreData` interface includes `privacySettings` with fields: `mode` ("off"/"tor"/"socks5"), `socksHost`, `socksPort`, `socksUsername?`, `socksPassword?`, `routeApiTraffic`, `routeTorrentTraffic`
 - [ ] `[CODE]` `"privacySettings"` in `STORE_KEY_WHITELIST`
-- [ ] `[CODE]` IPC channels `privacy:get-status`, `privacy:test-connection` in main process
-- [ ] `[CODE]` Preload bridge and `env.d.ts` updated with privacy IPC
+- [ ] `[CODE]` IPC channels `privacy:get-settings`, `privacy:save-settings`, `privacy:get-status`, `privacy:test-connection` in main process
+- [ ] `[CODE]` Preload bridge and `env.d.ts` updated with all privacy IPC channels
 - [ ] `[AUTO]` **Store round-trip:** Write privacy settings via IPC → read back → matches
+- [ ] `[CODE]` Default `mode` is `"off"` — no proxy until user explicitly enables
 
 ### 6.2 — SOCKS5 proxy module for HTTP traffic
 
 - [ ] `[CODE]` `client/src/main/proxyManager.ts` exists and exports `getProxyAgent`, `testProxyConnection`
-- [ ] `[CODE]` Uses `socks-proxy-agent` package
-- [ ] `[AUTO]` **Test connection:** With a valid SOCKS5 proxy configured, `testProxyConnection` returns success
-- [ ] `[AUTO]` **Test connection failure:** With invalid proxy, `testProxyConnection` returns failure (not crash)
+- [ ] `[CODE]` Uses `socks-proxy-agent` package (supports username/password auth)
+- [ ] `[CODE]` `getProxyAgent` handles both Tor (`127.0.0.1:9150`) and custom SOCKS5 (user-provided host/port/credentials)
+- [ ] `[AUTO]` **Test connection success:** With a valid SOCKS5 proxy configured, `testProxyConnection` returns `{ success: true, latencyMs, ip? }`
+- [ ] `[AUTO]` **Test connection failure:** With invalid proxy, `testProxyConnection` returns `{ success: false, error }` (not crash)
 - [ ] `[CODE]` `privacy:test-connection` IPC handler wired up
 
 ### 6.3 — Route API traffic through proxy
 
-- [ ] `[CODE]` IPC channel `api:proxied-fetch` exists in main process
-- [ ] `[CODE]` Preload bridge exposes `window.boilerdeck.api.fetch`
-- [ ] `[CODE]` Renderer's `apiFetch` checks privacy mode and routes through IPC when enabled
+- [ ] `[CODE]` IPC channel `api:proxied-fetch` exists in main process — accepts `{ url, method, headers, body }`, returns response
+- [ ] `[CODE]` Preload bridge exposes `window.boilerdeck.api.proxiedFetch`
+- [ ] `[CODE]` Renderer's `apiFetch` checks privacy settings: if `mode !== "off"` and `routeApiTraffic === true`, routes through IPC
+- [ ] `[CODE]` Works with both Tor and Custom SOCKS5 modes
 - [ ] `[AUTO]` **Proxied request:** Enable privacy mode → API call succeeds through proxy
 - [ ] `[AUTO]` **Direct request still works:** Privacy mode off → API calls go directly (no proxy)
 
 ### 6.4 — Route BitTorrent traffic through SOCKS5
 
-- [ ] `[CODE]` `torrentManager.ts` accepts privacy config and disables `dht`, `lsd`, `webSeeds` when privacy mode on
-- [ ] `[AUTO]` **Privacy mode download:** Enable torrent privacy → download completes (possibly slower)
-- [ ] `[AUTO]` **No DHT in privacy mode:** When privacy mode enabled, verify DHT is disabled (no UDP traffic)
-- [ ] `[CODE]` Warning about reduced speed documented in code/UI
+- [ ] `[CODE]` `torrentManager.ts` accepts privacy config
+- [ ] `[CODE]` **Only activates when mode is `"socks5"` and `routeTorrentTraffic === true`** — never routes torrents through Tor
+- [ ] `[CODE]` When active: passes SOCKS5 proxy to WebTorrent, disables `dht`, `lsd`, `webSeeds` (these leak real IP via UDP)
+- [ ] `[AUTO]` **SOCKS5 torrent download:** Enable SOCKS5 + torrent routing → download completes through proxy
+- [ ] `[AUTO]` **No DHT in privacy mode:** When torrent routing enabled, verify DHT is disabled
+- [ ] `[CODE]` UI shows "Tor is too slow for game downloads — use a SOCKS5 proxy from your VPN provider instead" when Tor mode selected and torrent checkbox is disabled/greyed
 
 ### 6.5 — Tor binary bundling and management
 
 - [ ] `[CODE]` `client/src/main/torManager.ts` exists with `startTor`, `stopTor`, `isTorRunning`, `getTorStatus`
-- [ ] `[CODE]` `electron-builder` config includes `tor.exe` as `extraResource`
-- [ ] `[AUTO]` **Tor starts:** Set mode to "tor" → Tor process spawns and SOCKS5 port 9150 becomes reachable
+- [ ] `[CODE]` Uses Tor Expert Bundle (~15 MB), not full Tor Browser
+- [ ] `[CODE]` `electron-builder` config includes Tor files as `extraResources`
+- [ ] `[CODE]` `startTor()` spawns `tor.exe` with `SocksPort 9150`, parses bootstrap progress from stdout (0-100%)
+- [ ] `[CODE]` `getTorStatus()` returns `{ running, bootstrapProgress, socksPort }`
+- [ ] `[AUTO]` **Tor starts:** Set mode to "tor" → Tor process spawns, bootstrap reaches 100%, SOCKS5 port 9150 reachable
 - [ ] `[AUTO]` **Tor stops:** `stopTor()` → process terminated, port no longer listening
 - [ ] `[CODE]` Graceful shutdown on `app.on("before-quit")`
-- [ ] `[CODE]` Tor data directory in app userData (not temp)
+- [ ] `[CODE]` Tor data directory in `app.getPath("userData")/tor-data/` (not temp)
 
 ### 6.6 — Privacy Settings UI page
 
 - [ ] `[CODE]` Settings page has "Privacy & Network" section
-- [ ] `[CODE]` Toggle for Private Mode (on/off)
-- [ ] `[CODE]` Radio group: "Tor (built-in)" / "Custom SOCKS5" / "Off"
-- [ ] `[CODE]` Custom SOCKS5 shows host/port fields
-- [ ] `[CODE]` "Route API traffic" and "Route torrent traffic" checkboxes
-- [ ] `[CODE]` "Test Connection" button with status indicator
-- [ ] `[CODE]` Tor bootstrap progress display
-- [ ] `[MANUAL]` Toggle privacy on/off → settings persist across restart
+- [ ] `[CODE]` **Mode selector** (radio group): Off / Tor (built-in) / Custom SOCKS5
+- [ ] `[CODE]` Custom SOCKS5 mode shows host, port, username, password fields
+- [ ] `[CODE]` "Route API traffic through proxy" checkbox — enabled for both Tor and SOCKS5
+- [ ] `[CODE]` "Route game downloads through proxy" checkbox — **only enabled in SOCKS5 mode**; disabled with tooltip in Tor mode
+- [ ] `[CODE]` "Test Connection" button with spinner → result: success (latency + exit IP) or failure (error message)
+- [ ] `[CODE]` Tor bootstrap progress bar (0-100%) and status ("Connected" / "Connecting..." / "Error") when Tor mode active
+- [ ] `[CODE]` Info box explaining Tor vs SOCKS5 trade-offs
+- [ ] `[MANUAL]` Toggle modes → settings persist across restart. Tor mode starts/stops `tor.exe`. SOCKS5 fields validate.
 
 ### 6.7 — Gateway .onion endpoint documentation
 
-- [ ] `[CODE]` `ONION_ADDRESS` config option added to server config schema
-- [ ] `[CODE]` `docs/privacy.md` exists with Tor hidden service setup instructions
-- [ ] `[CODE]` Client uses `.onion` address when in Tor mode (if configured)
+- [ ] `[CODE]` `ONION_ADDRESS` config option added to server config schema (optional, no server code changes)
+- [ ] `[CODE]` `docs/privacy.md` exists with Tor hidden service setup instructions and privacy guarantees/limitations
+- [ ] `[CODE]` Client uses `.onion` address for API base URL when in Tor mode and relay info includes `onionAddress`
 
 ---
 
 ## Phase 6 — Gate Check
 
-- [ ] `[AUTO]` API traffic can be routed through SOCKS5/Tor proxy
-- [ ] `[AUTO]` Torrent downloads work in privacy mode (with DHT disabled)
-- [ ] `[AUTO]` Tor binary bundles and starts/stops correctly
-- [ ] `[MANUAL]` Settings UI fully functional
+- [ ] `[AUTO]` API traffic can be routed through Tor proxy (port 9150)
+- [ ] `[AUTO]` API traffic can be routed through custom SOCKS5 proxy
+- [ ] `[AUTO]` Torrent downloads work through custom SOCKS5 (with DHT disabled) — NOT through Tor
+- [ ] `[AUTO]` Tor binary bundles, starts, bootstraps to 100%, and stops correctly
+- [ ] `[MANUAL]` Settings UI: mode switching, field visibility, checkbox enable/disable logic, test connection, persistence
 
 ---
 

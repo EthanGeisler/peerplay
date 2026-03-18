@@ -94,6 +94,31 @@ contextBridge.exposeInMainWorld("boilerdeck", {
     },
   },
 
+  privacy: {
+    getSettings: (): Promise<{
+      mode: "off" | "tor" | "socks5";
+      socksHost: string;
+      socksPort: number;
+      socksUsername?: string;
+      socksPassword?: string;
+      routeApiTraffic: boolean;
+      routeTorrentTraffic: boolean;
+    }> => ipcRenderer.invoke("privacy:get-settings"),
+    saveSettings: (settings: {
+      mode: "off" | "tor" | "socks5";
+      socksHost: string;
+      socksPort: number;
+      socksUsername?: string;
+      socksPassword?: string;
+      routeApiTraffic: boolean;
+      routeTorrentTraffic: boolean;
+    }): Promise<{ success: boolean }> => ipcRenderer.invoke("privacy:save-settings", settings),
+    getStatus: (): Promise<{ mode: string; proxyActive: boolean }> =>
+      ipcRenderer.invoke("privacy:get-status"),
+    testConnection: (): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke("privacy:test-connection"),
+  },
+
   shell: {
     openExternal: (url: string): Promise<void> =>
       ipcRenderer.invoke("shell:open-external", url),
@@ -202,6 +227,28 @@ declare global {
         onOk: (callback: (data: { eventId: string; success: boolean; message: string }) => void) => void;
         onNotice: (callback: (data: { message: string }) => void) => void;
         removeListeners: () => void;
+      };
+      privacy: {
+        getSettings: () => Promise<{
+          mode: "off" | "tor" | "socks5";
+          socksHost: string;
+          socksPort: number;
+          socksUsername?: string;
+          socksPassword?: string;
+          routeApiTraffic: boolean;
+          routeTorrentTraffic: boolean;
+        }>;
+        saveSettings: (settings: {
+          mode: "off" | "tor" | "socks5";
+          socksHost: string;
+          socksPort: number;
+          socksUsername?: string;
+          socksPassword?: string;
+          routeApiTraffic: boolean;
+          routeTorrentTraffic: boolean;
+        }) => Promise<{ success: boolean }>;
+        getStatus: () => Promise<{ mode: string; proxyActive: boolean }>;
+        testConnection: () => Promise<{ success: boolean; error?: string }>;
       };
       shell: {
         openExternal: (url: string) => Promise<void>;

@@ -1,7 +1,8 @@
 import { app, BrowserWindow, ipcMain, shell, dialog, safeStorage } from "electron";
 import * as path from "path";
 import { autoUpdater } from "electron-updater";
-import { initStore, storeGet, storeSet, storeDelete, getDefaultInstallDir, isAllowedStoreKey } from "./store.js";
+import { initStore, storeGet, storeSet, storeDelete, getDefaultInstallDir, isAllowedStoreKey, DEFAULT_PRIVACY_SETTINGS } from "./store.js";
+import type { PrivacySettings } from "./store.js";
 import * as torrentManager from "./torrentManager.js";
 import * as gameLauncher from "./gameLauncher.js";
 import * as relayManager from "./relayManager.js";
@@ -285,6 +286,31 @@ function setupIpcHandlers(): void {
 
   ipcMain.handle("relay:status", () => {
     return relayManager.getStatus();
+  });
+
+  // --- Privacy ---
+  ipcMain.handle("privacy:get-settings", () => {
+    const stored = storeGet("privacySettings") as PrivacySettings | null;
+    return stored ?? DEFAULT_PRIVACY_SETTINGS;
+  });
+
+  ipcMain.handle("privacy:save-settings", (_event, settings: PrivacySettings) => {
+    storeSet("privacySettings", settings);
+    return { success: true };
+  });
+
+  ipcMain.handle("privacy:get-status", () => {
+    const stored = storeGet("privacySettings") as PrivacySettings | null;
+    const settings = stored ?? DEFAULT_PRIVACY_SETTINGS;
+    return {
+      mode: settings.mode,
+      proxyActive: settings.mode !== "off",
+    };
+  });
+
+  ipcMain.handle("privacy:test-connection", async () => {
+    // Placeholder — will be wired to proxyManager in 6.2
+    return { success: false, error: "Not implemented yet — proxy manager not available until 6.2" };
   });
 
   // --- Auto-update ---
