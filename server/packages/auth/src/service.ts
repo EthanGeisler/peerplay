@@ -407,9 +407,18 @@ export async function getMe(userId: string) {
       email: true,
       displayName: true,
       role: true,
+      nostrPubkey: true,
+      custodyMode: true,
       createdAt: true,
       developer: { select: { id: true, studioName: true, stripeOnboarded: true } },
     },
   });
-  return user;
+  if (!user) return user;
+  // Return pubkey and custodyMode as separate fields for API compatibility
+  return {
+    ...user,
+    pubkey: user.nostrPubkey ?? null,
+    custodyMode: user.custodyMode,
+    nostrPubkey: undefined, // Don't expose internal field name
+  };
 }

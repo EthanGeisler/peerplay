@@ -54,6 +54,7 @@ export async function listPublishedGames(page: number, limit: number, search?: s
         description: true,
         priceCents: true,
         coverImageUrl: true,
+        eventId: true,
         developer: {
           select: { studioName: true },
         },
@@ -73,6 +74,7 @@ export async function listPublishedGames(page: number, limit: number, search?: s
       description: g.description,
       priceCents: g.priceCents,
       coverImageUrl: g.coverImageUrl,
+      eventId: g.eventId ?? null,
       studioName: g.developer.studioName,
     })),
     total,
@@ -86,7 +88,7 @@ export async function getGameBySlug(slug: string) {
   const game = await db.game.findUnique({
     where: { slug },
     include: {
-      developer: { select: { studioName: true } },
+      developer: { select: { studioName: true, user: { select: { nostrPubkey: true } } } },
       versions: {
         where: { status: "READY" },
         orderBy: { createdAt: "desc" },
@@ -115,7 +117,9 @@ export async function getGameBySlug(slug: string) {
     coverImageUrl: game.coverImageUrl,
     screenshots: game.screenshots,
     exePath: game.exePath,
+    eventId: game.eventId ?? null,
     studioName: game.developer.studioName,
+    pubkey: game.developer.user?.nostrPubkey ?? null,
     latestVersion: game.versions[0]
       ? {
           ...game.versions[0],
