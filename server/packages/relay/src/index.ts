@@ -46,6 +46,10 @@ export type { ValidationResult } from "./kinds.js";
 // Async attestation validation
 export { validateAttestationAsync } from "./attestationValidation.js";
 
+// Reputation aggregation
+export { getReputation } from "./reputation.js";
+export type { ReputationScore } from "./reputation.js";
+
 // Types
 export type {
   RelayEvent,

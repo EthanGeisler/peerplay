@@ -49,6 +49,7 @@ import { fanOutEvent } from "./ws.js";
 import { federateOutbound, getExternalRelayUrls } from "./federation.js";
 import { KIND_PROFILE, KIND_TEXT_NOTE, KIND_REVIEW, KIND_FOLLOW_LIST, KIND_DELETION, KIND_ATTESTATION, validateEventKind } from "./kinds.js";
 import { validateAttestationAsync } from "./attestationValidation.js";
+import { getReputation } from "./reputation.js";
 
 export const relayRouter = Router();
 
@@ -1148,6 +1149,24 @@ relayRouter.post(
     }
   },
 );
+
+// ── GET /reputation/:pubkey — seeder reputation score ─────────────────────────
+
+relayRouter.get("/reputation/:pubkey", async (req, res, next) => {
+  try {
+    const { pubkey } = req.params;
+
+    // Validate pubkey format (64-char hex)
+    if (!pubkey || pubkey.length !== 64 || !/^[0-9a-f]+$/i.test(pubkey)) {
+      throw new ValidationError("pubkey must be a 64-character hex string");
+    }
+
+    const reputation = await getReputation(pubkey.toLowerCase());
+    res.json(reputation);
+  } catch (err) {
+    next(err);
+  }
+});
 
 // ── Relay info helper ───────────────────────────────────────────────────────
 
