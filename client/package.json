@@ -53,6 +53,7 @@
     "files": [
       "dist/**/*",
       "node_modules/**/*",
+      "!node_modules/@boilerdeck/**",
       "package.json"
     ],
     "extraResources": [
