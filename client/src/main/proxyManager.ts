@@ -1,6 +1,5 @@
 import { SocksProxyAgent } from "socks-proxy-agent";
 import * as https from "node:https";
-import * as http from "node:http";
 import type { PrivacySettings } from "./store.js";
 
 const TOR_PROXY_URL = "socks5h://127.0.0.1:9150";
@@ -11,7 +10,7 @@ const TEST_TIMEOUT_MS = 10_000;
  * Returns an http.Agent configured for the active proxy, or undefined if off.
  * Uses socks5h:// so DNS resolves through the proxy (important for Tor).
  */
-export function getProxyAgent(settings: PrivacySettings): http.Agent | undefined {
+export function getProxyAgent(settings: PrivacySettings): SocksProxyAgent | undefined {
   if (settings.mode === "off") {
     return undefined;
   }
@@ -57,7 +56,7 @@ export async function testProxyConnection(settings: PrivacySettings): Promise<Te
     return { success: false, error: "Proxy mode is off — nothing to test" };
   }
 
-  let agent: http.Agent;
+  let agent: SocksProxyAgent;
   try {
     const maybeAgent = getProxyAgent(settings);
     if (!maybeAgent) {
