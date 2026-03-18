@@ -1190,6 +1190,14 @@ relayRouter.get("/followers/:pubkey", async (req, res, next) => {
 
     const targetPubkey = pubkey.toLowerCase();
 
+    // Check Redis cache (15 min TTL, same as reputation)
+    const cacheKey = `followers:${targetPubkey}`;
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      res.json(JSON.parse(cached));
+      return;
+    }
+
     // Query all kind 3 (follow list) events, filter for those containing target in p tags
     const allFollowEvents = await db.event.findMany({
       where: { kind: KIND_FOLLOW_LIST },
@@ -1207,7 +1215,9 @@ relayRouter.get("/followers/:pubkey", async (req, res, next) => {
       }
     }
 
-    res.json({ followers });
+    const result = { followers };
+    await redis.set(cacheKey, JSON.stringify(result), "EX", 900); // 15 min
+    res.json(result);
   } catch (err) {
     next(err);
   }

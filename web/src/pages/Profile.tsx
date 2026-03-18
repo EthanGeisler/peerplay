@@ -47,7 +47,6 @@ export function Profile() {
 
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [follows, setFollows] = useState<string[]>([]);
   const [followers, setFollowers] = useState<string[]>([]);
   const [isFollowing, setIsFollowing] = useState(false);
@@ -76,11 +75,17 @@ export function Profile() {
   const currentUserPubkey = user?.pubkey || user?.nostrPubkey;
   const isOwnProfile = currentUserPubkey && pubkey ? currentUserPubkey === pubkey : false;
 
+  // Guard ref to prevent stale fetches from updating state for a different pubkey
+  const activePubkeyRef = useRef(pubkey);
+  useEffect(() => {
+    activePubkeyRef.current = pubkey;
+  }, [pubkey]);
+
   // Fetch profile data
   useEffect(() => {
     if (!pubkey) return;
     setLoading(true);
-    setError(null);
+    profileCache.current.clear();
     // Reset tab state
     setReviewsLoaded(false);
     setPostsLoaded(false);
@@ -128,17 +133,18 @@ export function Profile() {
       .catch(() => setIsMuted(false));
   }, [user, pubkey, isOwnProfile]);
 
-  // Lazy-load tab data
+  // Lazy-load tab data (guarded against stale pubkey)
   useEffect(() => {
     if (!pubkey) return;
+    const currentPk = pubkey;
 
     if (activeTab === "reviews" && !reviewsLoaded) {
       apiFetch<NostrEvent[]>(`/events?kinds=31337&authors=${pubkey}`)
         .then((events) => {
+          if (activePubkeyRef.current !== currentPk) return;
           const arr = Array.isArray(events) ? events : [];
           setReviews(arr);
           setReviewsLoaded(true);
-          // Resolve game titles from slugs
           const slugs = new Set<string>();
           for (const ev of arr) {
             const dTag = (ev.tags as string[][]).find((t) => t[0] === "d");
@@ -158,38 +164,41 @@ export function Profile() {
             }
           }
         })
-        .catch(() => setReviewsLoaded(true));
+        .catch(() => { if (activePubkeyRef.current === currentPk) setReviewsLoaded(true); });
     }
 
     if (activeTab === "posts" && !postsLoaded) {
       apiFetch<NostrEvent[]>(`/events?kinds=1&authors=${pubkey}&limit=50`)
         .then((events) => {
+          if (activePubkeyRef.current !== currentPk) return;
           setPosts(Array.isArray(events) ? events : []);
           setPostsLoaded(true);
         })
-        .catch(() => setPostsLoaded(true));
+        .catch(() => { if (activePubkeyRef.current === currentPk) setPostsLoaded(true); });
     }
 
     if (activeTab === "following" && !followingLoaded) {
       apiFetch<{ follows: string[] }>(`/follows/${pubkey}`)
         .then((data) => {
+          if (activePubkeyRef.current !== currentPk) return;
           const list = data.follows || [];
           setFollows(list);
           setFollowingLoaded(true);
           resolveProfiles(list);
         })
-        .catch(() => setFollowingLoaded(true));
+        .catch(() => { if (activePubkeyRef.current === currentPk) setFollowingLoaded(true); });
     }
 
     if (activeTab === "followers" && !followersLoaded) {
       apiFetch<{ followers: string[] }>(`/followers/${pubkey}`)
         .then((data) => {
+          if (activePubkeyRef.current !== currentPk) return;
           const list = data.followers || [];
           setFollowers(list);
           setFollowersLoaded(true);
           resolveProfiles(list);
         })
-        .catch(() => setFollowersLoaded(true));
+        .catch(() => { if (activePubkeyRef.current === currentPk) setFollowersLoaded(true); });
     }
   }, [activeTab, pubkey, reviewsLoaded, postsLoaded, followingLoaded, followersLoaded]);
 
@@ -269,28 +278,6 @@ export function Profile() {
     return (
       <div style={{ textAlign: "center", padding: "80px 0", color: "var(--text-secondary)" }}>
         Loading...
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div style={{ textAlign: "center", padding: "80px 0" }}>
-        <h2 style={{ fontSize: 24, marginBottom: 12 }}>Profile not found</h2>
-        <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>{error}</p>
-        <button
-          onClick={() => navigate("/")}
-          style={{
-            padding: "8px 20px",
-            borderRadius: "var(--radius)",
-            backgroundColor: "var(--accent)",
-            color: "#fff",
-            fontSize: 14,
-            fontWeight: 600,
-          }}
-        >
-          Back to Store
-        </button>
       </div>
     );
   }

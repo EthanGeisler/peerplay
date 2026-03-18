@@ -159,10 +159,16 @@ export function Profile() {
   const currentUserPubkey = user?.pubkey || user?.nostrPubkey;
   const isOwnProfile = currentUserPubkey && pubkey ? currentUserPubkey === pubkey : false;
 
+  const activePubkeyRef = useRef(pubkey);
+  useEffect(() => {
+    activePubkeyRef.current = pubkey;
+  }, [pubkey]);
+
   // Fetch profile data
   useEffect(() => {
     if (!pubkey) return;
     setLoading(true);
+    profileCache.current.clear();
     setReviewsLoaded(false);
     setPostsLoaded(false);
     setFollowingLoaded(false);
@@ -209,13 +215,15 @@ export function Profile() {
       .catch(() => setIsMuted(false));
   }, [user, pubkey, isOwnProfile]);
 
-  // Lazy-load tab data
+  // Lazy-load tab data (guarded against stale pubkey)
   useEffect(() => {
     if (!pubkey) return;
+    const currentPk = pubkey;
 
     if (activeTab === "reviews" && !reviewsLoaded) {
       apiFetch<NostrEvent[]>(`/events?kinds=31337&authors=${pubkey}`)
         .then((events) => {
+          if (activePubkeyRef.current !== currentPk) return;
           const arr = Array.isArray(events) ? events : [];
           setReviews(arr);
           setReviewsLoaded(true);
@@ -238,38 +246,41 @@ export function Profile() {
             }
           }
         })
-        .catch(() => setReviewsLoaded(true));
+        .catch(() => { if (activePubkeyRef.current === currentPk) setReviewsLoaded(true); });
     }
 
     if (activeTab === "posts" && !postsLoaded) {
       apiFetch<NostrEvent[]>(`/events?kinds=1&authors=${pubkey}&limit=50`)
         .then((events) => {
+          if (activePubkeyRef.current !== currentPk) return;
           setPosts(Array.isArray(events) ? events : []);
           setPostsLoaded(true);
         })
-        .catch(() => setPostsLoaded(true));
+        .catch(() => { if (activePubkeyRef.current === currentPk) setPostsLoaded(true); });
     }
 
     if (activeTab === "following" && !followingLoaded) {
       apiFetch<{ follows: string[] }>(`/follows/${pubkey}`)
         .then((data) => {
+          if (activePubkeyRef.current !== currentPk) return;
           const list = data.follows || [];
           setFollows(list);
           setFollowingLoaded(true);
           resolveProfiles(list);
         })
-        .catch(() => setFollowingLoaded(true));
+        .catch(() => { if (activePubkeyRef.current === currentPk) setFollowingLoaded(true); });
     }
 
     if (activeTab === "followers" && !followersLoaded) {
       apiFetch<{ followers: string[] }>(`/followers/${pubkey}`)
         .then((data) => {
+          if (activePubkeyRef.current !== currentPk) return;
           const list = data.followers || [];
           setFollowers(list);
           setFollowersLoaded(true);
           resolveProfiles(list);
         })
-        .catch(() => setFollowersLoaded(true));
+        .catch(() => { if (activePubkeyRef.current === currentPk) setFollowersLoaded(true); });
     }
   }, [activeTab, pubkey, reviewsLoaded, postsLoaded, followingLoaded, followersLoaded]);
 
