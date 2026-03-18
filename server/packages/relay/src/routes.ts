@@ -1177,6 +1177,42 @@ relayRouter.get("/reputation/:pubkey", async (req, res, next) => {
   }
 });
 
+// ── GET /followers/:pubkey — reverse lookup: who follows this pubkey ─────────
+
+relayRouter.get("/followers/:pubkey", async (req, res, next) => {
+  try {
+    const { pubkey } = req.params;
+
+    // Validate pubkey format (64-char hex)
+    if (!pubkey || pubkey.length !== 64 || !/^[0-9a-f]+$/i.test(pubkey)) {
+      throw new ValidationError("pubkey must be a 64-character hex string");
+    }
+
+    const targetPubkey = pubkey.toLowerCase();
+
+    // Query all kind 3 (follow list) events, filter for those containing target in p tags
+    const allFollowEvents = await db.event.findMany({
+      where: { kind: KIND_FOLLOW_LIST },
+      select: { pubkey: true, tags: true },
+    });
+
+    const followers: string[] = [];
+    for (const event of allFollowEvents) {
+      const tags = event.tags as string[][];
+      const followsTarget = tags.some(
+        (t) => t[0] === "p" && t[1]?.toLowerCase() === targetPubkey,
+      );
+      if (followsTarget) {
+        followers.push(event.pubkey);
+      }
+    }
+
+    res.json({ followers });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ── Relay info helper ───────────────────────────────────────────────────────
 
 function buildRelayInfo(): Record<string, unknown> {

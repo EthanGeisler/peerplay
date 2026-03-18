@@ -147,9 +147,14 @@ export function App() {
           </a>
           {user ? (
             <>
-              <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+              <Link
+                to={`/profile/${user.pubkey || user.nostrPubkey}`}
+                style={{ fontSize: 13, color: "var(--text-secondary)", textDecoration: "none" }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text-primary)")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-secondary)")}
+              >
                 {user.displayName}
-              </span>
+              </Link>
               <button
                 onClick={logout}
                 style={{

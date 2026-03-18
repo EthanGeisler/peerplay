@@ -204,7 +204,15 @@ export function App() {
             <span style={{ color: "#888" }}>Loading...</span>
           ) : user ? (
             <>
-              <div style={styles.userName}>{user.displayName}</div>
+              <div
+                style={{ ...styles.userName, cursor: "pointer" }}
+                onClick={() => navigate(`/profile/${user.pubkey || user.nostrPubkey}`)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === "Enter") navigate(`/profile/${user.pubkey || user.nostrPubkey}`); }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = "#e94560"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = "#e0e0e0"; }}
+              >{user.displayName}</div>
               <div style={styles.userEmail}>{user.email ?? "Nostr User"}</div>
               <button
                 style={styles.signOutBtn}
