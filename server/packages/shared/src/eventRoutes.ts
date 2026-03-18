@@ -12,6 +12,7 @@ import { verifyEvent, type SignedEvent } from "./events.js";
 import { storeEvent, getEvent, queryEvents } from "./eventStore.js";
 import { db } from "./db.js";
 import { ValidationError, ForbiddenError, NotFoundError } from "./errors.js";
+import { materializeEvent } from "./eventMaterializer.js";
 
 export const eventRouter = Router();
 
@@ -71,6 +72,13 @@ eventRouter.post("/events", authenticate, async (req, res, next) => {
 
     // Store event
     await storeEvent(event);
+
+    // Materialize into legacy tables (non-fatal)
+    try {
+      await materializeEvent(event);
+    } catch {
+      // Materialization failure doesn't reject the event
+    }
 
     res.status(201).json({ ok: true });
   } catch (err) {

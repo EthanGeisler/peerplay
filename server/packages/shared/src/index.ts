@@ -38,3 +38,4 @@ export {
 } from "./eventStore.js";
 export type { StoreResult, EventFilter } from "./eventStore.js";
 export { eventRouter } from "./eventRoutes.js";
+export { materializeEvent } from "./eventMaterializer.js";
