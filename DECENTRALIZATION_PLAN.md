@@ -1,6 +1,6 @@
 # BoilerDeck Decentralization Plan
 
-> **Status:** Planning complete, Phase 1 implementation not yet started (as of 2026-03-17)
+> **Status:** Phase 1 COMPLETE (13/13 sub-tasks), Phase 2 in progress (as of 2026-03-18)
 > **Guiding principle:** Centralized UX, decentralized plumbing. The gateway is a convenience layer, not a chokepoint.
 > **Reviewed by:** Grok (2026-03-17) — critical curve fix (secp256k1), identity immutability, password change flow, self-custody registration path applied.
 
@@ -8,7 +8,7 @@
 
 **Read order:** `CLAUDE.md` → `CONTEXT.md` → this file → then check `docs/handoff/` for completed sub-task handoffs → start implementing the next sub-task.
 
-**No code has been written for this plan yet.** The existing codebase is a fully functional centralized game distribution platform. This plan transforms it into a hybrid centralized/decentralized media marketplace.
+**Phase 1 is complete.** All users have secp256k1 keypairs, custody modes, and the full identity system is deployed. Phase 2 (Event Schema & Signing) is in progress.
 
 ---
 
@@ -380,44 +380,547 @@ Client also has: InstalledGame, DownloadProgress, Dev* types
 - Kind ranges: 0-9999 regular, 10000-19999 replaceable, 30000-39999 parameterized replaceable (by `d` tag)
 - Custom kinds: 30001 (listing), 30002 (version), 31337 (review), 31338 (attestation)
 
-### Sub-tasks: 2.1-2.11
-See full plan in transcript. Key new files:
-- `server/packages/shared/src/events.ts` — serializeEvent, hashEvent, createEvent, verifyEvent
-- `server/packages/shared/src/eventStore.ts` — storeEvent, getEvent, queryEvents
-- `server/packages/auth/src/signing.ts` — signEventForUser (loads encrypted key from Redis, decrypts with SIGNING_CACHE_KEY, signs)
-- `server/packages/shared/src/eventRoutes.ts` — POST/GET /api/events
-- `server/packages/shared/src/eventMaterializer.ts` — routes events to DB upserts by kind
-
 **Phase 2 note:** When a sovereign client posts an event directly to a relay (bypassing the gateway), the materializer must handle conflicts with existing DB state. Use `created_at` as tiebreaker — latest event wins. Add a reconciliation script for manual conflict resolution.
+
+### 2.1 — Create events table migration
+- **File:** `server/prisma/schema.prisma`
+- Add `Event` model:
+  ```prisma
+  model Event {
+    id         String   @id                          // SHA-256 hash of canonical JSON (NIP-01)
+    pubkey     String                                // 64-char hex, x-only secp256k1 pubkey
+    createdAt  Int      @map("created_at_unix")      // Unix timestamp (seconds)
+    kind       Int                                   // Event kind (30001=listing, 30002=version, etc.)
+    tags       Json                                  // Array of string arrays (NIP-01)
+    content    String                                // Event content (often JSON-stringified)
+    sig        String                                // 128-char hex Schnorr signature
+    dTag       String?  @map("d_tag")                // Parameterized replaceable event identifier
+    receivedAt DateTime @default(now()) @map("received_at")
+    @@unique([pubkey, kind, dTag])
+    @@index([kind])
+    @@index([pubkey])
+    @@index([createdAt])
+    @@map("events")
+  }
+  ```
+- Add to Game model: `eventId String? @unique @map("event_id")` with relation to Event
+- Run migration
+- **Test:** Migration applies, existing data untouched, all games have null eventId
+
+### 2.2 — Event utility module
+- **File:** `server/packages/shared/src/events.ts` (NEW)
+- Export functions:
+  - `serializeEvent(event)` → NIP-01 canonical JSON: `[0, pubkey, created_at, kind, tags, content]`
+  - `hashEvent(event)` → SHA-256 of serialized bytes → hex string (this is the event ID)
+  - `createEvent(params: { pubkey, kind, tags, content }, privateKey)` → full signed event with computed `id` and `sig`
+  - `verifyEvent(event)` → boolean (recompute hash, verify Schnorr signature)
+- Export kind constants: `EVENT_KIND_GAME_LISTING = 30001`, `EVENT_KIND_GAME_VERSION = 30002`, `EVENT_KIND_REVIEW = 31337`, `EVENT_KIND_ATTESTATION = 31338`
+- Re-export from `shared/src/index.ts`
+- **Test:** Create + verify round-trip. Tamper detection: modifying content, id, or sig → verifyEvent returns false
+
+### 2.3 — Event storage service
+- **File:** `server/packages/shared/src/eventStore.ts` (NEW)
+- Export functions:
+  - `storeEvent(event)` → stores in DB after verifying signature. Returns `STORED` or `DUPLICATE`
+  - `getEvent(id)` → fetch single event by ID
+  - `queryEvents(filter)` → query by `kinds`, `authors` (pubkeys), `since`, `until`, `limit`
+- Replaceable event semantics: for events with same `pubkey + kind + dTag`, only the newest (by `created_at`) is kept
+- Invalid signature → reject (don't store)
+- Duplicate ID → return `DUPLICATE` (not error)
+- **Test:** Store + retrieve, duplicate rejection, invalid sig rejection, replaceable semantics, query by kind/author/limit/since/until
+
+### 2.4 — Server-side signing service
+- **File:** `server/packages/auth/src/signing.ts` (NEW)
+- Export `signEventForUser(userId, params: { kind, tags, content })` → full signed event
+  - Loads encrypted signing key from Redis (`signing_key:{userId}`)
+  - Decrypts with `SIGNING_CACHE_KEY`
+  - Loads user's pubkey from DB
+  - Calls `createEvent()` from shared/events.ts
+  - If no Redis key → throw `UnauthorizedError` (user must log in first)
+- **Test:** Login user → signEventForUser → verify event. No Redis key → error. Event pubkey matches user's DB pubkey.
+
+### 2.5 — Wrap game creation in event signing
+- **File:** `server/packages/catalog/src/service.ts` (or wherever game creation lives)
+- After creating a game in DB, also create a kind 30001 event:
+  - `content`: JSON-stringified `{ title, description, priceCents, slug }`
+  - `tags`: `[["d", slug], ["t", "game"]]`
+  - Store event, link `Game.eventId` to the event
+- REST response shape unchanged (no breaking changes)
+- **Test:** Create game → event exists in DB with correct content/tags. Game.eventId linked. REST response unchanged.
+
+### 2.6 — Wrap game updates and publishing in event signing
+- When a game is updated or published, create a new kind 30001 event with updated content
+- Replaceable: same `pubkey + kind + dTag(slug)` → replaces previous event
+- Publish adds `["status", "PUBLISHED"]` tag
+- Update `Game.eventId` to point to newest event
+- **Test:** Update game → newer event exists. Only one event per slug per author. Publish → status tag present.
+
+### 2.7 — Wrap game version creation in event signing
+- When a game version is uploaded, create a kind 30002 event:
+  - `content`: JSON-stringified `{ version, fileSizeBytes, infoHash }`
+  - `tags`: `[["d", "<slug>:<version>"], ["e", gameEventId], ["game", slug]]`
+- **Test:** Upload version → event exists with correct content and tags. Event verifiable.
+
+### 2.8 — REST endpoint for pre-signed events
+- **File:** `server/packages/shared/src/eventRoutes.ts` (NEW)
+- `POST /api/events` (authenticated) — submit a pre-signed event
+  - Verify signature
+  - Verify `event.pubkey` matches authenticated user's pubkey (403 if mismatch)
+  - Store event
+  - Return 201
+- `GET /api/events` (public, no auth required) — query events
+  - Query params: `kinds`, `authors`, `limit`, `since`, `until`
+  - Returns array of events
+- `GET /api/events/:id` (public) — get single event
+- Mount routes at `/api/events` in server entry
+- **Test:** POST valid event → 201. Bad sig → 400. Pubkey mismatch → 403. GET queries work. POST without auth → 401. GET without auth → 200.
+
+### 2.9 — Event materialization layer
+- **File:** `server/packages/shared/src/eventMaterializer.ts` (NEW)
+- Export `materializeEvent(event)` — routes events to DB upserts by kind:
+  - Kind 30001 → upsert Game row (create or update based on slug in `d` tag)
+  - Kind 30002 → upsert GameVersion row
+- Idempotent: materializing the same event twice → no error, no duplicate rows
+- Called from both `POST /api/events` endpoint AND internal signing flow (2.5-2.7)
+- **Test:** Submit kind 30001 event via POST → game row created. REST API reflects materialized data. Idempotent on re-submit.
+
+### 2.10 — Add pubkey to public API responses
+- Update `GET /api/auth/me` to include `pubkey` and `custodyMode`
+- Update `GET /api/games/:slug` to include developer's `pubkey`
+- Update `GET /api/games` to include `eventId` on each game
+- All new fields are optional/nullable for backwards compatibility
+- **Test:** getMe includes pubkey. Game detail includes developer pubkey. Game list includes eventId. Existing consumers don't break.
+
+### 2.11 — Frontend types and API updates
+- **File:** `web/src/types.ts` — add `pubkey?: string`, `custodyMode?: string` to `ApiUser`, `eventId?: string` to `ApiGame`/`ApiGameDetail`
+- **File:** `client/src/renderer/types.ts` — matching changes
+- Define `Event` type: `{ id, pubkey, created_at, kind, tags, content, sig }`
+- **Test:** `npx tsc --noEmit` exits 0 for both web and client
 
 ---
 
 ## Phase 3: Relay Infrastructure
 
-**Goal:** Gateway becomes a Nostr-compatible relay with WebSocket endpoint.
+**Goal:** Gateway becomes a Nostr-compatible relay with WebSocket endpoint. Fully interoperable with existing Nostr clients (Amethyst, Damus, etc.) for our custom event kinds.
 
-Key new package: `server/packages/relay/` with ws (WebSocket), NIP-01 protocol, federation.
+**Key new package:** `server/packages/relay/` with WebSocket (ws), NIP-01 protocol, federation.
 
-Because we use secp256k1 + Schnorr + NIP-01 canonical JSON, our relay will be fully interoperable with existing Nostr clients (Amethyst, Damus, etc.) for our custom event kinds. Standard Nostr clients can subscribe to and verify our events.
+### 3.1 — Event schema and crypto utilities (relay package)
+- **File:** `server/packages/relay/src/crypto.ts` — secp256k1 Schnorr sign/verify (reuses auth/crypto.ts or shared)
+- **File:** `server/packages/relay/src/types.ts` — `RelayEvent`, `EventFilter`, `Subscription` interfaces
+- Event structure matches NIP-01: `{ id, pubkey, created_at, kind, tags, content, sig }`
+- **Test:** Sign + verify round-trip. Tamper detection.
+
+### 3.2 — Prisma schema: events table + user keypair
+- Migration for any relay-specific schema additions (if not already covered by 2.1)
+- Indexes on `kind`, `pubkey`, `createdAt`, `[kind, createdAt]`
+- Verify User model keypair fields from Phase 1 are intact
+- **Test:** Insert test event via Prisma, query it back — round-trip succeeds
+
+### 3.3 — Relay package skeleton
+- **File:** `server/packages/relay/package.json` — name `@boilerdeck/relay`
+- **File:** `server/packages/relay/src/index.ts` — exports service and route modules
+- **File:** `server/packages/relay/src/service.ts` — `storeEvent`, `queryEvents`, `deleteEvent`
+- **File:** `server/packages/relay/src/routes.ts` — `POST /api/events`, `GET /api/events`, `GET /api/events/:id`
+- `npm install` from root resolves `@boilerdeck/relay` as workspace package
+- **Test:** REST round-trip: POST event → GET it back by ID → matches
+
+### 3.4 — WebSocket relay endpoint
+- **File:** `server/packages/relay/src/ws.ts` — `attachRelayWebSocket(server)`
+- **File:** `server/src/index.ts` — create `http.Server` explicitly, call `attachRelayWebSocket(server)`
+- NIP-01 protocol messages:
+  - `["REQ", subId, filter]` → subscribe to events matching filter
+  - `["EVENT", signedEvent]` → publish event
+  - `["CLOSE", subId]` → close subscription
+  - Server sends: `["EVENT", subId, event]`, `["EOSE", subId]`, `["OK", eventId, success, message]`
+- Invalid event rejection → `["OK", eventId, false, "invalid:..."]`
+- Nginx config for WebSocket proxy on `/relay`
+- **Test:** WS connection accepted. REQ/EVENT flow. Event publishing between clients. OK responses. CLOSE stops subscription.
+
+### 3.5 — Keypair generation on registration + key management
+- `POST /api/auth/register` response includes `pubkey` (already done in Phase 1.4)
+- Login backfill for users without pubkey (already done in Phase 1.6)
+- `GET /api/relay/me/keys` (authenticated) → returns `{ pubkey, privkey }` in hex
+- `POST /api/relay/me/import-key` with `{ privkey }` → pubkey updated to match
+- Private key encrypted at rest with `EVENT_SIGNING_KEY` env var using AES-256-GCM
+- **Test:** Register → pubkey in response. Key export/import works.
+
+### 3.6 — Server-side event signing (for web users)
+- `POST /api/events/sign-and-publish` (authenticated) — body: `{ kind, content, tags }`
+  - Server signs with user's cached signing key, stores event, broadcasts to WS subscribers
+  - Returns full signed event
+- **Test:** Sign-and-publish → verifiable event. Pubkey matches user. Event stored. WS subscribers receive it.
+
+### 3.7 — Electron client: relay connection manager
+- **File:** `client/src/main/relayManager.ts` — connect/disconnect/subscribe/publish
+- IPC channels: `relay:connect`, `relay:disconnect`, `relay:subscribe`, `relay:unsubscribe`, `relay:publish`, `relay:on-event`
+- All channels exposed in `preload.ts` and typed in `env.d.ts`
+- Auto-reconnect with exponential backoff (1s, 2s, 4s, max 30s)
+- Re-sends active subscriptions on reconnect
+- **Test:** Electron connects to local relay on startup
+
+### 3.8 — External relay federation (outbound)
+- **File:** `server/packages/relay/src/federation.ts`
+- Reads `EXTERNAL_RELAYS` env var for relay URLs
+- Forwards events authored by local users (pubkeys in User table) to external relays
+- Does NOT re-broadcast imported events (loop prevention)
+- Reconnects on failure with exponential backoff
+- **Test:** Publish event locally → appears on configured external relay
+
+### 3.9 — External relay federation (inbound)
+- Import events from external relays that reference local game slugs
+- Duplicate handling: same event twice → no error, no duplicate
+- Signature verification on import — bad sig → rejected
+- Imported events NOT re-forwarded outbound (loop prevention)
+- **Test:** Publish on external relay → imported to local DB. Duplicate and bad sig handling.
+
+### 3.10 — Relay discovery endpoint
+- `GET /api/relay/info` → JSON with `relay_url`, `name`, `description`, `supported_nips`, `version`
+- NIP-11: HTTP GET to `/relay` with `Accept: application/nostr+json` header → relay info document (not WebSocket upgrade)
+- External relays list included in info response
+- **Test:** REST info endpoint returns valid JSON. NIP-11 header negotiation works.
 
 ---
 
-## Phases 4-8: Summary
+## Phase 4: Social Features
 
-| Phase | What | Depends On |
-|-------|------|-----------|
-| 4: Social Features | Reviews, comments, follows, profiles — all as signed events | 3 |
-| 5: Seeding Reputation | Peer attestation events for BitTorrent seeding | 3 |
-| 6: Privacy Layer | Tor/SOCKS5 in Electron client (no server changes) | Independent |
-| 7: Content Generalization | Game → Listing, support video/software/audio. `@@map("games")` keeps DB table — must update every Prisma query and TypeScript type | Independent |
-| 8: Progressive Decentralization | Open relay protocol, federation, sovereign mode | 3, 7 |
+**Goal:** Reviews, comments, follows, and profiles — all as signed events. Users interact socially, and every interaction is a verifiable, portable event.
+
+### 4.1 — Event kind definitions and validation
+- **File:** `server/packages/relay/src/kinds.ts`
+- Define all kinds: 0 (profile), 1 (text note), 3 (follow list), 5 (deletion), 7 (reaction), 31337 (review), 31338 (attestation)
+- Validation functions per kind (required tags, content format)
+- Kind 31337 requires `["d", slug]` tag
+- Kind 31338 requires `["p", pubkey]` and `["d", identifier]` tags
+- **Test:** Valid events pass. Invalid events (missing required tags) rejected with descriptive errors.
+
+### 4.2 — Profile events (kind 0)
+- `PUT /api/profiles/me` with `{ name, about, picture }` → creates kind 0 event
+- `GET /api/profiles/:pubkey` → returns profile data from latest kind 0 event
+- Replaceable: only one kind 0 event per pubkey
+- Migration: first profile creation seeds content from existing `displayName`
+- **Test:** Set profile, get profile, replaceable semantics, migration from displayName.
+
+### 4.3 — Review events (kind 31337)
+- `POST /api/games/:slug/reviews` with `{ rating: 1-5, title, body }` → creates kind 31337 event
+- Requires license ownership (403 without)
+- `GET /api/games/:slug/reviews` → reviews with rating, title, body, author pubkey, `averageRating`, `reviewCount`
+- Parameterized replaceable on `d` tag (one review per user per game)
+- **Test:** Submit review, ownership required, get reviews, one per user, aggregation, rating validation.
+
+### 4.4 — Review display UI
+- Game detail page (web + client) has "Reviews" section below description
+- Average star rating, individual review cards with author, rating, title, body, timestamp
+- Pagination via "Load More"
+- **Test:** Visual verification with 3+ reviews
+
+### 4.5 — Review submission UI
+- `ReviewForm` component in both web and client with star selector, title, body, submit
+- "Write a Review" button only visible if user owns game and hasn't reviewed
+- Electron client signs review locally and publishes via relay WebSocket (not REST)
+- **Test:** Submit review from web UI → appears in list
+
+### 4.6 — Follow list events (kind 3)
+- `POST /api/follows` with `{ pubkey }` → creates/updates kind 3 event
+- `GET /api/follows/:pubkey` → list of followed pubkeys
+- `DELETE /api/follows/:pubkey` → updates kind 3 event, target removed
+- Replaceable: single kind 3 event per user, updated atomically
+- **Test:** Follow, get follows, unfollow, replaceable.
+
+### 4.7 — User profile page
+- Route `/profile/:pubkey` in web and client
+- Shows: display name, bio, avatar, member since, review count, follow/unfollow button
+- Seeder reputation placeholder (for Phase 5)
+- **Test:** Navigate to profile → data renders
+
+### 4.8 — Comment events (kind 1 with tags)
+- `POST /api/events/:eventId/replies` with `{ content }` → creates kind 1 event with `["e", parentEventId]` tag
+- `GET /api/events/:eventId/replies` → reply events
+- Threading: reply to a reply → threaded structure
+- Display depth limited to 2-3 levels
+- **Test:** Submit reply, get replies, threading works
+
+### 4.9 — Moderation: mute and report
+- `POST /api/moderation/mute` with `{ pubkey }` → user's mute list updated
+- Muted events filtered from WS subscriptions
+- `DELETE /api/moderation/mute/:pubkey` → unmute
+- Admin deletion via kind 5 deletion event
+- Relay has its own keypair for admin-level deletion events
+- **Test:** Mute → events filtered. Unmute → events reappear. Admin delete works.
+
+---
+
+## Phase 5: Seeding Reputation
+
+**Goal:** Peer attestation events for BitTorrent seeding. Users build verifiable reputation by seeding games.
+
+### 5.1 — Attestation event kind (31338) and validation
+- Kind 31338 defined with validation rules
+- Self-attestation rejected (signer pubkey == `p` tag pubkey → reject)
+- Unknown infoHash rejected (referencing non-existent torrent)
+- Bytes validation: `bytesDownloaded > torrent file size` → rejected
+- Parameterized replaceable: one attestation per (signer, seeder, infoHash)
+- **Test:** Valid attestation stored. Self-attestation, unknown infoHash, bad bytes all rejected.
+
+### 5.2 — Electron client: auto-generate attestations after download
+- **File:** `client/src/main/attestation.ts`
+- `torrentManager.ts` calls attestation generation in `torrent.on("done")` handler
+- Attestation includes `infoHash`, `bytesDownloaded`, `durationSeconds`
+- `p` tag references VPS seed box pubkey (or swarm attestation)
+- **Test:** Complete download → attestation event published to relay
+
+### 5.3 — VPS seed box attestation
+- **File:** `scripts/seed-attestation-cron.ts`
+- Reads `VPS_SEED_PRIVKEY` env var for signing
+- Queries Transmission RPC for completed transfer data
+- Publishes attestation events via `POST /api/events`
+- **Test:** Run script → attestation events published and verifiable
+
+### 5.4 — Reputation aggregation service
+- **File:** `server/packages/relay/src/reputation.ts`
+- Score uses logarithmic formula (resists inflation)
+- `GET /api/reputation/:pubkey` → score, `attestationCount`, `uniqueAttesters`
+- Redis caching (15 min TTL)
+- Anti-sybil: accounts < 7 days old weighted at 0.1x, max 20 attestations per attester per day
+- **Test:** 5 attestations from 3 unique pubkeys → non-zero score. Zero attestations → zero. Cache hit on second request.
+
+### 5.5 — Reputation display in UI
+- Profile page shows "Seeder Score"
+- Game detail page shows "Top Seeders" section
+- Badge system: Bronze (>=10), Silver (>=50), Gold (>=200)
+- **Test:** Profile with attestations shows score and badge
+
+### 5.6 — Web of trust weighting
+- `GET /api/reputation/:pubkey?viewer=<viewerPubkey>` → personalized score
+- Follow weighting: attestation from followed user = 1.0x, unknown = 0.25x
+- Muted = 0x weight
+- No viewer specified → global (unweighted) score
+- **Test:** Personalized vs global scores differ. Follow and mute weighting works.
+
+---
+
+## Phase 6: Privacy Layer
+
+**Goal:** Tor/SOCKS5 support in Electron client. No server changes needed.
+
+### 6.1 — Privacy settings store schema and IPC
+- `StoreData` interface includes `privacySettings: { enabled, mode, socksHost, socksPort, routeApiTraffic, routeTorrentTraffic }`
+- `"privacySettings"` in `STORE_KEY_WHITELIST`
+- IPC channels: `privacy:get-status`, `privacy:test-connection`
+- Preload bridge and `env.d.ts` updated
+- **Test:** Store round-trip for privacy settings
+
+### 6.2 — SOCKS5 proxy module for HTTP traffic
+- **File:** `client/src/main/proxyManager.ts` — `getProxyAgent`, `testProxyConnection`
+- Uses `socks-proxy-agent` package
+- `privacy:test-connection` IPC handler wired up
+- **Test:** Valid proxy → success. Invalid proxy → failure (not crash).
+
+### 6.3 — Route API traffic through proxy
+- IPC channel `api:proxied-fetch` in main process
+- Preload exposes `window.boilerdeck.api.fetch`
+- Renderer's `apiFetch` checks privacy mode, routes through IPC when enabled
+- **Test:** Privacy on → API calls through proxy. Privacy off → direct.
+
+### 6.4 — Route BitTorrent traffic through SOCKS5
+- `torrentManager.ts` accepts privacy config, disables `dht`, `lsd`, `webSeeds` in privacy mode
+- Warning about reduced speed in code/UI
+- **Test:** Privacy mode download completes. No DHT when privacy enabled.
+
+### 6.5 — Tor binary bundling and management
+- **File:** `client/src/main/torManager.ts` — `startTor`, `stopTor`, `isTorRunning`, `getTorStatus`
+- `electron-builder` config includes `tor.exe` as `extraResource`
+- Graceful shutdown on `app.on("before-quit")`
+- Tor data directory in app userData (not temp)
+- **Test:** Set mode to "tor" → Tor spawns, SOCKS5 port 9150 reachable. Stop → port closed.
+
+### 6.6 — Privacy settings UI page
+- Settings page "Privacy & Network" section
+- Toggle for Private Mode, radio group (Tor/Custom SOCKS5/Off)
+- Custom SOCKS5 shows host/port fields
+- "Route API traffic" and "Route torrent traffic" checkboxes
+- "Test Connection" button with status indicator
+- Tor bootstrap progress display
+- **Test:** Toggle on/off → settings persist across restart
+
+### 6.7 — Gateway .onion endpoint documentation
+- `ONION_ADDRESS` config option in server config
+- `docs/privacy.md` with Tor hidden service setup instructions
+- Client uses `.onion` address when in Tor mode (if configured)
+
+---
+
+## Phase 7: Content Generalization
+
+**Goal:** Transform from game-only to multi-content marketplace. Game → Listing, support video/software/audio. `@@map("games")` keeps DB table names — must update every Prisma query and TypeScript type.
+
+### 7.1 — Schema: add content type and generic metadata
+- Add `ContentType` enum: `GAME`, `VIDEO`, `SOFTWARE`, `AUDIO`, `OTHER`
+- Add to Game model: `contentType ContentType @default(GAME)`, `metadata Json @default("{}")`
+- Existing games get `contentType: GAME` after migration
+- **Test:** Migration applies cleanly. Existing games have GAME content type.
+
+### 7.2 — Schema: rename Game to Listing
+- Prisma model renamed from `Game` to `Listing` with `@@map("games")` preserved
+- `GameVersion` → `ListingVersion`, `GameStatus` → `ListingStatus` with `@@map` preserved
+- No SQL migration needed (table names unchanged)
+- Find-and-replace `db.game.` → `db.listing.` across all server packages
+- **Test:** All packages compile. All existing REST endpoints still work.
+
+### 7.3 — Server: generalize catalog service
+- Service functions accept `contentType` parameter
+- `createListing` accepts `contentType` and `metadata`
+- Old function names exist as aliases (backwards compat)
+- **Test:** Create non-game listing succeeds. Filter by content type works.
+
+### 7.4 — Server: generalize catalog routes
+- `GET /api/listings` returns published listings
+- `GET /api/listings?contentType=GAME` returns same as `GET /api/games`
+- `POST /api/developer/listings` with `contentType` in body
+- Old `/games` routes still work (call same service with `contentType: 'GAME'`)
+- **Test:** New routes work. Old routes still work.
+
+### 7.5 — Server: generalize upload pipeline
+- Exe detection skipped for non-GAME content types
+- File type validation based on `contentType`
+- **Test:** Video upload as VIDEO succeeds. Game upload unchanged.
+
+### 7.6 — Server: generalize license and torrent services
+- Acquire license for non-game listing → succeeds
+- Download torrent for non-game listing → succeeds
+- Internal references renamed from "game" to "listing" in code (not DB)
+
+### 7.7 — Server: creator portal role generalization
+- "Developer" rebranded to "Creator" in UI text only
+- `DEVELOPER` enum value unchanged in DB/schema
+
+### 7.8 — Client: generalize types and stores
+- `ApiListing` type with `contentType` field
+- Type-specific metadata types: `GameMetadata`, `VideoMetadata`, `SoftwareMetadata`
+- Old type names kept as aliases
+- **Test:** TypeScript compiles for client
+
+### 7.9 — Client: content-type-aware detail page
+- Detail page renders differently based on `contentType`
+- GAME: existing game UI (install, launch)
+- VIDEO: video player or download button
+- Route `/listing/:slug` with `/game/:slug` redirect
+- **Test:** Game detail unchanged. Video detail shows video-specific UI.
+
+### 7.10 — Client: video playback with sequential download
+- Sequential downloading enabled for VIDEO content type
+- IPC: `media:get-file-path` returns local file path
+- IPC: `media:start-server` returns localhost URL for streaming
+- **Test:** Download and play a video in Electron
+
+### 7.11 — Client + web + dev-portal: UI generalization
+- Store page has category tabs/filters: All, Games, Videos, Software, Audio
+- Dev-portal "Create Game" → "Create Listing" with content type selector
+- "Developer Dashboard" → "Creator Dashboard" in UI text
+- **Test:** Filter by content type → correct results. TypeScript compiles for all frontends.
+
+### 7.12 — Dev-portal: generalize upload flow
+- Content type selector at top of listing editor form
+- Conditional fields based on content type (exe path for games, video file for videos)
+- API calls use `/developer/listings` routes
+- **Test:** Create VIDEO listing from creator portal with .mp4 upload
+
+---
+
+## Phase 8: Progressive Decentralization
+
+**Goal:** Open relay protocol, federation, sovereign mode. Users can run their own relays and interact without the gateway.
+
+### 8.1 — Cryptographic identity: key generation and storage
+- **File:** `client/src/main/keyManager.ts` — keypair generation, signing, import/export
+- `"keyPair"` in `STORE_KEY_WHITELIST`
+- IPC: `keys:generate`, `keys:get-public-key`, `keys:sign`, `keys:import-mnemonic`, `keys:export-mnemonic`
+- Private key encrypted at rest with user passphrase via scrypt + AES
+- **Test:** Generate + sign + verify. Mnemonic round-trip → same public key.
+
+### 8.2 — Key management UI in client
+- Settings "Identity & Keys" section
+- No key: "Generate Identity" button → shows 12-word mnemonic with backup checkbox
+- Key exists: truncated pubkey, export/import options
+- **Test:** Generate identity in UI → mnemonic shown
+
+### 8.3 — Server: relay protocol — listing metadata API
+- Routes: `/relay/listings`, `/relay/listings/:id`, `/relay/info`, `/relay/creators`
+- `POST /api/relay/listings` with signed listing → accepted and stored
+- Unsigned listing submission → rejected
+- **Test:** GET relay listings works. POST signed listing accepted. Unsigned rejected.
+
+### 8.4 — Schema: add relay/signature fields
+- `Listing` model gets `creatorPublicKey String?` and `signature String?`
+- `Relay` model: `id`, `url`, `name`, `lastSyncAt`, `status`, `trustedByDefault`
+- `FederatedListing` model (separate from local listings)
+- Existing listings have null `creatorPublicKey` (pre-signing era)
+- **Test:** Migration applies. Existing data intact.
+
+### 8.5 — Server: federation — subscribing to external relays
+- **File:** `server/packages/relay/src/federation.ts` — inbound federation
+- Reads `FEDERATED_RELAYS` env var
+- Signature verification on imported listings
+- Admin API: `POST /admin/relays`, `DELETE /admin/relays/:id`, `GET /admin/relays`
+- **Test:** Two server instances → listings propagate. Sig verification on import.
+
+### 8.6 — Client: relay management UI
+- Relay list page showing configured relays with status
+- "Add Relay" validates URL by fetching `/relay/info`
+- Default relay `boilerdeck.com` always present, cannot be removed
+- Relay list stored in Electron store under `relays`
+- **Test:** Add relay by URL → appears in list with status
+
+### 8.7 — Client: multi-relay listing aggregation
+- Sovereign mode: store fetches from all enabled relays
+- Deduplication: same listing from two relays → shows once
+- Signature verification in renderer before displaying
+- Relay source badge on each listing
+- **Test:** Two relays with overlapping listings → no duplicates
+
+### 8.8 — Relay server: open-source packaging
+- **Dir:** `relay-server/` at repo root with `src/index.ts`, `prisma/schema.prisma`, `Dockerfile`, `README.md`
+- No auth/payment/license code — only listing metadata + federation
+- MIT license
+- **Test:** `docker build` succeeds. `docker run` → `/relay/info` returns valid response.
+
+### 8.9 — Documentation: running your own relay
+- `docs/relay-guide.md` — system requirements, Docker instructions, env config, nginx example, systemd service, Tor hidden service
+
+### 8.10 — Client: sovereign mode toggle
+- Settings toggle: "Sovereign Mode" on/off
+- ON: store aggregates from all relays, gateway treated as just another relay
+- OFF (default): all API calls through gateway
+- Warning text about features unavailable in sovereign mode
+- `settings.sovereignMode` in Electron store
+- **Test:** Toggle sovereign mode → store fetches change source
+
+### 8.11 — Resilience: graceful gateway-down handling
+- Gateway failure → client shows banner, falls back to relay data
+- Locally installed content always accessible regardless of network
+- Cached listing data in Electron store for offline browsing
+- Torrent downloads continue without gateway (P2P)
+- **Test:** Kill gateway → client shows banner, falls back. Installed games still launch.
+
+### 8.12 — App distribution via BitTorrent
+- **File:** `scripts/create-installer-torrent.mjs`
+- Generates `.torrent` file for Electron installer
+- Concept documented for `APP_UPDATE` listing type
+- **Test:** Torrent downloadable via standard client → installer works
+
+### 8.13 — Signed listing publishing flow (end-to-end)
+- Full flow: Creator publishes in Electron → signed locally → submitted to gateway → forwarded to federated relays
+- Any client can fetch from any relay and verify the signature
+- Creator pubkey registered in `users` table and relay creator list
+- Listing's `signature` and `creatorPublicKey` fields non-null in DB
+- **Test:** End-to-end signing, federation, and verification
 
 ---
 
 ## Execution Order
 
 ```
-Phase 1 (Identity) → Phase 2 (Events) → Phase 3 (Relay) → Phases 4+5 (Social+Reputation)
+Phase 1 (Identity) ✅ → Phase 2 (Events) → Phase 3 (Relay) → Phases 4+5 (Social+Reputation)
 Phase 6 (Privacy) can run parallel with 3-5
 Phase 7 (Generalization) can run parallel with 3-5
 Phase 8 (Decentralization) depends on 3+7
@@ -460,12 +963,3 @@ Items from Grok's review and how they were resolved:
 | **MEDIUM: Phase 7 rename scope** | Added note to Phase 7 about updating all queries + types. |
 | **MEDIUM: Shared exports for crypto types** | Will be handled in each sub-task as types are created. |
 | **MEDIUM: Mnemonic modal escape hatch** | Fixed → "I'll do this later" button with warning added to 1.9. |
-
----
-
-## Full Detailed Plan
-
-The complete phase-by-phase plan with all sub-tasks is preserved in the planning transcript:
-`C:\Users\eface\.claude\projects\C--Users-eface\93cb9d45-bacc-41ea-827d-b5444a109d4a.jsonl`
-
-The user's original prompt contains the full master plan — it can be pasted again to restore full context.
