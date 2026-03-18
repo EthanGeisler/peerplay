@@ -22,8 +22,12 @@ export function Login() {
     setSubmitting(true);
     try {
       if (tab === "login") {
-        await login(email, password);
-        navigate("/");
+        const m = await login(email, password);
+        if (m) {
+          setMnemonic(m);
+        } else {
+          navigate("/");
+        }
       } else {
         const m = await register(email, password, displayName);
         if (m) {

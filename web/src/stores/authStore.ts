@@ -6,7 +6,7 @@ interface AuthState {
   user: ApiUser | null;
   loading: boolean;
   error: string | null;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<string | undefined>;
   register: (email: string, password: string, displayName: string) => Promise<string | undefined>;
   logout: () => Promise<void>;
   loadSession: () => Promise<void>;
@@ -28,6 +28,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       setAccessToken(data.accessToken);
       localStorage.setItem("pp_refresh_token", data.refreshToken);
       set({ user: data.user });
+      return data.mnemonic;
     } catch (err) {
       set({
         error: err instanceof ApiError ? err.message : "Login failed",
