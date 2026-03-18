@@ -367,20 +367,20 @@
 
 ### 3.4 — WebSocket Relay Endpoint
 
-- [ ] `[CODE]` `server/packages/relay/src/ws.ts` exists and exports `attachRelayWebSocket`
-- [ ] `[CODE]` `server/src/index.ts` creates `http.Server` explicitly and calls `attachRelayWebSocket(server)`
-- [ ] `[AUTO]` **WS connection:** WebSocket client connects to `ws://localhost:3000/relay` → connection accepted
-- [ ] `[AUTO]` **REQ/EVENT flow:** Client sends `["REQ", "sub1", { kinds: [1] }]` → receives `["EOSE", "sub1"]`
-- [ ] `[AUTO]` **Event publishing:** Client A publishes `["EVENT", signedEvent]`, Client B with matching subscription receives `["EVENT", "sub1", signedEvent]`
-- [ ] `[AUTO]` **OK response:** After publishing, client receives `["OK", eventId, true, ""]`
-- [ ] `[AUTO]` **CLOSE:** Client sends `["CLOSE", "sub1"]` → no more events for that subscription
-- [ ] `[AUTO]` **Invalid event rejection:** Publish event with bad signature → receives `["OK", eventId, false, "invalid:..."]`
-- [ ] `[CODE]` Nginx config documented or included for WebSocket proxy on `/relay`
-- [ ] `[AUTO]` **Max subscriptions per connection:** Open 100+ subscriptions on one WS connection → server rejects with `["NOTICE", "..."]` after hitting a reasonable cap (e.g., 20-50)
-- [ ] `[AUTO]` **Oversized WS message:** Send a WebSocket frame > 1MB → server closes connection or sends `["NOTICE", "message too large"]` (not crash)
-- [ ] `[AUTO]` **Malformed JSON on WS:** Send `"not json at all"` → server responds with `["NOTICE", "error: ..."]` (not crash or disconnect)
-- [ ] `[AUTO]` **Unknown message type:** Send `["UNKNOWN", "data"]` → server responds with `["NOTICE", "unknown message type"]` (not crash)
-- [ ] `[AUTO]` **Unauthenticated WS publish:** Connect without auth → publish event → verify behavior is defined (either accepts if sig is valid, or rejects with auth required)
+- [x] `[CODE]` `server/packages/relay/src/ws.ts` exists and exports `attachRelayWebSocket`
+- [x] `[CODE]` `server/src/index.ts` creates `http.Server` explicitly and calls `attachRelayWebSocket(server)`
+- [x] `[AUTO]` **WS connection:** WebSocket client connects to `ws://localhost:3000/relay` → connection accepted
+- [x] `[AUTO]` **REQ/EVENT flow:** Client sends `["REQ", "sub1", { kinds: [1] }]` → receives `["EOSE", "sub1"]`
+- [x] `[AUTO]` **Event publishing:** Client A publishes `["EVENT", signedEvent]`, Client B with matching subscription receives `["EVENT", "sub1", signedEvent]`
+- [x] `[AUTO]` **OK response:** After publishing, client receives `["OK", eventId, true, ""]`
+- [x] `[AUTO]` **CLOSE:** Client sends `["CLOSE", "sub1"]` → no more events for that subscription
+- [x] `[AUTO]` **Invalid event rejection:** Publish event with bad signature → receives `["OK", eventId, false, "invalid:..."]`
+- [x] `[CODE]` Nginx config documented or included for WebSocket proxy on `/relay`
+- [x] `[AUTO]` **Max subscriptions per connection:** Open 100+ subscriptions on one WS connection → server rejects with `["NOTICE", "..."]` after hitting a reasonable cap (e.g., 20-50)
+- [x] `[AUTO]` **Oversized WS message:** Send a WebSocket frame > 1MB → server closes connection or sends `["NOTICE", "message too large"]` (not crash)
+- [x] `[AUTO]` **Malformed JSON on WS:** Send `"not json at all"` → server responds with `["NOTICE", "error: ..."]` (not crash or disconnect)
+- [x] `[AUTO]` **Unknown message type:** Send `["UNKNOWN", "data"]` → server responds with `["NOTICE", "unknown message type"]` (not crash)
+- [x] `[AUTO]` **Unauthenticated WS publish:** Connect without auth → publish event → verify behavior is defined (accepts if sig is valid — standard NIP-01 relay behavior)
 
 ### 3.5 — Keypair Generation on Registration + Key Management
 

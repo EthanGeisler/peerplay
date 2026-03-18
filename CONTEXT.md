@@ -585,7 +585,8 @@ See `CLAUDE.md` for updated conventions reflecting these changes.
 | 3.1 | Relay: event schema + crypto utilities | DONE | `88bdfd5` |
 | 3.2 | Relay: Prisma schema compound index | DONE | `88bdfd5` |
 | 3.3 | Relay: package skeleton (service + routes) | DONE | `88bdfd5` |
-| 3.4 | WebSocket relay endpoint | **NEXT** | — |
+| 3.4 | WebSocket relay endpoint | DONE | `e562fd4` |
+| 3.5 | Keypair generation + key management | **NEXT** | — |
 
 ### Implementation Workflow
 
@@ -617,26 +618,20 @@ These are in `server/packages/auth/package.json`. See `docs/handoff/1.1.md` for 
 - `@scure/bip39` ^2.0.1 — BIP39 mnemonic generation (12-word recovery phrases)
 - `@scure/base` ^2.0.0 — Hex/bech32 encoding (npub/nsec)
 
-### Phase 3 In Progress — What 3.4 Needs to Do
+### Phase 3 In Progress — What's Built So Far
 
-Phase 3.1-3.3 are complete. The `@boilerdeck/relay` package exists with:
+Phase 3.1-3.4 are complete. The `@boilerdeck/relay` package includes:
 - **crypto.ts** — re-exports from shared + auth (no duplication)
 - **types.ts** — NIP-01 protocol message types (ClientMessage, RelayMessage, Subscription, EventFilter)
 - **service.ts** — wraps shared eventStore + adds `deleteEvent`
-- **routes.ts** — owns `/api/events` endpoints (replaced shared's eventRouter in `server/src/index.ts`)
+- **routes.ts** — owns `/api/events` REST endpoints (replaced shared's eventRouter)
+- **ws.ts** — NIP-01 WebSocket relay at `/relay` with REQ/EVENT/CLOSE, subscription management, fan-out
 - **Compound index** `[kind, createdAt]` on events table for efficient relay queries
+- **Nginx** WebSocket proxy configured on VPS for `wss://boilerdeck.com/relay`
 
-**Sub-task 3.4 (WebSocket relay endpoint)** is the next big piece:
-1. Create `server/packages/relay/src/ws.ts` with `attachRelayWebSocket(server)`
-2. In `server/src/index.ts`, capture the `http.Server` from `app.listen()` and pass to `attachRelayWebSocket`
-3. Implement NIP-01 protocol: REQ (subscribe), EVENT (publish + fan-out), CLOSE (unsubscribe)
-4. Server responses: EVENT (push to subscribers), EOSE (end of stored events), OK (publish ack), NOTICE (errors)
-5. Subscription management: track filters per connection, match incoming events, fan out
-6. The relay `EventFilter` type (types.ts) has `ids`, `#e`, `#p` fields that shared's `queryEvents` doesn't support — 3.4 needs custom tag-matching logic for subscriptions
-7. Add `ws` package to relay dependencies
-8. Update nginx config for WebSocket proxy on `/relay`
+**Key note for 3.5+:** `fanOutEvent()` in `ws.ts` is module-private. Sub-task 3.6 (sign-and-publish) will need it exported or a shared broadcast mechanism so REST-published events also fan out to WS subscribers.
 
-See `DECENTRALIZATION_PLAN.md` sub-task 3.4 for full spec and `VERIFICATION_CHECKS.md` for pass/fail checks.
+See `docs/handoff/3.4.md` for full implementation details and `DECENTRALIZATION_PLAN.md` for next sub-tasks.
 
 ---
 
