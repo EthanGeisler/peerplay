@@ -16,6 +16,16 @@ export {
   serializeEvent,
 } from "./crypto.js";
 
+// Federation
+export {
+  initFederation,
+  federateOutbound,
+  shutdownFederation,
+  getFederationStatus,
+  getExternalRelayUrls,
+  isImported,
+} from "./federation.js";
+
 // Types
 export type {
   RelayEvent,

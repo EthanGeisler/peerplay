@@ -33,6 +33,7 @@ import type { SignedEvent } from "@boilerdeck/shared";
 import { signEventForUser } from "@boilerdeck/auth";
 import { storeEvent, getEvent, queryEvents } from "./service.js";
 import { fanOutEvent } from "./ws.js";
+import { federateOutbound } from "./federation.js";
 
 export const relayRouter = Router();
 
@@ -99,6 +100,9 @@ relayRouter.post("/events", authenticate, async (req, res, next) => {
     } catch (matErr) {
       console.warn("[relay] materializeEvent failed (non-fatal):", matErr);
     }
+
+    // Forward to external relays
+    federateOutbound(event);
 
     res.status(201).json({ ok: true });
   } catch (err) {
@@ -311,6 +315,9 @@ relayRouter.post("/events/sign-and-publish", authenticate, async (req, res, next
 
     // Broadcast to WebSocket subscribers
     fanOutEvent(event);
+
+    // Forward to external relays
+    federateOutbound(event);
 
     res.status(201).json(event);
   } catch (err) {

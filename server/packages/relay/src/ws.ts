@@ -19,6 +19,7 @@ import type { Server as HttpServer } from "node:http";
 import { verifyEvent, materializeEvent } from "@boilerdeck/shared";
 import type { SignedEvent } from "@boilerdeck/shared";
 import { storeEvent, queryEvents } from "./service.js";
+import { federateOutbound, isImported } from "./federation.js";
 import type {
   EventFilter,
   Subscription,
@@ -271,6 +272,9 @@ async function handleEvent(
 
     // Fan out to all subscribers with matching filters
     fanOutEvent(event);
+
+    // Forward to external relays (skips imported events)
+    federateOutbound(event);
   } catch (err) {
     console.error("[relay-ws] Error storing event:", err);
     sendOk(ws, event.id, false, "error: internal error");

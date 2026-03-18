@@ -10,7 +10,7 @@ import { catalogRouter } from "@boilerdeck/catalog";
 import { licenseRouter } from "@boilerdeck/license";
 import { paymentRouter } from "@boilerdeck/payment";
 import { torrentRouter } from "@boilerdeck/torrent";
-import { relayRouter, attachRelayWebSocket } from "@boilerdeck/relay";
+import { relayRouter, attachRelayWebSocket, initFederation } from "@boilerdeck/relay";
 
 const config = getConfig();
 const app = express();
@@ -65,5 +65,8 @@ const server = app.listen(config.PORT, () => {
 
 // Attach NIP-01 WebSocket relay on /relay
 attachRelayWebSocket(server);
+
+// Start federation with external relays (reads EXTERNAL_RELAYS env var)
+initFederation();
 
 export default app;

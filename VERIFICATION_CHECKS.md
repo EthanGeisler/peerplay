@@ -400,28 +400,28 @@
 
 ### 3.7 — Electron Client: Relay Connection Manager
 
-- [ ] `[CODE]` `client/src/main/relayManager.ts` exists with connect/disconnect/subscribe/publish functions
-- [ ] `[CODE]` IPC channels `relay:connect`, `relay:disconnect`, `relay:subscribe`, `relay:unsubscribe`, `relay:publish`, `relay:on-event` exist
-- [ ] `[CODE]` All IPC channels exposed in `preload.ts` and typed in `env.d.ts`
+- [x] `[CODE]` `client/src/main/relayManager.ts` exists with connect/disconnect/subscribe/publish functions
+- [x] `[CODE]` IPC channels `relay:connect`, `relay:disconnect`, `relay:subscribe`, `relay:unsubscribe`, `relay:publish`, `relay:on-event` exist
+- [x] `[CODE]` All IPC channels exposed in `preload.ts` and typed in `env.d.ts`
 - [ ] `[AUTO]` **Connection test:** Electron app connects to local relay WebSocket on startup
-- [ ] `[CODE]` Auto-reconnect with exponential backoff implemented (1s, 2s, 4s, max 30s)
-- [ ] `[CODE]` Re-sends active subscriptions on reconnect
+- [x] `[CODE]` Auto-reconnect with exponential backoff implemented (1s, 2s, 4s, max 30s)
+- [x] `[CODE]` Re-sends active subscriptions on reconnect
 
 ### 3.8 — External Relay Federation (Outbound)
 
-- [ ] `[CODE]` `server/packages/relay/src/federation.ts` exists
-- [ ] `[CODE]` Reads `EXTERNAL_RELAYS` env var for relay URLs
+- [x] `[CODE]` `server/packages/relay/src/federation.ts` exists
+- [x] `[CODE]` Reads `EXTERNAL_RELAYS` env var for relay URLs
 - [ ] `[AUTO]` **Event forwarding:** Publish an event locally → it appears on a configured external relay
-- [ ] `[CODE]` Only forwards events authored by local users (pubkeys in User table)
-- [ ] `[CODE]` Does not re-broadcast imported events (loop prevention)
-- [ ] `[CODE]` Reconnects on failure with exponential backoff
+- [x] `[CODE]` Only forwards events authored by local users (pubkeys in User table)
+- [x] `[CODE]` Does not re-broadcast imported events (loop prevention)
+- [x] `[CODE]` Reconnects on failure with exponential backoff
 
 ### 3.9 — External Relay Federation (Inbound)
 
 - [ ] `[AUTO]` **Inbound import:** Publish an event on external relay with tag matching a local game slug → event imported to local DB
-- [ ] `[AUTO]` **Duplicate handling:** Import same event twice → no error, no duplicate
-- [ ] `[AUTO]` **Signature verification:** Import event with bad signature → rejected
-- [ ] `[CODE]` Imported events NOT re-forwarded outbound
+- [x] `[AUTO]` **Duplicate handling:** Import same event twice → no error, no duplicate
+- [x] `[AUTO]` **Signature verification:** Import event with bad signature → rejected
+- [x] `[CODE]` Imported events NOT re-forwarded outbound
 
 ### 3.10 — Relay Discovery Endpoint
 
