@@ -4,7 +4,7 @@ import fsp from "node:fs/promises";
 import { Router } from "express";
 import { z, ZodError } from "zod";
 import multer from "multer";
-import { authenticate, requireRole, ValidationError, NotFoundError, getConfig, storeEvent, EVENT_KIND_GAME_LISTING, db } from "@boilerdeck/shared";
+import { authenticate, requireRole, ValidationError, NotFoundError, getConfig, storeEvent, EVENT_KIND_GAME_LISTING, EVENT_KIND_GAME_VERSION, db } from "@boilerdeck/shared";
 import { signEventForUser } from "@boilerdeck/auth";
 import * as catalogService from "./service.js";
 
@@ -162,7 +162,29 @@ catalogRouter.patch(
   async (req, res, next) => {
     try {
       const developer = await catalogService.getDeveloperByUserId(req.user!.sub);
-      const game = await catalogService.publishGame(String(req.params.id), developer.id);
+      let game = await catalogService.publishGame(String(req.params.id), developer.id);
+
+      // Sign and store a kind 30001 event with PUBLISHED status (non-fatal)
+      try {
+        const event = await signEventForUser(req.user!.sub, {
+          kind: EVENT_KIND_GAME_LISTING,
+          tags: [["d", game.slug], ["t", "game"], ["status", "PUBLISHED"]],
+          content: JSON.stringify({
+            title: game.title,
+            description: game.description,
+            priceCents: game.priceCents,
+            slug: game.slug,
+          }),
+        });
+        await storeEvent(event);
+        game = await db.game.update({
+          where: { id: game.id },
+          data: { eventId: event.id },
+        });
+      } catch {
+        // Signing failure is non-fatal
+      }
+
       res.json(game);
     } catch (err) {
       next(err);
@@ -177,7 +199,29 @@ catalogRouter.patch(
   async (req, res, next) => {
     try {
       const developer = await catalogService.getDeveloperByUserId(req.user!.sub);
-      const game = await catalogService.unpublishGame(String(req.params.id), developer.id);
+      let game = await catalogService.unpublishGame(String(req.params.id), developer.id);
+
+      // Sign and store a kind 30001 event with DRAFT status (non-fatal)
+      try {
+        const event = await signEventForUser(req.user!.sub, {
+          kind: EVENT_KIND_GAME_LISTING,
+          tags: [["d", game.slug], ["t", "game"], ["status", "DRAFT"]],
+          content: JSON.stringify({
+            title: game.title,
+            description: game.description,
+            priceCents: game.priceCents,
+            slug: game.slug,
+          }),
+        });
+        await storeEvent(event);
+        game = await db.game.update({
+          where: { id: game.id },
+          data: { eventId: event.id },
+        });
+      } catch {
+        // Signing failure is non-fatal
+      }
+
       res.json(game);
     } catch (err) {
       next(err);
@@ -296,7 +340,29 @@ catalogRouter.put(
         handleZodError(err);
       }
       const developer = await catalogService.getDeveloperByUserId(req.user!.sub);
-      const game = await catalogService.updateGame(String(req.params.id), developer.id, input);
+      let game = await catalogService.updateGame(String(req.params.id), developer.id, input);
+
+      // Sign and store a kind 30001 event for the updated game (non-fatal)
+      try {
+        const event = await signEventForUser(req.user!.sub, {
+          kind: EVENT_KIND_GAME_LISTING,
+          tags: [["d", game.slug], ["t", "game"], ["status", game.status]],
+          content: JSON.stringify({
+            title: game.title,
+            description: game.description,
+            priceCents: game.priceCents,
+            slug: game.slug,
+          }),
+        });
+        await storeEvent(event);
+        game = await db.game.update({
+          where: { id: game.id },
+          data: { eventId: event.id },
+        });
+      } catch {
+        // Signing failure is non-fatal
+      }
+
       res.json(game);
     } catch (err) {
       next(err);
@@ -440,6 +506,29 @@ catalogRouter.post(
         String(req.params.versionId),
         req.file.path,
       );
+
+      // Sign and store a kind 30002 event for the game version (non-fatal)
+      try {
+        const game = await db.game.findUnique({ where: { id: String(req.params.id) } });
+        if (game) {
+          const event = await signEventForUser(req.user!.sub, {
+            kind: EVENT_KIND_GAME_VERSION,
+            tags: [
+              ["d", `${game.slug}:${result.version}`],
+              ...(game.eventId ? [["e", game.eventId]] : []),
+              ["game", game.slug],
+            ],
+            content: JSON.stringify({
+              version: result.version,
+              fileSizeBytes: result.fileSizeBytes,
+              infoHash: result.torrent?.infoHash ?? null,
+            }),
+          });
+          await storeEvent(event);
+        }
+      } catch {
+        // Signing failure is non-fatal
+      }
 
       res.json(result);
     } catch (err) {
