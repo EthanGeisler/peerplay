@@ -217,7 +217,7 @@ export function Settings() {
             </div>
             <div style={styles.row}>
               <span style={styles.label}>Email</span>
-              <span style={styles.value}>{user.email}</span>
+              <span style={styles.value}>{user.email ?? "Nostr User"}</span>
             </div>
             <div style={styles.row}>
               <span style={styles.label}>Role</span>

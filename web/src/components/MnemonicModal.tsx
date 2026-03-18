@@ -3,9 +3,10 @@ import { useState } from "react";
 interface MnemonicModalProps {
   mnemonic: string;
   onClose: () => void;
+  nostrOnly?: boolean;
 }
 
-export function MnemonicModal({ mnemonic, onClose }: MnemonicModalProps) {
+export function MnemonicModal({ mnemonic, onClose, nostrOnly }: MnemonicModalProps) {
   const [confirmed, setConfirmed] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showSkipWarning, setShowSkipWarning] = useState(false);
@@ -78,7 +79,7 @@ export function MnemonicModal({ mnemonic, onClose }: MnemonicModalProps) {
           Continue
         </button>
 
-        {!confirmed && (
+        {!confirmed && !nostrOnly && (
           <>
             <button onClick={handleSkip} style={skipButtonStyle}>
               I'll do this later
@@ -90,6 +91,12 @@ export function MnemonicModal({ mnemonic, onClose }: MnemonicModalProps) {
               </p>
             )}
           </>
+        )}
+        {!confirmed && nostrOnly && (
+          <p style={{ fontSize: 12, color: "#e94560", marginTop: 12, textAlign: "center", lineHeight: 1.4 }}>
+            This is your only way to sign in. There is no email or password recovery.
+            You must save this phrase before continuing.
+          </p>
         )}
       </div>
     </div>

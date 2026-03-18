@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 import crypto from "node:crypto";
 import { db, redis, getConfig, ConflictError, UnauthorizedError, NotFoundError, ValidationError } from "@boilerdeck/shared";
 import type { JwtPayload } from "@boilerdeck/shared";
-import type { RegisterInput, LoginInput, PubkeyLoginInput, ChangePasswordInput } from "./schemas.js";
+import type { RegisterInput, LoginInput, PubkeyLoginInput, RegisterPubkeyInput, ChangePasswordInput } from "./schemas.js";
 import { generateKeypair, encryptPrivateKey, encryptMnemonic, decryptPrivateKey, decryptMnemonic, schnorrVerify, pubkeyHex, pubkeyToNpub, privkeyToNsec } from "./crypto.js";
 
 const SALT_ROUNDS = 12;
@@ -26,10 +26,10 @@ function getRefreshTtlSeconds(): number {
   return parseInt(num!) * multipliers[unit!]!;
 }
 
-function generateAccessToken(user: { id: string; email: string; role: string; nostrPubkey?: string | null }): string {
+function generateAccessToken(user: { id: string; email: string | null; role: string; nostrPubkey?: string | null }): string {
   const config = getConfig();
   return jwt.sign(
-    { sub: user.id, email: user.email, role: user.role, ...(user.nostrPubkey ? { pubkey: user.nostrPubkey } : {}) },
+    { sub: user.id, email: user.email ?? null, role: user.role, ...(user.nostrPubkey ? { pubkey: user.nostrPubkey } : {}) },
     config.JWT_ACCESS_SECRET,
     { expiresIn: config.JWT_ACCESS_EXPIRES_IN as unknown as jwt.SignOptions["expiresIn"] },
   );
@@ -121,6 +121,10 @@ export async function login(input: LoginInput) {
   const user = await db.user.findUnique({ where: { email: input.email } });
   if (!user) {
     throw new UnauthorizedError("Invalid email or password");
+  }
+
+  if (!user.passwordHash) {
+    throw new UnauthorizedError("This account uses Nostr login. Use your recovery phrase to sign in.");
   }
 
   const valid = await bcrypt.compare(input.password, user.passwordHash);
@@ -228,6 +232,10 @@ export async function recoverMnemonic(userId: string, password: string) {
     throw new ValidationError("No mnemonic available for this account");
   }
 
+  if (!user.passwordHash) {
+    throw new ValidationError("Cannot recover mnemonic for Nostr-only accounts");
+  }
+
   // Verify password before decrypting
   const valid = await bcrypt.compare(password, user.passwordHash);
   if (!valid) {
@@ -240,6 +248,25 @@ export async function recoverMnemonic(userId: string, password: string) {
 
 const CHALLENGE_TTL = 300; // 5 minutes
 
+async function verifyChallengeSignature(challenge: string, pubkey: string, signature: string): Promise<void> {
+  const exists = await redis.get(`challenge:${challenge}`);
+  if (!exists) {
+    throw new UnauthorizedError("Invalid or expired challenge");
+  }
+  await redis.del(`challenge:${challenge}`);
+
+  const { sha256 } = await import("@noble/hashes/sha2.js");
+  const challengeBytes = new Uint8Array(Buffer.from(challenge, "hex"));
+  const messageHash = sha256(challengeBytes);
+  const pubkeyBytes = new Uint8Array(Buffer.from(pubkey, "hex"));
+  const signatureBytes = new Uint8Array(Buffer.from(signature, "hex"));
+
+  const valid = schnorrVerify(pubkeyBytes, messageHash, signatureBytes);
+  if (!valid) {
+    throw new UnauthorizedError("Invalid signature");
+  }
+}
+
 export async function generateChallenge() {
   const challenge = crypto.randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + CHALLENGE_TTL * 1000).toISOString();
@@ -248,26 +275,7 @@ export async function generateChallenge() {
 }
 
 export async function loginWithPubkey(input: PubkeyLoginInput) {
-  // Verify challenge exists and hasn't expired
-  const exists = await redis.get(`challenge:${input.challenge}`);
-  if (!exists) {
-    throw new UnauthorizedError("Invalid or expired challenge");
-  }
-
-  // Delete challenge immediately (one-time use)
-  await redis.del(`challenge:${input.challenge}`);
-
-  // Verify Schnorr signature over SHA-256(challenge bytes)
-  const { sha256 } = await import("@noble/hashes/sha2.js");
-  const challengeBytes = new Uint8Array(Buffer.from(input.challenge, "hex"));
-  const messageHash = sha256(challengeBytes);
-  const pubkeyBytes = new Uint8Array(Buffer.from(input.pubkey, "hex"));
-  const signatureBytes = new Uint8Array(Buffer.from(input.signature, "hex"));
-
-  const valid = schnorrVerify(pubkeyBytes, messageHash, signatureBytes);
-  if (!valid) {
-    throw new UnauthorizedError("Invalid signature");
-  }
+  await verifyChallengeSignature(input.challenge, input.pubkey, input.signature);
 
   // Look up user by pubkey
   const user = await db.user.findUnique({ where: { nostrPubkey: input.pubkey } });
@@ -293,6 +301,46 @@ export async function loginWithPubkey(input: PubkeyLoginInput) {
   };
 }
 
+export async function registerWithPubkey(input: RegisterPubkeyInput) {
+  await verifyChallengeSignature(input.challenge, input.pubkey, input.signature);
+
+  // Check no existing user with this pubkey
+  const existing = await db.user.findUnique({ where: { nostrPubkey: input.pubkey } });
+  if (existing) {
+    throw new ConflictError("An account with this pubkey already exists");
+  }
+
+  // Create user with no email/password
+  const user = await db.user.create({
+    data: {
+      email: null,
+      passwordHash: null,
+      displayName: input.displayName,
+      nostrPubkey: input.pubkey,
+      custodyMode: "SELF_CUSTODY",
+      encryptedNsec: null,
+      encryptedMnemonic: null,
+    },
+  });
+
+  const accessToken = generateAccessToken({ ...user, nostrPubkey: input.pubkey });
+  const refreshToken = generateRefreshToken();
+
+  await db.refreshToken.create({
+    data: {
+      userId: user.id,
+      token: refreshToken,
+      expiresAt: getRefreshExpiresAt(),
+    },
+  });
+
+  return {
+    user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, nostrPubkey: input.pubkey },
+    accessToken,
+    refreshToken,
+  };
+}
+
 export async function exportKeys(userId: string, password: string) {
   const user = await db.user.findUnique({ where: { id: userId } });
   if (!user) {
@@ -301,6 +349,10 @@ export async function exportKeys(userId: string, password: string) {
 
   if (user.custodyMode === "SELF_CUSTODY" || !user.encryptedNsec) {
     throw new ValidationError("No keys to export — self-custody users already hold their own keys");
+  }
+
+  if (!user.passwordHash) {
+    throw new ValidationError("Cannot export keys for Nostr-only accounts");
   }
 
   const valid = await bcrypt.compare(password, user.passwordHash);
@@ -327,6 +379,10 @@ export async function switchCustody(userId: string, password: string) {
 
   if (user.custodyMode === "SELF_CUSTODY") {
     throw new ValidationError("Already in self-custody mode");
+  }
+
+  if (!user.passwordHash) {
+    throw new ValidationError("Cannot switch custody for Nostr-only accounts");
   }
 
   const valid = await bcrypt.compare(password, user.passwordHash);
@@ -357,6 +413,10 @@ export async function changePassword(userId: string, input: ChangePasswordInput)
   const user = await db.user.findUnique({ where: { id: userId } });
   if (!user) {
     throw new UnauthorizedError("User not found");
+  }
+
+  if (!user.passwordHash) {
+    throw new ValidationError("Cannot change password for Nostr-only accounts");
   }
 
   const valid = await bcrypt.compare(input.currentPassword, user.passwordHash);

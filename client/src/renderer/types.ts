@@ -29,7 +29,7 @@ export interface ApiGameDetail extends ApiGame {
 
 export interface ApiUser {
   id: string;
-  email: string;
+  email: string | null;
   displayName: string;
   role: "USER" | "DEVELOPER" | "ADMIN";
   nostrPubkey?: string;

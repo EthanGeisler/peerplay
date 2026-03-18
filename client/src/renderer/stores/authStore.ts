@@ -13,8 +13,10 @@ interface AuthState {
   error: string | null;
   login: (email: string, password: string) => Promise<string | undefined>;
   loginWithPubkey: () => Promise<void>;
+  loginWithMnemonic: (mnemonic: string) => Promise<void>;
   register: (email: string, password: string, displayName: string) => Promise<string | undefined>;
   registerSelfCustody: (email: string, password: string, displayName: string) => Promise<string>;
+  registerWithNostr: (displayName: string) => Promise<string>;
   registerDeveloper: (studioName: string) => Promise<void>;
   logout: () => Promise<void>;
   loadSession: () => Promise<void>;
@@ -93,6 +95,52 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     // Sign challenge in main process using stored private key
     const { signature, pubkeyHex } = await window.boilerdeck.crypto.signChallenge(challenge);
+
+    // Login with pubkey
+    const data = await apiFetch<ApiAuthResponse>("/auth/login/pubkey", {
+      method: "POST",
+      body: JSON.stringify({ pubkey: pubkeyHex, challenge, signature }),
+    });
+
+    setAccessToken(data.accessToken);
+    await window.boilerdeck.store.set("refreshToken", data.refreshToken);
+    set({ user: data.user });
+
+    if (data.user.role === "DEVELOPER" || data.user.role === "ADMIN") {
+      await loadDeveloperProfile(set);
+    }
+  },
+
+  registerWithNostr: async (displayName: string) => {
+    set({ error: null });
+    // Generate keypair locally in main process
+    const { mnemonic, pubkeyHex } = await window.boilerdeck.crypto.generateKeypair();
+
+    // Get challenge + sign it
+    const { challenge } = await apiFetch<{ challenge: string; expiresAt: string }>("/auth/challenge");
+    const { signature } = await window.boilerdeck.crypto.signChallenge(challenge);
+
+    // Register with server (no email/password)
+    const data = await apiFetch<ApiAuthResponse>("/auth/register/pubkey", {
+      method: "POST",
+      body: JSON.stringify({ pubkey: pubkeyHex, displayName, challenge, signature }),
+    });
+
+    setAccessToken(data.accessToken);
+    await window.boilerdeck.store.set("refreshToken", data.refreshToken);
+    set({ user: data.user });
+
+    return mnemonic;
+  },
+
+  loginWithMnemonic: async (mnemonic: string) => {
+    set({ error: null });
+    // Import mnemonic → derives keypair, caches private key in electron-store
+    const { pubkeyHex } = await window.boilerdeck.crypto.importMnemonic(mnemonic.trim());
+
+    // Get challenge + sign it (now using the cached key)
+    const { challenge } = await apiFetch<{ challenge: string; expiresAt: string }>("/auth/challenge");
+    const { signature } = await window.boilerdeck.crypto.signChallenge(challenge);
 
     // Login with pubkey
     const data = await apiFetch<ApiAuthResponse>("/auth/login/pubkey", {

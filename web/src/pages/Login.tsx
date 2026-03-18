@@ -7,6 +7,8 @@ export function Login() {
   const navigate = useNavigate();
   const login = useAuthStore((s) => s.login);
   const register = useAuthStore((s) => s.register);
+  const registerWithNostr = useAuthStore((s) => s.registerWithNostr);
+  const loginWithNostr = useAuthStore((s) => s.loginWithNostr);
   const error = useAuthStore((s) => s.error);
   const clearError = useAuthStore((s) => s.clearError);
 
@@ -14,26 +16,38 @@ export function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [recoveryPhrase, setRecoveryPhrase] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [mnemonic, setMnemonic] = useState<string | null>(null);
+  const [useNostr, setUseNostr] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     try {
       if (tab === "login") {
-        const m = await login(email, password);
-        if (m) {
-          setMnemonic(m);
-        } else {
+        if (useNostr) {
+          await loginWithNostr(recoveryPhrase);
           navigate("/");
+        } else {
+          const m = await login(email, password);
+          if (m) {
+            setMnemonic(m);
+          } else {
+            navigate("/");
+          }
         }
       } else {
-        const m = await register(email, password, displayName);
-        if (m) {
+        if (useNostr) {
+          const m = await registerWithNostr(displayName);
           setMnemonic(m);
         } else {
-          navigate("/");
+          const m = await register(email, password, displayName);
+          if (m) {
+            setMnemonic(m);
+          } else {
+            navigate("/");
+          }
         }
       }
     } catch {
@@ -41,6 +55,12 @@ export function Login() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleTabSwitch = (t: "login" | "register") => {
+    setTab(t);
+    setUseNostr(false);
+    clearError();
   };
 
   return (
@@ -54,7 +74,7 @@ export function Login() {
         {(["login", "register"] as const).map((t) => (
           <button
             key={t}
-            onClick={() => { setTab(t); clearError(); }}
+            onClick={() => handleTabSwitch(t)}
             style={{
               flex: 1,
               padding: "10px 0",
@@ -87,45 +107,82 @@ export function Login() {
       )}
 
       <form onSubmit={handleSubmit}>
-        {tab === "register" && (
-          <div style={{ marginBottom: 16 }}>
-            <label htmlFor="displayName" style={labelStyle}>Display Name</label>
-            <input
-              id="displayName"
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              required
-              style={inputStyle}
-              placeholder="Your name"
-            />
-          </div>
+        {!useNostr ? (
+          <>
+            {tab === "register" && (
+              <div style={{ marginBottom: 16 }}>
+                <label htmlFor="displayName" style={labelStyle}>Display Name</label>
+                <input
+                  id="displayName"
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  required
+                  style={inputStyle}
+                  placeholder="Your name"
+                />
+              </div>
+            )}
+            <div style={{ marginBottom: 16 }}>
+              <label htmlFor="email" style={labelStyle}>Email</label>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                style={inputStyle}
+                placeholder="you@example.com"
+              />
+            </div>
+            <div style={{ marginBottom: 24 }}>
+              <label htmlFor="password" style={labelStyle}>Password</label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={6}
+                style={inputStyle}
+                placeholder="At least 6 characters"
+              />
+            </div>
+          </>
+        ) : (
+          <>
+            {tab === "register" ? (
+              <div style={{ marginBottom: 24 }}>
+                <label htmlFor="nostrDisplayName" style={labelStyle}>Display Name</label>
+                <input
+                  id="nostrDisplayName"
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  required
+                  style={inputStyle}
+                  placeholder="Your name"
+                />
+                <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.4 }}>
+                  A keypair will be generated in your browser. You'll receive a 12-word recovery phrase — this is your only way to sign in.
+                </p>
+              </div>
+            ) : (
+              <div style={{ marginBottom: 24 }}>
+                <label htmlFor="recoveryPhrase" style={labelStyle}>Recovery Phrase</label>
+                <textarea
+                  id="recoveryPhrase"
+                  value={recoveryPhrase}
+                  onChange={(e) => setRecoveryPhrase(e.target.value)}
+                  required
+                  style={{ ...inputStyle, minHeight: 80, resize: "vertical", fontFamily: "monospace" }}
+                  placeholder="Enter your 12-word recovery phrase"
+                />
+              </div>
+            )}
+          </>
         )}
-        <div style={{ marginBottom: 16 }}>
-          <label htmlFor="email" style={labelStyle}>Email</label>
-          <input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            style={inputStyle}
-            placeholder="you@example.com"
-          />
-        </div>
-        <div style={{ marginBottom: 24 }}>
-          <label htmlFor="password" style={labelStyle}>Password</label>
-          <input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={6}
-            style={inputStyle}
-            placeholder="At least 6 characters"
-          />
-        </div>
+
         <button
           type="submit"
           disabled={submitting}
@@ -140,9 +197,44 @@ export function Login() {
             opacity: submitting ? 0.7 : 1,
           }}
         >
-          {submitting ? "..." : tab === "login" ? "Sign In" : "Create Account"}
+          {submitting
+            ? "..."
+            : useNostr
+              ? tab === "login"
+                ? "Sign In with Key"
+                : "Create Nostr Account"
+              : tab === "login"
+                ? "Sign In"
+                : "Create Account"}
         </button>
       </form>
+
+      {/* Nostr toggle */}
+      <div style={{ marginTop: 20, textAlign: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 8 }}>
+          <div style={{ flex: 1, height: 1, backgroundColor: "var(--border)" }} />
+          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>or</span>
+          <div style={{ flex: 1, height: 1, backgroundColor: "var(--border)" }} />
+        </div>
+        <button
+          type="button"
+          onClick={() => { setUseNostr(!useNostr); clearError(); }}
+          style={{
+            background: "none",
+            border: "none",
+            color: "var(--accent)",
+            fontSize: 13,
+            cursor: "pointer",
+            padding: "4px 0",
+          }}
+        >
+          {useNostr
+            ? "Use email instead"
+            : tab === "login"
+              ? "Use Nostr key instead"
+              : "Register with Nostr key instead"}
+        </button>
+      </div>
 
       {mnemonic && (
         <MnemonicModal
@@ -151,6 +243,7 @@ export function Login() {
             setMnemonic(null);
             navigate("/");
           }}
+          nostrOnly={useNostr}
         />
       )}
     </div>

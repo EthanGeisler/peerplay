@@ -146,6 +146,31 @@ function setupIpcHandlers(): void {
     };
   });
 
+  ipcMain.handle("crypto:import-mnemonic", async (_event, mnemonic: string) => {
+    const { mnemonicToSeedSync, validateMnemonic } = await import("@scure/bip39");
+    const { wordlist } = await import("@scure/bip39/wordlists/english.js");
+    const { HDKey } = await import("@scure/bip32");
+    const { bytesToHex } = await import("@noble/hashes/utils.js");
+
+    if (!validateMnemonic(mnemonic, wordlist)) {
+      throw new Error("Invalid recovery phrase. Please check your words and try again.");
+    }
+
+    const seed = mnemonicToSeedSync(mnemonic);
+    const hdkey = HDKey.fromMasterSeed(seed).derive("m/44'/1237'/0'/0/0");
+    const privateKey = hdkey.privateKey!;
+    const publicKey = hdkey.publicKey!.slice(1); // drop 02/03 prefix → 32-byte x-only
+
+    // Encrypt private key with safeStorage (OS-level encryption)
+    const privkeyHex = bytesToHex(privateKey);
+    const encrypted = safeStorage.encryptString(privkeyHex);
+    storeSet("selfCustodyKey", encrypted.toString("base64"));
+
+    return {
+      pubkeyHex: bytesToHex(publicKey),
+    };
+  });
+
   ipcMain.handle("crypto:sign-challenge", async (_event, challengeHex: string) => {
     const { schnorr } = await import("@noble/curves/secp256k1.js");
     const { sha256 } = await import("@noble/hashes/sha2.js");

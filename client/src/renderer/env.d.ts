@@ -28,6 +28,7 @@ declare global {
       crypto: {
         generateKeypair: () => Promise<{ mnemonic: string; pubkeyHex: string }>;
         signChallenge: (challengeHex: string) => Promise<{ signature: string; pubkeyHex: string }>;
+        importMnemonic: (mnemonic: string) => Promise<{ pubkeyHex: string }>;
       };
       events: {
         signAndPublishReview: (opts: {

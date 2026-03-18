@@ -144,7 +144,7 @@ export function App() {
             <div style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 500 }}>
               {developer.studioName}
             </div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{user.email}</div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{user.email ?? "Nostr User"}</div>
           </div>
           <button
             onClick={logout}

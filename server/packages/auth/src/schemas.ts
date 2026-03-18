@@ -22,6 +22,13 @@ export const pubkeyLoginSchema = z.object({
   signature: z.string().length(128).regex(/^[0-9a-f]+$/),
 });
 
+export const registerPubkeySchema = z.object({
+  pubkey: z.string().length(64).regex(/^[0-9a-f]+$/),
+  displayName: z.string().min(2).max(50),
+  challenge: z.string().length(64).regex(/^[0-9a-f]+$/),
+  signature: z.string().length(128).regex(/^[0-9a-f]+$/),
+});
+
 export const exportKeysSchema = z.object({
   password: z.string(),
 });
@@ -40,4 +47,5 @@ export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RecoverMnemonicInput = z.infer<typeof recoverMnemonicSchema>;
 export type PubkeyLoginInput = z.infer<typeof pubkeyLoginSchema>;
+export type RegisterPubkeyInput = z.infer<typeof registerPubkeySchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;

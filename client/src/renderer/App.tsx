@@ -205,7 +205,7 @@ export function App() {
           ) : user ? (
             <>
               <div style={styles.userName}>{user.displayName}</div>
-              <div style={styles.userEmail}>{user.email}</div>
+              <div style={styles.userEmail}>{user.email ?? "Nostr User"}</div>
               <button
                 style={styles.signOutBtn}
                 onClick={async () => {
