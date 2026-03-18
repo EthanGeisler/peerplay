@@ -7,10 +7,11 @@
 **After writing or editing ANY code, you MUST complete ALL of these steps before ending your response. Do not stop, summarize, or ask the user what's next until every step is done.**
 
 1. **Review:** Run `@server-reviewer` and/or `@frontend-reviewer` (based on what changed)
-2. **Verify:** Run `@verify <sub-task-id>` (if working on a decentralization sub-task)
+2. **Verify (code):** Run `@verify <sub-task-id>` (if working on a decentralization sub-task)
 3. **Commit:** Stage and commit changes with a descriptive message
 4. **Push:** `git push origin main`
 5. **Deploy:** Pull on VPS, rebuild if needed, health check
+6. **Verify (runtime):** After deploy, run ALL `[AUTO]` verification checks from `VERIFICATION_CHECKS.md` against the **live API** (`https://boilerdeck.com/api/...`). This means actually hitting endpoints with curl, checking Redis state via SSH, decoding JWTs, and confirming DB state — not just reading the code. Report a pass/fail table for every check.
 
 If any step fails, fix the issue and retry. Do not skip steps. Do not ask the user whether to proceed — just do it.
 
