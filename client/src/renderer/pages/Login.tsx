@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../stores/authStore";
+import { MnemonicModal } from "../components/MnemonicModal";
 
 const styles = {
   container: {
@@ -81,18 +82,24 @@ export function Login() {
   const [displayName, setDisplayName] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [mnemonic, setMnemonic] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setSubmitting(true);
     try {
+      let m: string | undefined;
       if (tab === "login") {
-        await login(email, password);
+        m = await login(email, password);
       } else {
-        await register(email, password, displayName);
+        m = await register(email, password, displayName);
       }
-      navigate("/");
+      if (m) {
+        setMnemonic(m);
+      } else {
+        navigate("/");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -159,6 +166,16 @@ export function Login() {
           {submitting ? "Please wait..." : tab === "login" ? "Sign In" : "Create Account"}
         </button>
       </form>
+
+      {mnemonic && (
+        <MnemonicModal
+          mnemonic={mnemonic}
+          onClose={() => {
+            setMnemonic(null);
+            navigate("/");
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -11,8 +11,8 @@ interface AuthState {
   developer: Developer | null;
   loading: boolean;
   error: string | null;
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, displayName: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<string | undefined>;
+  register: (email: string, password: string, displayName: string) => Promise<string | undefined>;
   registerDeveloper: (studioName: string) => Promise<void>;
   logout: () => Promise<void>;
   loadSession: () => Promise<void>;
@@ -48,6 +48,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (data.user.role === "DEVELOPER" || data.user.role === "ADMIN") {
       await loadDeveloperProfile(set);
     }
+
+    return data.mnemonic;
   },
 
   register: async (email: string, password: string, displayName: string) => {
@@ -60,6 +62,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     setAccessToken(data.accessToken);
     await window.boilerdeck.store.set("refreshToken", data.refreshToken);
     set({ user: data.user });
+
+    return data.mnemonic;
   },
 
   registerDeveloper: async (studioName: string) => {

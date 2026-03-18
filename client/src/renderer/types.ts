@@ -29,12 +29,14 @@ export interface ApiUser {
   email: string;
   displayName: string;
   role: "USER" | "DEVELOPER" | "ADMIN";
+  nostrPubkey?: string;
 }
 
 export interface ApiAuthResponse {
   user: ApiUser;
   accessToken: string;
   refreshToken: string;
+  mnemonic?: string;
 }
 
 export interface ApiLicense {
