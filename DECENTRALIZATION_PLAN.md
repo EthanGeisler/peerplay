@@ -181,7 +181,7 @@ Client also has: InstalledGame, DownloadProgress, Dev* types
 ### 1.2 — Crypto utility module
 - **File:** `server/packages/auth/src/crypto.ts` (NEW)
 - Functions needed:
-  - `generateMnemonic()` → 12-word BIP39 mnemonic (english wordlist)
+  - `generateMnemonic()` → 12-word BIP39 mnemonic (english wordlist, imported from `@scure/bip39/wordlists/english.js` — the `.js` extension is required by the package's exports map)
   - `mnemonicToKeypair(mnemonic: string)` → `{ publicKey: Uint8Array, privateKey: Uint8Array }`
     - Derivation path: `m/44'/1237'/0'/0/0` (NIP-06 standard for Nostr)
     - privateKey = 32-byte secp256k1 scalar
@@ -198,6 +198,7 @@ Client also has: InstalledGame, DownloadProgress, Dev* types
   - `privkeyToNsec(privateKey: Uint8Array)` → bech32 `nsec1...` string
 - Encryption format: `v1:salt(32B):nonce(12B):tag(16B):ciphertext` as colon-separated hex segments
   - Version prefix `v1:` allows future format upgrades without breaking existing data
+  - scrypt parameters for `v1`: `N=32768 (2^15), r=8, p=1, keyLen=32` — hardcoded as constants tied to the `v1` prefix. Changing these requires a new version prefix (e.g., `v2:`).
 - Use `@noble/curves/secp256k1.js` for `schnorr` property (sign/verify) — note the `.js` extension (ESM exports)
 - Use `@noble/hashes/sha2.js` for `sha256` — NOT `@noble/hashes/sha256` (doesn't exist)
 - Use `@scure/bip32` HDKey for NIP-06 derivation path
