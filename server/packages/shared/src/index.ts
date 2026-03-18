@@ -17,3 +17,17 @@ export {
 } from "./middleware.js";
 export type { JwtPayload } from "./middleware.js";
 export { getStripe } from "./stripe.js";
+export {
+  serializeEvent,
+  hashEvent,
+  createEvent,
+  verifyEvent,
+  extractDTag,
+  isReplaceableKind,
+  normalizeDTag,
+  EVENT_KIND_GAME_LISTING,
+  EVENT_KIND_GAME_VERSION,
+  EVENT_KIND_REVIEW,
+  EVENT_KIND_ATTESTATION,
+} from "./events.js";
+export type { UnsignedEvent, SignedEvent } from "./events.js";

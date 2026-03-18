@@ -186,6 +186,7 @@
 - [x] `[CODE]` `Event` model has indexes on: `kind`, `pubkey`, `createdAt`, and a unique constraint on `[pubkey, kind, dTag]`
 - [x] `[CODE]` `Game` model has `eventId String? @unique @map("event_id")`
 - [x] `[AUTO]` Existing data untouched after migration
+- [x] `[AUTO]` **dTag null vs empty string:** Insert event with `dTag: ""` then insert another with same pubkey+kind but `dTag: null` → both are stored (PostgreSQL treats NULL as distinct). Verify application code normalizes consistently — missing `d` tag in NIP-01 should map to `dTag: ""`, never `null`, for replaceable kinds (30000-39999) — **CONFIRMED (2026-03-17): DB allows multiple NULL dTags for same pubkey+kind. Sub-tasks 2.2/2.3 MUST normalize: replaceable kinds (30000-39999) → `dTag: ""`, regular kinds → `dTag: null`**
 
 ### 2.2 — Event utility module
 
@@ -195,6 +196,19 @@
 - [ ] `[AUTO]` **Tamper detection test:** Modify `content` after creation → `verifyEvent()` returns false
 - [ ] `[AUTO]` **Tamper ID test:** Modify `id` after creation → `verifyEvent()` returns false
 - [ ] `[AUTO]` **Tamper sig test:** Modify `sig` after creation → `verifyEvent()` returns false
+- [ ] `[AUTO]` **Unicode content:** `createEvent` with content `"🎮 Great game"` (multi-byte chars) → `verifyEvent()` passes. Hash is deterministic across repeated calls
+- [ ] `[AUTO]` **Deterministic serialization:** Call `serializeEvent()` twice on identical input → byte-for-byte identical output. Call `hashEvent()` → identical hash both times
+- [ ] `[AUTO]` **Empty tags:** `createEvent` with `tags: []` → serializes correctly, `verifyEvent()` passes
+- [ ] `[AUTO]` **Tags with empty strings:** `createEvent` with `tags: [["d", ""]]` → tag preserved in serialization (not stripped), `verifyEvent()` passes
+- [ ] `[AUTO]` **Content with special chars:** `createEvent` with `content: 'line1\nline2\t"quoted"\\backslash'` → all chars escaped correctly in canonical JSON, `verifyEvent()` passes
+- [ ] `[AUTO]` **Content is raw string, not double-encoded:** `createEvent` with `content: '{"key":"value"}'` → serialized canonical form has `content` as the raw JSON string, NOT double-escaped `"{\"key\":\"value\"}"`
+- [ ] `[AUTO]` **Negative created_at:** `createEvent` with `created_at: -1` → either rejects or handles consistently (does not crash)
+- [ ] `[AUTO]` **created_at precision loss:** `createEvent` with `created_at: Number.MAX_SAFE_INTEGER + 1` → rejects or throws (does not silently lose precision in JSON.stringify)
+- [ ] `[AUTO]` **verifyEvent with missing fields:** Pass event with `sig: undefined` → returns `false` (does not throw)
+- [ ] `[AUTO]` **verifyEvent with wrong-length sig:** 127-char or 129-char hex string → returns `false` (does not crash)
+- [ ] `[AUTO]` **verifyEvent with non-hex sig:** Valid-length string containing non-hex chars (e.g., `"zz..."`) → returns `false`
+- [ ] `[AUTO]` **verifyEvent with wrong-length pubkey:** 66-char compressed pubkey (starts with `02` or `03`) → returns `false`. Nostr uses 64-char x-only pubkeys
+- [ ] `[AUTO]` **verifyEvent with id mismatch:** Event where `id` doesn't match SHA-256 of canonical serialization (but `sig` is valid for original content) → returns `false`
 - [ ] `[CODE]` Exported from `shared/src/index.ts`
 - [ ] `[AUTO]` `npx tsc --noEmit` from shared package exits 0
 
@@ -209,6 +223,14 @@
 - [ ] `[AUTO]` **Query by author:** `queryEvents({ authors: [pubkey] })` returns only events by that pubkey
 - [ ] `[AUTO]` **Query with limit:** `queryEvents({ limit: 5 })` returns at most 5 events
 - [ ] `[AUTO]` **Query since/until:** Events outside the time range are excluded
+- [ ] `[AUTO]` **Older replaceable rejected:** Store event A (created_at: 100), then store event B with same pubkey+kind+dTag but created_at: 50 → event A is kept, B is ignored. `getEvent(A.id)` still returns A
+- [ ] `[AUTO]` **Concurrent replaceable upsert:** Two simultaneous `storeEvent()` calls with same pubkey+kind+dTag → only one survives, no P2002 crash or unhandled error
+- [ ] `[AUTO]` **Query limit: 0:** `queryEvents({ limit: 0 })` → returns empty array, not all events
+- [ ] `[AUTO]` **Query limit: negative:** `queryEvents({ limit: -1 })` → returns empty array or rejects (not uncapped query)
+- [ ] `[AUTO]` **Query limit: excessive:** `queryEvents({ limit: 999999 })` → capped at a reasonable max (e.g., 500)
+- [ ] `[AUTO]` **Query since > until:** `queryEvents({ since: 200, until: 100 })` → returns empty array, not error
+- [ ] `[AUTO]` **Store event with mismatched id:** Event where `id` field is wrong (doesn't match SHA-256 of canonical content) but `sig` is valid → rejects (id must be recomputed and verified)
+- [ ] `[CODE]` **dTag on non-replaceable kind:** If an event with kind 1 (regular, not parameterized replaceable) is stored with a `dTag`, the dTag is ignored for uniqueness purposes (no replacement logic applied)
 
 ### 2.4 — Server-side signing service
 
@@ -217,6 +239,10 @@
 - [ ] `[AUTO]` **Event pubkey matches user:** The returned event's `pubkey` matches the user's DB pubkey
 - [ ] `[AUTO]` **No Redis key = error:** Without logging in first (no Redis key) → `signEventForUser` throws `UnauthorizedError`
 - [ ] `[AUTO]` **Event verifiable:** `verifyEvent(returnedEvent)` returns true
+- [ ] `[AUTO]` **Self-custody user signing:** `signEventForUser()` for a `SELF_CUSTODY` user (no Redis key by design) → throws clear error indicating self-custody users must sign client-side, not a generic Redis failure
+- [ ] `[AUTO]` **Expired Redis key:** Login, manually delete `signing_key:<userId>` from Redis (simulating TTL expiry), then call `signEventForUser` → throws clear "session expired, re-login required" error
+- [ ] `[AUTO]` **Concurrent signing:** Two `signEventForUser()` calls at the same time for the same user → both succeed with valid, distinct events (different created_at or content → different IDs)
+- [ ] `[AUTO]` **SIGNING_CACHE_KEY rotation:** Change `SIGNING_CACHE_KEY` env var → existing cached Redis keys become undecryptable → `signEventForUser` fails with "re-login required" (not crash/unhandled error)
 - [ ] `[AUTO]` `npx tsc --noEmit` from auth package exits 0
 
 ### 2.5 — Wrap game creation in event signing
@@ -227,6 +253,9 @@
 - [ ] `[AUTO]` **Game.eventId linked:** The game row's `event_id` matches the event's `id`
 - [ ] `[AUTO]` **REST response unchanged:** The `POST /api/developer/games` response shape has not changed (no breaking changes)
 - [ ] `[AUTO]` **Existing game creation still works:** Creating a game via API succeeds end-to-end
+- [ ] `[AUTO]` **Self-custody developer creates game:** Developer in SELF_CUSTODY mode creates a game → game is created successfully. Event is either skipped (with `Game.eventId = null`) or an unsigned placeholder is stored. Game must be usable either way
+- [ ] `[AUTO]` **Signing failure doesn't orphan game:** If event signing fails (e.g., Redis key missing), the game row should still be created with `eventId: null` — not rolled back. REST response returns the game successfully
+- [ ] `[AUTO]` **Game slug with special characters in d tag:** Create a game with slug containing hyphens, numbers, etc. → `d` tag stores it correctly, event is verifiable
 
 ### 2.6 — Wrap game updates and publishing in event signing
 
@@ -234,6 +263,9 @@
 - [ ] `[AUTO]` **Replaceable:** Only one kind 30001 event per game slug per author (old one replaced)
 - [ ] `[AUTO]` **Publish → status tag:** Publish a game → event tags contain `["status", "PUBLISHED"]`
 - [ ] `[AUTO]` **Game.eventId updated:** The game row's `event_id` points to the newest event
+- [ ] `[AUTO]` **Rapid successive updates:** Update a game 5 times in quick succession → only the latest event exists (replaceable semantics), `Game.eventId` points to the newest one
+- [ ] `[AUTO]` **Publish already-published game:** Publish a game that's already PUBLISHED → idempotent, new event with same status tag replaces old one, no error
+- [ ] `[AUTO]` **Update after custody switch:** Developer switches to self-custody, then tries to update game via REST → game update succeeds but event signing is skipped (or clear error). Game is still usable
 
 ### 2.7 — Wrap game version creation in event signing
 
@@ -241,6 +273,8 @@
 - [ ] `[AUTO]` **Event content correct:** Event content JSON contains `version`, `fileSizeBytes`, `infoHash`
 - [ ] `[AUTO]` **Event tags correct:** Tags include `["d", "<slug>:<version>"]`, `["e", gameEventId]`, `["game", slug]`
 - [ ] `[AUTO]` **Event verifiable:** `verifyEvent(storedEvent)` returns true
+- [ ] `[AUTO]` **Duplicate version d tag:** Upload version with same `slug:version` as an existing version event → replaceable semantics apply (latest wins), no duplicate
+- [ ] `[AUTO]` **Version event references missing game event:** Version event has `["e", nonExistentEventId]` tag → still stores successfully (the `e` tag is informational, not a foreign key)
 
 ### 2.8 — REST endpoint for pre-signed events
 
@@ -251,6 +285,12 @@
 - [ ] `[AUTO]` **GET /api/events by author:** `GET /api/events?authors=<pubkey>` → returns only that author's events
 - [ ] `[AUTO]` **Auth required for POST:** `POST /api/events` without auth → returns 401
 - [ ] `[AUTO]` **GET is public:** `GET /api/events` without auth → returns 200
+- [ ] `[AUTO]` **POST pubkey not in DB:** Submit event with valid sig but pubkey doesn't match any user → returns 403 (not 500). Error message does not leak info about other users
+- [ ] `[AUTO]` **GET with no query params:** `GET /api/events` with no filters → returns events with default limit (not error)
+- [ ] `[AUTO]` **GET kinds as single value:** `GET /api/events?kinds=30001` → works (handles non-array query param)
+- [ ] `[AUTO]` **POST massive content:** Submit event with 1MB+ content field → returns 413 or 400 with size limit error (not OOM or timeout)
+- [ ] `[AUTO]` **POST massive tags:** Submit event with 1000+ tags → returns 400 with tag limit error
+- [ ] `[CODE]` **Rate limiting on POST:** `POST /api/events` has rate limiting configured to prevent event flooding
 
 ### 2.9 — Event materialization layer
 
@@ -260,6 +300,12 @@
 - [ ] `[AUTO]` **Idempotent:** Materialize the same event twice → no error, no duplicate rows
 - [ ] `[AUTO]` **REST API reflects materialized data:** After submitting a kind 30001 event, `GET /api/games/<slug>` returns the game with correct data
 - [ ] `[CODE]` Materialization is called from both the `POST /api/events` endpoint AND internal signing flow
+- [ ] `[AUTO]` **Slug collision from different pubkey:** Submit kind 30001 event with a slug that already exists in games table but from a different pubkey → either rejects (slug taken) or creates a namespaced entry. Must not overwrite another developer's game
+- [ ] `[AUTO]` **Malformed content JSON:** Submit kind 30001 event with `content: "not json"` → rejects with descriptive error (not JSON parse crash)
+- [ ] `[AUTO]` **Missing required fields in content:** Submit kind 30001 event with `content: "{}"` (no title, no description) → rejects with validation error
+- [ ] `[AUTO]` **Out-of-order version event:** Submit kind 30002 event referencing a game that doesn't exist yet (version arrives before game event) → either queues for later materialization or rejects with clear error
+- [ ] `[AUTO]` **Non-materializable kind is no-op:** Submit kind 1 (text note) event via `POST /api/events` → event is stored, but no game/version rows are affected. `materializeEvent` silently skips unknown kinds
+- [ ] `[AUTO]` **Idempotency with changed DB state:** Materialize kind 30001 event → manually change game title in DB → re-materialize same event → game title reverts to event's version (event is authoritative)
 
 ### 2.10 — Add pubkey to public API responses
 
@@ -267,6 +313,9 @@
 - [ ] `[AUTO]` **Game detail includes developer pubkey:** `GET /api/games/<slug>` response includes developer's `pubkey`
 - [ ] `[AUTO]` **Game list includes eventId:** `GET /api/games` response items include `eventId` field
 - [ ] `[AUTO]` **Backwards compatible:** Fields are optional (null/undefined for legacy data), existing consumers don't break
+- [ ] `[AUTO]` **getMe for self-custody user:** Response includes `custodyMode: "SELF_CUSTODY"` and `pubkey`, but does NOT include any encrypted key data (encryptedNsec, encryptedMnemonic)
+- [ ] `[AUTO]` **getMe for pre-migration user (no pubkey):** Response includes `pubkey: null` — frontend handles this without crashing
+- [ ] `[AUTO]` **Game detail for pre-event game:** Game created before Phase 2 returns `eventId: null` in response (not omitted, not crash)
 
 ### 2.11 — Frontend types and API updates
 
@@ -283,7 +332,9 @@
 - [ ] `[AUTO]` All existing REST endpoints work unchanged (games, auth, licenses, payments)
 - [ ] `[AUTO]` Every game creation/update/publish produces a corresponding signed event
 - [ ] `[AUTO]` Pre-signed events can be submitted and materialized into legacy tables
-- [ ] `[AUTO]` `verifyEvent()` passes for every event in the events table
+- [ ] `[AUTO]` `verifyEvent()` passes for every event in the events table — if any fail, report their `id` and `kind`
+- [ ] `[AUTO]` **No orphaned events:** Every event with kind 30001 has a corresponding game row. Every game with a non-null `eventId` references a valid event
+- [ ] `[AUTO]` **No future-dated events:** No event has `created_at` more than 10 minutes in the future relative to server time
 - [ ] `[AUTO]` `npx tsc --noEmit` exits 0 for all packages
 
 ---
@@ -325,6 +376,11 @@
 - [ ] `[AUTO]` **CLOSE:** Client sends `["CLOSE", "sub1"]` → no more events for that subscription
 - [ ] `[AUTO]` **Invalid event rejection:** Publish event with bad signature → receives `["OK", eventId, false, "invalid:..."]`
 - [ ] `[CODE]` Nginx config documented or included for WebSocket proxy on `/relay`
+- [ ] `[AUTO]` **Max subscriptions per connection:** Open 100+ subscriptions on one WS connection → server rejects with `["NOTICE", "..."]` after hitting a reasonable cap (e.g., 20-50)
+- [ ] `[AUTO]` **Oversized WS message:** Send a WebSocket frame > 1MB → server closes connection or sends `["NOTICE", "message too large"]` (not crash)
+- [ ] `[AUTO]` **Malformed JSON on WS:** Send `"not json at all"` → server responds with `["NOTICE", "error: ..."]` (not crash or disconnect)
+- [ ] `[AUTO]` **Unknown message type:** Send `["UNKNOWN", "data"]` → server responds with `["NOTICE", "unknown message type"]` (not crash)
+- [ ] `[AUTO]` **Unauthenticated WS publish:** Connect without auth → publish event → verify behavior is defined (either accepts if sig is valid, or rejects with auth required)
 
 ### 3.5 — Keypair Generation on Registration + Key Management
 
@@ -411,6 +467,10 @@
 - [ ] `[AUTO]` **One review per user per game:** Submit second review → replaces first (parameterized replaceable on `d` tag)
 - [ ] `[AUTO]` **Aggregation:** `GET /api/games/:slug/reviews` response includes `averageRating` and `reviewCount`
 - [ ] `[AUTO]` **Rating validation:** Rating outside 1-5 → rejected
+- [ ] `[AUTO]` **Rating as float:** Submit `rating: 3.5` → rejected (must be integer 1-5)
+- [ ] `[AUTO]` **Review for non-existent game:** `POST /api/games/nonexistent-slug/reviews` → returns 404 (not 500)
+- [ ] `[AUTO]` **XSS in review content:** Submit review with `title: "<script>alert('xss')</script>"` → stored safely, returned with HTML escaped or sanitized
+- [ ] `[AUTO]` **Concurrent review replacement:** Submit two reviews for same user+game at same instant → only one survives, no error or duplicate
 
 ### 4.4 — Review Display UI
 
@@ -454,6 +514,9 @@
 - [ ] `[AUTO]` **Unmute:** `DELETE /api/moderation/mute/<pubkey>` → events from that pubkey reappear
 - [ ] `[AUTO]` **Admin deletion:** Admin user can delete events via kind 5 deletion event
 - [ ] `[CODE]` Relay has its own keypair for admin-level deletion events
+- [ ] `[AUTO]` **Mute self:** `POST /api/moderation/mute` with own pubkey → returns 400 (cannot mute yourself)
+- [ ] `[AUTO]` **Mute non-existent pubkey:** Mute a pubkey that doesn't exist in DB → either stores (for future federation) or returns 404. Must not crash
+- [ ] `[AUTO]` **Admin delete federated event:** Admin deletes an event that was federated outbound → kind 5 deletion event is also forwarded to external relays
 
 ---
 
@@ -476,6 +539,8 @@
 - [ ] `[AUTO]` **Unknown infoHash rejected:** Attestation referencing non-existent torrent → rejected
 - [ ] `[AUTO]` **Bytes validation:** `bytesDownloaded > torrent file size` → rejected
 - [ ] `[AUTO]` **Parameterized replaceable:** One attestation per (signer, seeder, infoHash) — second replaces first
+- [ ] `[AUTO]` **Zero bytes rejected:** Attestation with `bytesDownloaded: 0` → rejected (no meaningful seeding occurred)
+- [ ] `[AUTO]` **Future-dated attestation:** Attestation with `created_at` more than 10 minutes in the future → rejected (clock skew protection)
 
 ### 5.2 — Electron Client: Auto-Generate Attestations After Download
 
@@ -501,6 +566,8 @@
 - [ ] `[CODE]` Score uses logarithmic formula (resists inflation)
 - [ ] `[AUTO]` **Redis caching:** Second request within 15 minutes is faster (cache hit)
 - [ ] `[CODE]` Anti-sybil: accounts < 7 days old weighted at 0.1x, max 20 attestations per attester per day
+- [ ] `[AUTO]` **Unknown pubkey reputation:** `GET /api/reputation/<pubkey-not-in-users-table>` → returns `{ score: 0, attestationCount: 0, uniqueAttesters: 0 }` (not 404)
+- [ ] `[AUTO]` **Cache invalidation awareness:** New attestation arrives → next reputation request after cache TTL expires reflects the new attestation
 
 ### 5.5 — Reputation Display in UI
 
@@ -811,6 +878,16 @@
 
 ---
 
+> **TODO: Edge case audit incomplete.** Hardened edge-case checks were added to Phases 2–5.4 and select checks in 3.4, 4.3, 4.9. The following sections still need an adversarial edge-case pass:
+> - **Phase 5:** 5.2, 5.3, 5.5, 5.6
+> - **Phase 6:** All sub-tasks (6.1–6.7)
+> - **Phase 7:** All sub-tasks (7.1–7.12)
+> - **Phase 8:** All sub-tasks (8.1–8.13)
+> - **Phase 3:** 3.1, 3.2, 3.3, 3.5, 3.6, 3.7, 3.8, 3.9, 3.10 (only 3.4 was hardened)
+> - **Phase 4:** 4.1, 4.2, 4.4, 4.5, 4.6, 4.7, 4.8 (only 4.3 and 4.9 were hardened)
+
+---
+
 ## Cross-Phase Invariants (check after EVERY phase)
 
 These must remain true throughout the entire implementation:
@@ -824,3 +901,8 @@ These must remain true throughout the entire implementation:
 - [ ] `[AUTO]` No new `console.log` in production code (use proper logger if logging needed)
 - [ ] `[AUTO]` No secrets committed: `.env` files remain gitignored, no hardcoded keys/passwords
 - [ ] `[CODE]` ESM compliance: all new files use `.js` extensions in imports
+- [ ] `[AUTO]` **Event ID integrity:** No event in the events table has an `id` that doesn't match `SHA-256(serializeEvent(event))`. Run a full-table scan periodically
+- [ ] `[AUTO]` **No future-dated events:** No event has `created_at` more than 10 minutes ahead of current server time
+- [ ] `[AUTO]` **dTag consistency:** For all events with kind 30000-39999, `dTag` is never `null` (should be `""` if no d tag was provided). For kinds outside this range, `dTag` is `null`
+- [ ] `[AUTO]` **Event content size limit:** No event has `content` larger than a configured max (e.g., 64KB). Enforce on all ingestion paths (REST, WS, materialization)
+- [ ] `[AUTO]` **BigInt safety:** Event IDs (64-char hex) survive JSON serialization round-trips without truncation or precision loss. No code path parses them as numbers
