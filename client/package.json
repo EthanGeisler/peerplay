@@ -67,7 +67,8 @@
     "asarUnpack": [
       "node_modules/webtorrent/**",
       "node_modules/utp-native/**",
-      "node_modules/**/*.node"
+      "node_modules/bufferutil/**/*.node",
+      "node_modules/utf-8-validate/**/*.node"
     ],
     "win": {
       "target": [
