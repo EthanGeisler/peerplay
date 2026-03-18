@@ -1,5 +1,8 @@
 import type { BrowserWindow } from "electron";
 import { publishAttestation } from "./attestation.js";
+import { storeGet, DEFAULT_PRIVACY_SETTINGS } from "./store.js";
+import type { PrivacySettings } from "./store.js";
+import { getProxyAgent } from "./proxyManager.js";
 
 // Lazy-import WebTorrent to avoid top-level-await ESM issues when loaded
 // via require() (e.g., Playwright's Electron launcher injects a -r flag).
@@ -26,15 +29,74 @@ interface ActiveDownload {
 }
 
 let client: any | null = null;
+/** Tracks whether the current client was created with privacy-mode torrent routing. */
+let clientPrivacyEnabled = false;
 let progressInterval: ReturnType<typeof setInterval> | null = null;
 let mainWindowRef: BrowserWindow | null = null;
 
 const activeDownloads = new Map<string, ActiveDownload>();
 
-async function getClient(): Promise<any> {
+/**
+ * Returns true when torrent traffic should be routed through SOCKS5.
+ * Only activates for custom SOCKS5 mode — never for Tor (too slow for game downloads).
+ */
+function shouldRouteTorrents(settings: PrivacySettings): boolean {
+  return settings.mode === "socks5" && settings.routeTorrentTraffic === true;
+}
+
+/** Reads privacy settings from the store (or returns defaults). */
+function getPrivacySettings(): PrivacySettings {
+  return (storeGet("privacySettings") as PrivacySettings | null) ?? DEFAULT_PRIVACY_SETTINGS;
+}
+
+/**
+ * Returns (or creates) the WebTorrent client, configured for the current
+ * privacy settings. If the privacy mode changed since the client was last
+ * created and there are no active torrents, the old client is destroyed and
+ * a new one is created with the correct settings.
+ */
+async function getClient(privacyActive?: boolean): Promise<any> {
+  const wantPrivacy = privacyActive ?? false;
+
+  // If the client exists but was created with different privacy config,
+  // destroy it so we can recreate with the correct settings.
+  // Only safe when no torrents are in-flight.
+  if (client && clientPrivacyEnabled !== wantPrivacy && client.torrents.length === 0) {
+    console.log(`[torrent] Recreating client (privacy: ${clientPrivacyEnabled} → ${wantPrivacy})`);
+    client.destroy();
+    client = null;
+  }
+
   if (!client) {
     const WT = await ensureWebTorrent();
-    client = new WT();
+    const clientOpts: Record<string, unknown> = {};
+
+    if (wantPrivacy) {
+      const settings = getPrivacySettings();
+      const agent = getProxyAgent(settings);
+
+      // Disable DHT and LSD — both use UDP and leak the real IP
+      clientOpts.dht = false;
+      clientOpts.lsd = false;
+
+      // Disable UTP (UDP-based transport) — leaks real IP
+      clientOpts.utp = false;
+
+      // Route tracker HTTP announces through the SOCKS5 proxy
+      if (agent) {
+        clientOpts.tracker = {
+          proxyOpts: {
+            httpAgent: agent,
+            httpsAgent: agent,
+          },
+        };
+      }
+
+      console.log("[torrent] Client created with SOCKS5 privacy: DHT=off, LSD=off, UTP=off, tracker proxied");
+    }
+
+    client = new WT(clientOpts);
+    clientPrivacyEnabled = wantPrivacy;
     client.on("error", (err: Error) => {
       console.error("[torrent] Client error:", err.message);
     });
@@ -87,7 +149,16 @@ export interface StartDownloadOpts {
 }
 
 export async function startDownload(opts: StartDownloadOpts): Promise<{ success: boolean; infoHash: string }> {
-  const wt = await getClient();
+  // Read privacy settings to determine if torrent traffic should be proxied.
+  // Only activates for custom SOCKS5 mode — Tor is too slow for game downloads.
+  const privacySettings = getPrivacySettings();
+  const privacyActive = shouldRouteTorrents(privacySettings);
+
+  if (privacyActive) {
+    console.log(`[torrent] Privacy mode active: routing torrent traffic through SOCKS5 (${privacySettings.socksHost}:${privacySettings.socksPort})`);
+  }
+
+  const wt = await getClient(privacyActive);
 
   return new Promise((resolve, reject) => {
     // Prefer .torrent buffer over magnet URI (avoids metadata download stall)
@@ -210,5 +281,6 @@ export function destroyClient(): void {
   if (client) {
     client.destroy();
     client = null;
+    clientPrivacyEnabled = false;
   }
 }
