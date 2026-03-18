@@ -38,7 +38,7 @@ import { signEventForUser } from "@boilerdeck/auth";
 import { storeEvent, getEvent, queryEvents } from "./service.js";
 import { fanOutEvent } from "./ws.js";
 import { federateOutbound, getExternalRelayUrls } from "./federation.js";
-import { KIND_PROFILE, KIND_REVIEW, KIND_FOLLOW_LIST } from "./kinds.js";
+import { KIND_PROFILE, KIND_TEXT_NOTE, KIND_REVIEW, KIND_FOLLOW_LIST } from "./kinds.js";
 
 export const relayRouter = Router();
 
@@ -809,6 +809,152 @@ relayRouter.delete("/follows/:pubkey", authenticate, async (req, res, next) => {
       .map((t) => t[1]!);
 
     res.json({ follows });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── POST /events/:eventId/replies — submit a reply to an event ───────────────
+
+relayRouter.post("/events/:eventId/replies", authenticate, async (req, res, next) => {
+  try {
+    const parentEventId = String(req.params.eventId);
+    const { content } = req.body;
+
+    // Validate content
+    if (typeof content !== "string" || content.trim().length === 0) {
+      throw new ValidationError("content is required and must be a non-empty string");
+    }
+
+    // Verify parent event exists
+    const parentEvent = await getEvent(parentEventId);
+    if (!parentEvent) {
+      throw new NotFoundError("Event");
+    }
+
+    // Create kind 1 event with ["e", parentEventId] tag
+    const event = await signEventForUser(req.user!.sub, {
+      kind: KIND_TEXT_NOTE,
+      tags: [["e", parentEventId]],
+      content: content.trim(),
+    });
+
+    // Store event
+    await storeEvent(event);
+
+    // Broadcast to WebSocket subscribers
+    fanOutEvent(event);
+
+    // Forward to external relays
+    federateOutbound(event);
+
+    res.status(201).json(event);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── GET /events/:eventId/replies — get threaded replies for an event ─────────
+
+relayRouter.get("/events/:eventId/replies", async (req, res, next) => {
+  try {
+    const eventId = String(req.params.eventId);
+
+    // Verify parent event exists
+    const parentEvent = await getEvent(eventId);
+    if (!parentEvent) {
+      throw new NotFoundError("Event");
+    }
+
+    // Helper: find kind 1 events that have ["e", parentId] in their tags.
+    // Uses Prisma JSON path filtering on PostgreSQL: tags @> '[["e","<id>"]]'
+    async function findReplies(parentIds: string[]) {
+      if (parentIds.length === 0) return [];
+      // Query all kind 1 events and filter by e-tag in application code.
+      // Prisma JSON array_contains doesn't support nested array matching well,
+      // so we query kind 1 events and filter in-memory. Scoped by a reasonable limit.
+      const candidates = await db.event.findMany({
+        where: { kind: KIND_TEXT_NOTE },
+        orderBy: { createdAt: "asc" },
+        take: 500,
+      });
+
+      const parentIdSet = new Set(parentIds);
+      return candidates.filter((e) => {
+        const tags = e.tags as string[][];
+        return tags.some((t) => t[0] === "e" && parentIdSet.has(t[1]!));
+      });
+    }
+
+    // Reply node shape for the response
+    interface ReplyNode {
+      id: string;
+      pubkey: string;
+      content: string;
+      created_at: number;
+      replies: ReplyNode[];
+    }
+
+    function toReplyNode(e: { id: string; pubkey: string; content: string; createdAt: number }): ReplyNode {
+      return {
+        id: e.id,
+        pubkey: e.pubkey,
+        content: e.content,
+        created_at: e.createdAt,
+        replies: [],
+      };
+    }
+
+    function getParentId(e: { tags: unknown }): string | undefined {
+      const tags = e.tags as string[][];
+      const eTag = tags.find((t) => t[0] === "e");
+      return eTag?.[1];
+    }
+
+    // Level 1: direct replies to the target event
+    const level1 = await findReplies([eventId]);
+
+    // Level 2: replies to level-1 events
+    const level1Ids = level1.map((e) => e.id);
+    const level2 = await findReplies(level1Ids);
+
+    // Level 3: replies to level-2 events (cap at 3 levels)
+    const level2Ids = level2.map((e) => e.id);
+    const level3 = await findReplies(level2Ids);
+
+    // Build tree bottom-up
+    // Level 3 nodes (leaf)
+    const l3Nodes = new Map<string, ReplyNode>();
+    for (const e of level3) {
+      l3Nodes.set(e.id, toReplyNode(e));
+    }
+
+    // Level 2 nodes with level 3 children
+    const l2Nodes = new Map<string, ReplyNode>();
+    for (const e of level2) {
+      const node = toReplyNode(e);
+      // Attach level 3 children
+      for (const l3e of level3) {
+        if (getParentId(l3e) === e.id) {
+          node.replies.push(l3Nodes.get(l3e.id)!);
+        }
+      }
+      l2Nodes.set(e.id, node);
+    }
+
+    // Level 1 nodes with level 2 children
+    const result: ReplyNode[] = [];
+    for (const e of level1) {
+      const node = toReplyNode(e);
+      for (const l2e of level2) {
+        if (getParentId(l2e) === e.id) {
+          node.replies.push(l2Nodes.get(l2e.id)!);
+        }
+      }
+      result.push(node);
+    }
+
+    res.json({ replies: result });
   } catch (err) {
     next(err);
   }
