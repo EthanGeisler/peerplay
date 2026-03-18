@@ -4,8 +4,8 @@
       {
         "hooks": [
           {
-            "type": "prompt",
-            "prompt": "Check the conversation: did Claude write or edit code files (via Edit or Write tools) in this session? If yes, check whether ALL of the following post-implementation steps were completed:\n\n1. @server-reviewer and/or @frontend-reviewer (depending on what changed)\n2. @verify <sub-task-id> (if working on a decentralization sub-task)\n3. git commit\n4. git push\n5. Deploy to VPS (@deploy or manual SSH)\n\nIf code was written/edited but any of these steps were skipped, respond with:\n\"STOP: Post-implementation workflow incomplete. Still need: [list missing steps]. Run these before ending.\"\n\nIf no code was written, or all steps were completed, respond with nothing (empty)."
+            "type": "command",
+            "command": "bash -c 'cd /c/Users/eface/peerplay && DIRTY=$(git status --porcelain 2>/dev/null | grep -E \"^( M|\\?\\?|A |M )\" | grep -vE \"settings\\.json$\" | head -5); if [ -n \"$DIRTY\" ]; then echo \"STOP: Uncommitted code changes detected. Complete the post-implementation workflow (review → verify → commit → push → deploy) before stopping.\" >&2; echo \"$DIRTY\" >&2; exit 2; fi'"
           }
         ]
       }

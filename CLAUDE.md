@@ -2,6 +2,18 @@
 
 > **Start here:** Read `CONTEXT.md` for full project state, what's been built, known issues, and next steps.
 
+## MANDATORY: Post-Implementation Workflow
+
+**After writing or editing ANY code, you MUST complete ALL of these steps before ending your response. Do not stop, summarize, or ask the user what's next until every step is done.**
+
+1. **Review:** Run `@server-reviewer` and/or `@frontend-reviewer` (based on what changed)
+2. **Verify:** Run `@verify <sub-task-id>` (if working on a decentralization sub-task)
+3. **Commit:** Stage and commit changes with a descriptive message
+4. **Push:** `git push origin main`
+5. **Deploy:** Pull on VPS, rebuild if needed, health check
+
+If any step fails, fix the issue and retry. Do not skip steps. Do not ask the user whether to proceed — just do it.
+
 ## Project Structure
 - `server/` — Node.js + TypeScript backend monorepo (Express, Prisma, PostgreSQL)
 - `server/packages/` — Modular service packages (auth, catalog, license, payment, saves, torrent, shared)
