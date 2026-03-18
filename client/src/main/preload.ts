@@ -119,6 +119,21 @@ contextBridge.exposeInMainWorld("boilerdeck", {
       ipcRenderer.invoke("privacy:test-connection"),
   },
 
+  tor: {
+    start: (): Promise<{ running: boolean; bootstrapProgress: number; socksPort: number; error?: string }> =>
+      ipcRenderer.invoke("tor:start"),
+    stop: (): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke("tor:stop"),
+    status: (): Promise<{ running: boolean; bootstrapProgress: number; socksPort: number }> =>
+      ipcRenderer.invoke("tor:status"),
+    onBootstrapProgress: (callback: (data: { progress: number; summary: string }) => void): void => {
+      ipcRenderer.on("tor:bootstrap-progress", (_event, data) => callback(data));
+    },
+    removeBootstrapListener: (): void => {
+      ipcRenderer.removeAllListeners("tor:bootstrap-progress");
+    },
+  },
+
   api: {
     proxiedFetch: (opts: {
       url: string;
@@ -259,6 +274,13 @@ declare global {
         }) => Promise<{ success: boolean }>;
         getStatus: () => Promise<{ mode: string; proxyActive: boolean }>;
         testConnection: () => Promise<{ success: boolean; error?: string }>;
+      };
+      tor: {
+        start: () => Promise<{ running: boolean; bootstrapProgress: number; socksPort: number; error?: string }>;
+        stop: () => Promise<{ success: boolean }>;
+        status: () => Promise<{ running: boolean; bootstrapProgress: number; socksPort: number }>;
+        onBootstrapProgress: (callback: (data: { progress: number; summary: string }) => void) => void;
+        removeBootstrapListener: () => void;
       };
       api: {
         proxiedFetch: (opts: {

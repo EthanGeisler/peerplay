@@ -7,6 +7,7 @@ import * as torrentManager from "./torrentManager.js";
 import * as gameLauncher from "./gameLauncher.js";
 import * as relayManager from "./relayManager.js";
 import { testProxyConnection, getProxyAgent } from "./proxyManager.js";
+import * as torManagerModule from "./torManager.js";
 import * as https from "node:https";
 import * as http from "node:http";
 
@@ -385,6 +386,25 @@ function setupIpcHandlers(): void {
     });
   });
 
+  // --- Tor process management ---
+  ipcMain.handle("tor:start", async () => {
+    try {
+      return await torManagerModule.startTor();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { running: false, bootstrapProgress: 0, socksPort: 9150, error: message };
+    }
+  });
+
+  ipcMain.handle("tor:stop", async () => {
+    await torManagerModule.stopTor();
+    return { success: true };
+  });
+
+  ipcMain.handle("tor:status", () => {
+    return torManagerModule.getTorStatus();
+  });
+
   // --- Auto-update ---
   ipcMain.handle("app:restart-for-update", () => {
     autoUpdater.quitAndInstall();
@@ -457,6 +477,7 @@ app.whenReady().then(() => {
   if (mainWindow) {
     torrentManager.setMainWindow(mainWindow);
     relayManager.setMainWindow(mainWindow);
+    torManagerModule.setMainWindow(mainWindow);
   }
   setupAutoUpdater();
 
@@ -475,4 +496,9 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   torrentManager.destroyClient();
+  if (torManagerModule.isTorRunning()) {
+    torManagerModule.stopTor().catch((err) => {
+      console.error("[tor] Error stopping Tor on quit:", err);
+    });
+  }
 });

@@ -55,6 +55,13 @@
       "node_modules/**/*",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "resources/tor/",
+        "to": "tor/",
+        "filter": ["**/*", "!.gitkeep", "!README.md"]
+      }
+    ],
     "asar": true,
     "asarUnpack": [
       "node_modules/webtorrent/**",

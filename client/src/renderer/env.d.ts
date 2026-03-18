@@ -74,6 +74,13 @@ declare global {
         getStatus: () => Promise<{ mode: string; proxyActive: boolean }>;
         testConnection: () => Promise<{ success: boolean; error?: string }>;
       };
+      tor: {
+        start: () => Promise<{ running: boolean; bootstrapProgress: number; socksPort: number; error?: string }>;
+        stop: () => Promise<{ success: boolean }>;
+        status: () => Promise<{ running: boolean; bootstrapProgress: number; socksPort: number }>;
+        onBootstrapProgress: (callback: (data: { progress: number; summary: string }) => void) => void;
+        removeBootstrapListener: () => void;
+      };
       api: {
         proxiedFetch: (opts: {
           url: string;
