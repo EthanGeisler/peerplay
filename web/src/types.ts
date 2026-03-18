@@ -107,3 +107,10 @@ export interface NostrEvent {
   content: string;
   sig: string;
 }
+
+export interface ProfileData {
+  pubkey: string;
+  name?: string;
+  about?: string;
+  picture?: string;
+}

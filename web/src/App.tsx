@@ -8,11 +8,13 @@ import { Login } from "./pages/Login";
 import { CheckoutSuccess } from "./pages/CheckoutSuccess";
 import { CheckoutCancel } from "./pages/CheckoutCancel";
 import { Profile } from "./pages/Profile";
+import { Social } from "./pages/Social";
 import { useAuthStore } from "./stores/authStore";
 
 const NAV_ITEMS = [
   { label: "Store", path: "/" },
   { label: "Library", path: "/library" },
+  { label: "Social", path: "/social" },
   { label: "About", path: "/about" },
 ] as const;
 
@@ -185,6 +187,7 @@ export function App() {
           <Route path="/" element={<Store />} />
           <Route path="/game/:slug" element={<GameDetail />} />
           <Route path="/library" element={<Library />} />
+          <Route path="/social" element={<Social />} />
           <Route path="/about" element={<About />} />
           <Route path="/login" element={<Login />} />
           <Route path="/checkout/success" element={<CheckoutSuccess />} />
