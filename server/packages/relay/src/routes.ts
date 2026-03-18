@@ -1,23 +1,32 @@
 /**
- * Relay REST routes for event management.
+ * Relay REST routes for event management and key management.
  *
- * These routes mirror the shared eventRoutes but live in the relay package
- * for Phase 3+ ownership. The shared eventRouter will be replaced by this
- * once the relay package is fully wired up.
- *
+ * Event routes:
  * - POST /events — submit a pre-signed event (authenticated, pubkey must match)
  * - GET /events — query events (public)
  * - GET /events/:id — get single event by ID (public)
+ *
+ * Key management routes:
+ * - GET /relay/me/keys — export pubkey + privkey (authenticated, custodial only)
+ * - POST /relay/me/import-key — import a private key, update pubkey (authenticated)
+ *
+ * Event signing routes:
+ * - POST /events/sign-and-publish — server signs + stores + broadcasts (authenticated)
  */
 
+import * as nodeCrypto from "node:crypto";
 import { Router } from "express";
+import { schnorr } from "@noble/curves/secp256k1.js";
 import {
   authenticate,
   verifyEvent,
   db,
+  redis,
+  getConfig,
   ValidationError,
   ForbiddenError,
   NotFoundError,
+  UnauthorizedError,
   materializeEvent,
 } from "@boilerdeck/shared";
 import type { SignedEvent } from "@boilerdeck/shared";
@@ -133,6 +142,126 @@ relayRouter.get("/events/:id", async (req, res, next) => {
       throw new NotFoundError("Event");
     }
     res.json(event);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Cache decryption helper ─────────────────────────────────────────────────
+
+function decryptFromCache(cached: string, keyHex: string): Uint8Array {
+  const parts = cached.split(":");
+  if (parts.length !== 3) {
+    throw new Error("Invalid cache format");
+  }
+
+  const nonce = Buffer.from(parts[0], "hex");
+  const tag = Buffer.from(parts[1], "hex");
+  const ciphertext = Buffer.from(parts[2], "hex");
+  const key = Buffer.from(keyHex, "hex");
+
+  const decipher = nodeCrypto.createDecipheriv("aes-256-gcm", key, nonce);
+  decipher.setAuthTag(tag);
+
+  return new Uint8Array(
+    Buffer.concat([decipher.update(ciphertext), decipher.final()]),
+  );
+}
+
+function encryptForCache(data: Uint8Array, keyHex: string): string {
+  const key = Buffer.from(keyHex, "hex");
+  const nonce = nodeCrypto.randomBytes(12);
+  const cipher = nodeCrypto.createCipheriv("aes-256-gcm", key, nonce);
+  const encrypted = Buffer.concat([cipher.update(data), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return nonce.toString("hex") + ":" + tag.toString("hex") + ":" + encrypted.toString("hex");
+}
+
+// ── GET /relay/me/keys — export pubkey + privkey ────────────────────────────
+
+relayRouter.get("/relay/me/keys", authenticate, async (req, res, next) => {
+  try {
+    const user = await db.user.findUnique({
+      where: { id: req.user!.sub },
+      select: { nostrPubkey: true, custodyMode: true },
+    });
+
+    if (!user || !user.nostrPubkey) {
+      throw new NotFoundError("No cryptographic identity found for this user");
+    }
+
+    if (user.custodyMode === "SELF_CUSTODY") {
+      // Self-custody users: return pubkey only, no privkey on server
+      res.json({ pubkey: user.nostrPubkey, privkey: null });
+      return;
+    }
+
+    // Custodial users: decrypt privkey from Redis cache
+    const config = getConfig();
+    const cached = await redis.get(`signing_key:${req.user!.sub}`);
+    if (!cached) {
+      throw new UnauthorizedError(
+        "Signing key not cached. Your session may have expired — please log in again.",
+      );
+    }
+
+    let privateKey: Uint8Array;
+    try {
+      privateKey = decryptFromCache(cached, config.SIGNING_CACHE_KEY);
+    } catch {
+      throw new UnauthorizedError(
+        "Failed to decrypt signing key. Please log in again.",
+      );
+    }
+
+    res.json({
+      pubkey: user.nostrPubkey,
+      privkey: Buffer.from(privateKey).toString("hex"),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── POST /relay/me/import-key — import a private key ────────────────────────
+
+relayRouter.post("/relay/me/import-key", authenticate, async (req, res, next) => {
+  try {
+    const { privkey } = req.body;
+
+    if (!privkey || typeof privkey !== "string" || !/^[0-9a-f]{64}$/i.test(privkey)) {
+      throw new ValidationError(
+        "privkey must be a 64-character lowercase hex string (32 bytes)",
+      );
+    }
+
+    const privkeyLower = privkey.toLowerCase();
+
+    // Derive pubkey from privkey using secp256k1 Schnorr
+    const privkeyBytes = new Uint8Array(Buffer.from(privkeyLower, "hex"));
+    const pubkeyBytes = schnorr.getPublicKey(privkeyBytes);
+    const newPubkey = Buffer.from(pubkeyBytes).toString("hex");
+
+    // Update user's pubkey in DB
+    await db.user.update({
+      where: { id: req.user!.sub },
+      data: {
+        nostrPubkey: newPubkey,
+        // Clear encrypted keys since we're importing a new key
+        // The user is taking custody of this key
+        encryptedNsec: null,
+        encryptedMnemonic: null,
+        custodyMode: "SELF_CUSTODY",
+      },
+    });
+
+    // Cache the new signing key in Redis (encrypted)
+    const config = getConfig();
+    const cached = encryptForCache(privkeyBytes, config.SIGNING_CACHE_KEY);
+    const ttl = 7 * 24 * 60 * 60; // 7 days (match refresh token TTL)
+    await redis.set(`signing_key:${req.user!.sub}`, cached, "EX", ttl);
+
+    res.json({ pubkey: newPubkey });
   } catch (err) {
     next(err);
   }
