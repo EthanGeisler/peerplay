@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import { db, getConfig, ConflictError, UnauthorizedError } from "@boilerdeck/shared";
 import type { JwtPayload } from "@boilerdeck/shared";
 import type { RegisterInput, LoginInput } from "./schemas.js";
+import { generateKeypair, encryptPrivateKey, encryptMnemonic, pubkeyHex } from "./crypto.js";
 
 const SALT_ROUNDS = 12;
 
@@ -44,6 +45,41 @@ export async function register(input: RegisterInput) {
     },
   });
 
+  let nostrPubkey: string;
+  let mnemonic: string | undefined;
+
+  if (input.pubkey) {
+    // Self-custody path: client generated the keypair, we only store the pubkey
+    nostrPubkey = input.pubkey;
+    await db.user.update({
+      where: { id: user.id },
+      data: {
+        nostrPubkey: input.pubkey,
+        encryptedNsec: null,
+        encryptedMnemonic: null,
+        custodyMode: "SELF_CUSTODY",
+      },
+    });
+  } else {
+    // Custodial path: server generates keypair, encrypts with user's password
+    const keypair = generateKeypair();
+    nostrPubkey = pubkeyHex(keypair.publicKey);
+    mnemonic = keypair.mnemonic;
+
+    const encryptedNsec = encryptPrivateKey(keypair.privateKey, input.password);
+    const encryptedMnemonicValue = encryptMnemonic(keypair.mnemonic, input.password);
+
+    await db.user.update({
+      where: { id: user.id },
+      data: {
+        nostrPubkey,
+        encryptedNsec,
+        encryptedMnemonic: encryptedMnemonicValue,
+        custodyMode: "CUSTODIAL",
+      },
+    });
+  }
+
   const accessToken = generateAccessToken(user);
   const refreshToken = generateRefreshToken();
 
@@ -56,9 +92,10 @@ export async function register(input: RegisterInput) {
   });
 
   return {
-    user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role },
+    user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, nostrPubkey },
     accessToken,
     refreshToken,
+    ...(mnemonic ? { mnemonic } : {}),
   };
 }
 
