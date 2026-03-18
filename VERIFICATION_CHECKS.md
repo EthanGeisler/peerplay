@@ -141,7 +141,7 @@
 - [x] `[CODE]` Type declarations in `env.d.ts` match preload bridge
 - [x] `[CODE]` `@noble/curves`, `@scure/bip39`, `@scure/bip32`, `@scure/base` in client dependencies
 - [x] `[CODE]` Registration page has a toggle "Generate keys on this device (advanced)"
-- [ ] `[AUTO]` **Client-side registration:** Register with client-side key gen → server DB has `nostr_pubkey` set but `encrypted_nsec` is NULL, `encrypted_mnemonic` is NULL, `custody_mode` is 'SELF_CUSTODY'
+- [x] `[AUTO]` **Client-side registration:** Register with client-side key gen → server DB has `nostr_pubkey` set but `encrypted_nsec` is NULL, `encrypted_mnemonic` is NULL, `custody_mode` is 'SELF_CUSTODY'
 - [x] `[CODE]` Private key stored in Electron store (encrypted at rest via safeStorage)
 - [x] `[CODE]` Self-custody Electron login uses challenge-based auth (1.7), not password
 - [x] `[AUTO]` `npx tsc --noEmit` from `client/` exits 0
