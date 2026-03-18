@@ -48,6 +48,39 @@ contextBridge.exposeInMainWorld("boilerdeck", {
       ipcRenderer.invoke("crypto:sign-challenge", challengeHex),
   },
 
+  relay: {
+    connect: (url: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke("relay:connect", url),
+    disconnect: (): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke("relay:disconnect"),
+    subscribe: (subId: string, filters: unknown[]): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke("relay:subscribe", subId, filters),
+    unsubscribe: (subId: string): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke("relay:unsubscribe", subId),
+    publish: (event: unknown): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke("relay:publish", event),
+    status: (): Promise<{ connected: boolean; url: string | null; subscriptionCount: number }> =>
+      ipcRenderer.invoke("relay:status"),
+    onEvent: (callback: (data: { subId: string; event: unknown }) => void): void => {
+      ipcRenderer.on("relay:on-event", (_event, data) => callback(data));
+    },
+    onEose: (callback: (data: { subId: string }) => void): void => {
+      ipcRenderer.on("relay:on-eose", (_event, data) => callback(data));
+    },
+    onOk: (callback: (data: { eventId: string; success: boolean; message: string }) => void): void => {
+      ipcRenderer.on("relay:on-ok", (_event, data) => callback(data));
+    },
+    onNotice: (callback: (data: { message: string }) => void): void => {
+      ipcRenderer.on("relay:on-notice", (_event, data) => callback(data));
+    },
+    removeListeners: (): void => {
+      ipcRenderer.removeAllListeners("relay:on-event");
+      ipcRenderer.removeAllListeners("relay:on-eose");
+      ipcRenderer.removeAllListeners("relay:on-ok");
+      ipcRenderer.removeAllListeners("relay:on-notice");
+    },
+  },
+
   shell: {
     openExternal: (url: string): Promise<void> =>
       ipcRenderer.invoke("shell:open-external", url),
@@ -132,6 +165,19 @@ declare global {
       crypto: {
         generateKeypair: () => Promise<{ mnemonic: string; pubkeyHex: string }>;
         signChallenge: (challengeHex: string) => Promise<{ signature: string; pubkeyHex: string }>;
+      };
+      relay: {
+        connect: (url: string) => Promise<{ success: boolean; error?: string }>;
+        disconnect: () => Promise<{ success: boolean }>;
+        subscribe: (subId: string, filters: unknown[]) => Promise<{ success: boolean; error?: string }>;
+        unsubscribe: (subId: string) => Promise<{ success: boolean }>;
+        publish: (event: unknown) => Promise<{ success: boolean; error?: string }>;
+        status: () => Promise<{ connected: boolean; url: string | null; subscriptionCount: number }>;
+        onEvent: (callback: (data: { subId: string; event: unknown }) => void) => void;
+        onEose: (callback: (data: { subId: string }) => void) => void;
+        onOk: (callback: (data: { eventId: string; success: boolean; message: string }) => void) => void;
+        onNotice: (callback: (data: { message: string }) => void) => void;
+        removeListeners: () => void;
       };
       shell: {
         openExternal: (url: string) => Promise<void>;

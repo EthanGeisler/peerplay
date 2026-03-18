@@ -4,6 +4,7 @@ import { autoUpdater } from "electron-updater";
 import { initStore, storeGet, storeSet, storeDelete, getDefaultInstallDir, isAllowedStoreKey } from "./store.js";
 import * as torrentManager from "./torrentManager.js";
 import * as gameLauncher from "./gameLauncher.js";
+import * as relayManager from "./relayManager.js";
 
 
 let mainWindow: BrowserWindow | null = null;
@@ -169,6 +170,31 @@ function setupIpcHandlers(): void {
     };
   });
 
+  // --- Relay (WebSocket connection manager) ---
+  ipcMain.handle("relay:connect", (_event, url: string) => {
+    return relayManager.connect(url);
+  });
+
+  ipcMain.handle("relay:disconnect", () => {
+    return relayManager.disconnect();
+  });
+
+  ipcMain.handle("relay:subscribe", (_event, subId: string, filters: unknown[]) => {
+    return relayManager.subscribe(subId, filters as Parameters<typeof relayManager.subscribe>[1]);
+  });
+
+  ipcMain.handle("relay:unsubscribe", (_event, subId: string) => {
+    return relayManager.unsubscribe(subId);
+  });
+
+  ipcMain.handle("relay:publish", (_event, relayEvent: unknown) => {
+    return relayManager.publish(relayEvent as Parameters<typeof relayManager.publish>[0]);
+  });
+
+  ipcMain.handle("relay:status", () => {
+    return relayManager.getStatus();
+  });
+
   // --- Auto-update ---
   ipcMain.handle("app:restart-for-update", () => {
     autoUpdater.quitAndInstall();
@@ -238,7 +264,10 @@ app.whenReady().then(() => {
   initStore();
   setupIpcHandlers();
   createMainWindow();
-  if (mainWindow) torrentManager.setMainWindow(mainWindow);
+  if (mainWindow) {
+    torrentManager.setMainWindow(mainWindow);
+    relayManager.setMainWindow(mainWindow);
+  }
   setupAutoUpdater();
 
   app.on("activate", () => {

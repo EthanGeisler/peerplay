@@ -392,11 +392,11 @@
 
 ### 3.6 — Server-Side Event Signing (for Web Users)
 
-- [ ] `[AUTO]` **Sign-and-publish:** Authenticated `POST /api/events/sign-and-publish` with `{ kind, content, tags }` → returns full signed event
-- [ ] `[AUTO]` **Event verifiable:** Returned event passes `verifyEvent()`
-- [ ] `[AUTO]` **Event pubkey matches user:** Event's pubkey matches the authenticated user's pubkey
-- [ ] `[AUTO]` **Event stored:** Event appears in `GET /api/events/:id`
-- [ ] `[AUTO]` **Event broadcast:** Another WS subscriber with matching filter receives the event
+- [x] `[AUTO]` **Sign-and-publish:** Authenticated `POST /api/events/sign-and-publish` with `{ kind, content, tags }` → returns full signed event
+- [x] `[AUTO]` **Event verifiable:** Returned event passes `verifyEvent()`
+- [x] `[AUTO]` **Event pubkey matches user:** Event's pubkey matches the authenticated user's pubkey
+- [x] `[AUTO]` **Event stored:** Event appears in `GET /api/events/:id`
+- [x] `[AUTO]` **Event broadcast:** Another WS subscriber with matching filter receives the event
 
 ### 3.7 — Electron Client: Relay Connection Manager
 
