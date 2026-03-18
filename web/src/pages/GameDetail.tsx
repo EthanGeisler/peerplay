@@ -5,6 +5,7 @@ import { useLibraryStore } from "../stores/libraryStore";
 import { useAuthStore } from "../stores/authStore";
 import { formatPrice, formatSize, PLACEHOLDER_COVER } from "../utils";
 import type { ApiTorrent } from "../types";
+import { ReviewSection } from "../components/ReviewSection";
 
 export function GameDetail() {
   const { slug } = useParams<{ slug: string }>();
@@ -331,6 +332,9 @@ export function GameDetail() {
           {game.description}
         </p>
       </div>
+
+      {/* Reviews */}
+      {slug && <ReviewSection slug={slug} />}
     </div>
   );
 }

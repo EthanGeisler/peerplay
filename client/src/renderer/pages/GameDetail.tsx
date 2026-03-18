@@ -6,6 +6,7 @@ import { useDownloadStore } from "../stores/downloadStore";
 import { useAuthStore } from "../stores/authStore";
 import { fetchTorrentFileBase64 } from "../api";
 import { formatPrice, formatSize, PLACEHOLDER_COVER, resolveCoverUrl } from "../utils";
+import { ReviewSection } from "../components/ReviewSection";
 
 const styles = {
   back: {
@@ -264,6 +265,9 @@ export function GameDetail() {
       {error && (
         <p style={{ color: "#e94560", fontSize: 13, marginTop: 12 }}>{error}</p>
       )}
+
+      {/* Reviews */}
+      {slug && <ReviewSection slug={slug} />}
     </div>
   );
 }

@@ -80,6 +80,23 @@ export interface ApiGameListResponse {
   totalPages: number;
 }
 
+export interface ApiReview {
+  eventId: string;
+  pubkey: string;
+  rating: number;
+  title: string;
+  body: string;
+  created_at: number;
+}
+
+export interface ApiReviewsResponse {
+  reviews: ApiReview[];
+  averageRating: number;
+  reviewCount: number;
+  limit: number;
+  offset: number;
+}
+
 export interface NostrEvent {
   id: string;
   pubkey: string;
