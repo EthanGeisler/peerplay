@@ -70,6 +70,29 @@ If any step fails, fix the issue and retry. Do not skip steps. Do not ask the us
 - **Message limits:** 1MB max WebSocket frame, 1MB max event content, 1000 max tags
 - **Filter matching supports:** `ids` (prefix), `authors` (prefix), `kinds`, `since`, `until`, `#e`, `#p` tag filters — DB handles basic fields, in-memory handles tag/id/author prefix matching
 
+## Social & Reputation Conventions (Phase 4+5)
+- **Review events (kind 31337):** Parameterized replaceable on `d` tag (game slug). One review per user per game. Requires license ownership (403 without). Content is JSON `{ rating, title, body }`.
+- **Attestation events (kind 31338):** Parameterized replaceable on `d` tag (infoHash). `p` tag = developer pubkey (NOT seed box's own pubkey). Self-attestation rejected. bytesDownloaded validated against torrent file size.
+- **Kind validation:** All event kinds validated in `relay/src/kinds.ts` — called from both REST `POST /events` and WebSocket `EVENT` handler. Async DB validation (infoHash lookup) in `attestationValidation.ts`.
+- **Reputation scoring:** Logarithmic formula in `relay/src/reputation.ts`. Anti-sybil: accounts < 7 days = 0.1x, max 20 attestations per attester per day. Redis cached (15min TTL).
+- **Web of trust:** `GET /api/reputation/:pubkey?viewer=<viewerPubkey>` returns personalized score. Follow = 1.0x, unknown = 0.25x, muted = 0x.
+- **Mute list:** Stored in Redis set `mute:{userId}`. WS fan-out filters muted pubkeys asynchronously.
+- **Profile/follow events:** Regular replaceable (kind 0, 3) — one per pubkey. Extended `shared/src/events.ts` with `isRegularReplaceableKind()`.
+- **Electron client local signing:** Reviews signed locally via cached privkey + `@noble/curves` Schnorr, published via relay WebSocket. IPC channels: `events:sign-and-publish-review`, `events:cache-relay-keys`.
+- **Attestation auto-publish:** `client/src/main/attestation.ts` called from torrent `done` handler. Non-fatal (`.catch()`). Uses `developerPubkey` from download metadata.
+- **VPS seed attestation:** `scripts/seed-attestation-cron.ts` — standalone script, reads `VPS_SEED_PRIVKEY` env var, queries Transmission RPC.
+- **Game detail infoHash:** `latestVersion` in game detail API includes `infoHash` (via Prisma join through version→torrent). Used by TopSeedersSection to filter attestations.
+
+## Social Feed Conventions (web storefront)
+- **Social page** (`web/src/pages/Social.tsx`): Two sub-tabs (For You / Following), state via `useState<Tab>`. For You = `GET /api/events?kinds=1&limit=30`. Following = fetch follows first, then filter events by `authors=<csv>`.
+- **Profile cache**: `useRef<Map<string, ProfileData>>` + `profileVersion` counter to trigger re-renders. Batch-fetch via `Promise.allSettled` to avoid one failure breaking all profiles.
+- **Pagination**: Cursor-based via `until=<oldest_created_at>`. Deduplication on merge (Set of event IDs) because `until` may be inclusive.
+- **Compose**: `POST /api/events/sign-and-publish` with `{ kind: 1, content, tags: [] }`. Server signs with user's Redis-cached key. New event prepended to feed on success.
+- **PostCard** (`web/src/components/PostCard.tsx`): Receives `event`, `authorName?`, `authorPicture?`. Links author name to `/profile/:pubkey`. Uses `formatRelativeTime()` from `utils.ts`.
+- **ComposeBox** (`web/src/components/ComposeBox.tsx`): Textarea + Post button. Calls `onPost(event)` callback. Only rendered when logged in.
+- **ProfileData consolidated** in `web/src/types.ts` — do NOT re-declare locally in page components.
+- **Deferred features**: reply counts, like/reaction button, inline threading, real-time WS updates, client-side signing (Phase 8).
+
 ## Electron Client Conventions
 - **IPC handlers** go in `client/src/main/index.ts` `setupIpcHandlers()` — namespaced like `store:get`, `downloads:start`, `games:launch`
 - **Preload bridge** at `client/src/main/preload.ts` — every IPC channel must be exposed here under `window.boilerdeck`

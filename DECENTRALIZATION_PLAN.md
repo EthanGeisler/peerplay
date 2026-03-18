@@ -1,6 +1,6 @@
 # BoilerDeck Decentralization Plan
 
-> **Status:** Phase 1 COMPLETE, Phase 2 COMPLETE (11/11), Phase 3 COMPLETE (10/10)
+> **Status:** Phase 1 COMPLETE, Phase 2 COMPLETE (11/11), Phase 3 COMPLETE (10/10), Phase 4 COMPLETE (9/9), Phase 5 COMPLETE (6/6)
 > **Guiding principle:** Centralized UX, decentralized plumbing. The gateway is a convenience layer, not a chokepoint.
 > **Reviewed by:** Grok (2026-03-17) — critical curve fix (secp256k1), identity immutability, password change flow, self-custody registration path applied.
 

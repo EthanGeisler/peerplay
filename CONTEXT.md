@@ -88,6 +88,14 @@ Fully functional REST API running on port **3001** (port 3000 is used by open-we
 - `POST /api/payments/checkout`, `POST /api/payments/webhook`
 - `GET /api/torrents/:gameId/latest` (torrent metadata: gameId, versionId, version, fileSizeBytes, magnetUri, infoHash)
 - `GET /api/torrents/:gameId/latest/file` (raw `.torrent` bytes, `application/x-bittorrent`, authenticated + license check)
+- `PUT /api/profiles/me`, `GET /api/profiles/:pubkey`
+- `POST /api/games/:slug/reviews`, `GET /api/games/:slug/reviews`
+- `POST /api/follows`, `GET /api/follows/:pubkey`, `DELETE /api/follows/:pubkey`
+- `POST /api/events/:eventId/replies`, `GET /api/events/:eventId/replies`
+- `POST /api/moderation/mute`, `DELETE /api/moderation/mute/:pubkey`, `POST /api/moderation/delete`
+- `GET /api/reputation/:pubkey`
+- `GET /api/events?kinds=1&limit=30&until=<unix_ts>&authors=<csv>` (feed queries, supports pagination via `until`)
+- `POST /api/events/sign-and-publish` (server signs with user's cached key, stores, broadcasts to WS relay + federates)
 - `GET /api/health`
 
 ### Web Storefront — Vite + React 19 (`web/`)
@@ -100,6 +108,8 @@ SPA served from VPS at `/`. Uses **HashRouter**. Talks to the **real API** (not 
 - `Library.tsx` — Owned games from real licenses (`GET /api/licenses`). Links to `/login` for unauthenticated users.
 - `Login.tsx` — Login/Register form with tabs. JWT auth via `POST /api/auth/login|register`.
 - `About.tsx` — Platform explainer (revenue split, BitTorrent distribution model, tech stack)
+- `Social.tsx` — Twitter-like news feed with For You / Following sub-tabs, post composer, paginated via `GET /api/events?kinds=1`. Profile resolution via `GET /api/profiles/:pubkey`.
+- `Profile.tsx` — User profile page at `/profile/:pubkey`. Display name, bio, avatar, follow/unfollow, reputation badge.
 - `CheckoutSuccess.tsx` — Post-purchase page. Polls `fetchLicenses()` until new license appears (webhook latency). Handles unauthenticated users with sign-in prompt.
 - `CheckoutCancel.tsx` — Shown when user cancels Stripe Checkout. Links back to store.
 
@@ -110,7 +120,13 @@ SPA served from VPS at `/`. Uses **HashRouter**. Talks to the **real API** (not 
 
 **API client:** `web/src/api.ts` — `apiFetch()` with JWT auto-refresh on 401, `ApiError` class, 204 handling. Copied from dev-portal's `api.ts` (minus `apiUpload()`). `refreshAccessToken()` is exported and reused by authStore's `loadSession`.
 
-**Types:** `web/src/types.ts` — TypeScript interfaces matching actual server response shapes: `ApiGame`, `ApiGameDetail`, `ApiUser`, `ApiAuthResponse`, `ApiLicense`, `ApiTorrent`, `ApiCheckoutResult`, `ApiGameListResponse`.
+**Types:** `web/src/types.ts` — TypeScript interfaces matching actual server response shapes: `ApiGame`, `ApiGameDetail`, `ApiUser`, `ApiAuthResponse`, `ApiLicense`, `ApiTorrent`, `ApiCheckoutResult`, `ApiGameListResponse`, `ApiReview`, `ApiReviewsResponse`, `NostrEvent`, `ProfileData`.
+
+**Shared components** (`web/src/components/`):
+- `PostCard.tsx` — Feed item card: avatar + author name (links to profile) + relative timestamp + content. Props: `event`, `authorName?`, `authorPicture?`.
+- `ComposeBox.tsx` — Post composer: textarea + Post button. Submits via `POST /api/events/sign-and-publish` with `{ kind: 1, content, tags: [] }`. Calls `onPost(event)` callback on success.
+- `ReviewSection.tsx` — Review list with stars, pagination
+- `ReviewForm.tsx` — Star selector, title, body, submit (requires login + ownership)
 
 **Shared utils:** `web/src/utils.ts` — `formatPrice()`, `formatSize()`, `PLACEHOLDER_COVER` constant. Used by Store, GameDetail, Library.
 
@@ -361,6 +377,7 @@ All have cover images uploaded. All are free ($0).
 ### Accounts on VPS (DB wiped 2026-03-17, only real accounts exist)
 - **Developer:** `eface` — uploaded all games via dev portal and scripts
 - **Player:** `developer1` — purchased and downloaded PlayerCharacter01 Windows
+- **Test reviewers (Phase 4):** `reviewer1@test.com`, `reviewer2@test.com`, `reviewer3@test.com` (password: `testpass123`) — created for review testing, have reviews on OpenTTD
 
 **Important torrent lessons:**
 - **Do NOT use WebTorrent CLI for seeding.** WebTorrent uses WebRTC, which standard torrent clients (qBittorrent, Transmission, etc.) cannot connect to. Use `mktorrent` + `transmission-daemon` instead.
@@ -420,6 +437,11 @@ All have cover images uploaded. All are free ($0).
 45. **addToTransmission silently fails for large torrents** — The upload pipeline's `addToTransmission()` sends base64-encoded torrent data via curl. For large games (hundreds of MB), the base64 string can exceed bash's argument length limit (~2 MB). The upload succeeds (game + torrent in DB) but Transmission never receives the torrent. **Always run `scripts/reseed-torrents.sh` after uploading games.** The reseed script works around this by writing base64 to a temp file and using `curl -d @file`.
 46. **Games created in DRAFT status** — The `POST /developer/games` endpoint creates games with status `DRAFT`. They must be explicitly published via `PATCH /developer/games/:id/publish` to appear in the store listing. The `upload-games.mjs` script handles this automatically.
 47. **Updater IPC events must use ref guard** — The Settings page update UI subscribes to 5 IPC events (`update-available`, `update-not-available`, `update-progress`, `update-downloaded`, `update-error`). React StrictMode double-fires effects, which would register duplicate listeners. The `listenersAttached` ref flag prevents this. Cleanup calls `removeUpdateListeners()` which removes all 5 at once.
+
+48. **TopSeedersSection must filter by infoHash, not slug** — Attestation events use the torrent's `infoHash` as the `d` tag, not the game slug. The game detail API now includes `infoHash` in `latestVersion` (via Prisma join through version→torrent). The component accepts `infoHash` as a prop and filters by exact `d` tag match.
+49. **`@rollup/rollup-linux-x64-gnu` missing on VPS** — Windows-generated `package-lock.json` won't include Linux Rollup binding. If Vite build fails on VPS: `npm install @rollup/rollup-linux-x64-gnu`.
+50. **RELAY_ADMIN_PRIVKEY angle brackets** — Env var templates use `<paste hex here>`. Zod regex `/^[0-9a-f]{64}$/` rejects angle brackets, crashing the server. Always strip angle brackets from pasted values.
+51. **Bio section hidden when empty** — Profile page must always show the bio section, with italic "No bio yet." placeholder when no kind 0 profile event exists. Using `{bio && <p>...}` hides the section entirely.
 
 ---
 
@@ -592,7 +614,21 @@ See `CLAUDE.md` for updated conventions reflecting these changes.
 | 3.8 | External relay federation (outbound) | DONE | `2248cd6` |
 | 3.9 | External relay federation (inbound) | DONE | `2248cd6` |
 | 3.10 | Relay discovery + NIP-11 | DONE | `3e99211` |
-| 4.1 | Event kind definitions and validation | **NEXT** | — |
+| 4.1 | Event kind definitions and validation | DONE | Phase 4 batch |
+| 4.2 | Profile events (kind 0) | DONE | Phase 4 batch |
+| 4.3 | Review events (kind 31337) | DONE | Phase 4 batch |
+| 4.4 | Review display UI | DONE | Phase 4 batch |
+| 4.5 | Review submission UI | DONE | Phase 4 batch |
+| 4.6 | Follow list events (kind 3) | DONE | Phase 4 batch |
+| 4.7 | User profile page | DONE | Phase 4 batch |
+| 4.8 | Comment events (kind 1 with tags) | DONE | Phase 4 batch |
+| 4.9 | Moderation: mute and report | DONE | Phase 4 batch |
+| 5.1 | Attestation event validation | DONE | Phase 5 batch |
+| 5.2 | Electron auto-generate attestations | DONE | Phase 5 batch |
+| 5.3 | VPS seed box attestation | DONE | Phase 5 batch |
+| 5.4 | Reputation aggregation service | DONE | Phase 5 batch |
+| 5.5 | Reputation display in UI | DONE | Phase 5 batch |
+| 5.6 | Web of trust weighting | DONE | Phase 5 batch |
 
 ### Implementation Workflow
 
@@ -626,7 +662,7 @@ These are in `server/packages/auth/package.json`. See `docs/handoff/1.1.md` for 
 
 ### Phase 3 COMPLETE — Relay Infrastructure
 
-The `@boilerdeck/relay` package (1282 lines across 7 files) includes:
+The `@boilerdeck/relay` package includes:
 - **crypto.ts** — re-exports from shared + auth (no duplication)
 - **types.ts** — NIP-01 protocol message types (ClientMessage, RelayMessage, Subscription, EventFilter)
 - **service.ts** — wraps shared eventStore + adds `deleteEvent`
@@ -637,7 +673,78 @@ The `@boilerdeck/relay` package (1282 lines across 7 files) includes:
 - **Nginx** WebSocket proxy configured on VPS for `wss://boilerdeck.com/relay`
 - **Electron client** `relayManager.ts` — relay connection manager with auto-reconnect, IPC bridge
 
-See `docs/handoff/3.10.md` for latest implementation details and `DECENTRALIZATION_PLAN.md` for Phase 4 specs.
+### Phase 4 COMPLETE — Social Features (2026-03-18)
+
+All 9 sub-tasks (4.1–4.9) implemented and deployed. Handoff docs: `docs/handoff/4.1.md` through `4.9.md`.
+
+**New relay package files:**
+- **`kinds.ts`** — Event kind constants + per-kind validation. Kinds: 0 (profile), 1 (text note), 3 (follow list), 5 (deletion), 7 (reaction), 31337 (review), 31338 (attestation)
+
+**New REST endpoints (all in `relay/src/routes.ts`):**
+- `PUT /api/profiles/me` — create/update kind 0 profile event
+- `GET /api/profiles/:pubkey` — fetch latest profile
+- `POST /api/games/:slug/reviews` — submit kind 31337 review (requires license ownership)
+- `GET /api/games/:slug/reviews` — reviews with averageRating, reviewCount, pagination
+- `POST /api/follows` — create/update kind 3 follow list
+- `GET /api/follows/:pubkey` — list followed pubkeys
+- `DELETE /api/follows/:pubkey` — unfollow
+- `POST /api/events/:eventId/replies` — kind 1 reply with `["e", parentId]` tag
+- `GET /api/events/:eventId/replies` — threaded replies
+- `POST /api/moderation/mute` — add to mute list (Redis set)
+- `DELETE /api/moderation/mute/:pubkey` — unmute
+- `POST /api/moderation/delete` — admin deletion via kind 5 event
+
+**New frontend components (web + client mirrors):**
+- `ReviewSection.tsx` — displays reviews with stars, pagination, "Load More"
+- `ReviewForm.tsx` — star selector, title, body, submit (only if logged in + owns game + hasn't reviewed)
+- `Profile.tsx` — route `/profile/:pubkey`, display name, bio, avatar, follow/unfollow, review count
+
+**Key design decisions:**
+- Electron client signs reviews locally via cached privkey + Schnorr, publishes via relay WS
+- `fanOutEvent()` in ws.ts is async — filters muted pubkeys via Redis SISMEMBER before fan-out
+- Regular replaceable kinds (0, 3) handled by extending `shared/src/events.ts` with `isRegularReplaceableKind()`
+- `RELAY_ADMIN_PRIVKEY` env var (64-char hex) — relay's own keypair for admin-level kind 5 deletion events
+
+**Env vars added on VPS:**
+- `RELAY_ADMIN_PRIVKEY` — 64-char hex, relay's admin signing key
+
+**Test data on VPS:**
+- 3 reviewer accounts: `reviewer1@test.com`, `reviewer2@test.com`, `reviewer3@test.com` (password: `testpass123`)
+- 3 reviews on OpenTTD game
+
+### Phase 5 COMPLETE — Seeding Reputation (2026-03-18)
+
+All 6 sub-tasks (5.1–5.6) implemented and deployed. Handoff docs: `docs/handoff/5.1.md` through `5.6.md`.
+
+**New relay package files:**
+- **`attestationValidation.ts`** — async DB-dependent validation for kind 31338: unknown infoHash check (queries Torrent table), bytesDownloaded vs torrent file size
+- **`reputation.ts`** — `getReputation(pubkey, viewerPubkey?)`: logarithmic scoring formula `sum(log2(1 + MB_weight))`, anti-sybil (accounts < 7 days = 0.1x, max 20 attestations per attester per day), Redis caching (15min TTL)
+
+**New REST endpoint:**
+- `GET /api/reputation/:pubkey` — returns `{ pubkey, score, attestationCount, uniqueAttesters }`, optional `?viewer=<pubkey>` for personalized web-of-trust weighting
+
+**New client files:**
+- **`client/src/main/attestation.ts`** — `publishAttestation()` creates kind 31338 events after torrent download completes. Signs locally with cached privkey, publishes via relay WebSocket. Uses developer pubkey for `p` tag.
+
+**New scripts:**
+- **`scripts/seed-attestation-cron.ts`** — VPS seed box attestation: reads `VPS_SEED_PRIVKEY`, queries Transmission RPC for completed transfers, creates kind 31338 events. Run: `VPS_SEED_PRIVKEY=<hex> npx tsx scripts/seed-attestation-cron.ts`
+
+**UI additions (web + client):**
+- Profile page shows "Seeder Reputation" section: score, badge (Bronze ≥10, Silver ≥50, Gold ≥200), attestation count, unique attesters
+- Game detail page shows "Top Seeders" section: ranked by reputation score, filtered by game's `infoHash`
+- Badge system with gold/silver/bronze visual styling
+
+**Key design decisions:**
+- Attestation `p` tag uses game developer's pubkey (the content creator), NOT the seed box's own pubkey — avoids self-attestation rejection
+- `torrentManager.ts` calls `publishAttestation()` in torrent `done` handler (non-fatal, `.catch()`)
+- Game detail API now includes `infoHash` in `latestVersion` (added via Prisma join through version→torrent relation)
+- Web of trust: follow = 1.0x weight, unknown = 0.25x, muted = 0x — personalized via `?viewer=` query param
+- Separate Redis cache keys for personalized vs global scores
+
+**Env vars added on VPS:**
+- `VPS_SEED_PRIVKEY` — 64-char hex, seed box's signing key for attestation events
+
+See `docs/handoff/5.6.md` for latest implementation details and `DECENTRALIZATION_PLAN.md` for Phase 6 specs.
 
 ---
 
@@ -672,7 +779,11 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 - [ ] Steam shortcuts.vdf integration (games appear in Steam library)
 - [ ] Cloud save sync (Backblaze B2)
 - [x] Client auto-update (electron-updater) — fully working as of v0.2.0. Silent background download + UpdateBanner UI + restart-to-install. See "Auto-Update" section above.
-- [ ] Search / categories / reviews
+- [x] Reviews system — kind 31337 events, review display + submission UI, license ownership gate (2026-03-18)
+- [x] Social features — profiles, follows, comments, moderation/mute (2026-03-18)
+- [x] Social tab / news feed — Twitter-like feed page with For You + Following tabs, compose box, paginated (2026-03-18)
+- [x] Seeding reputation — attestation events, logarithmic scoring, web of trust, top seeders UI (2026-03-18)
+- [ ] Search / categories
 - [ ] Private opentracker instance + seed boxes
 - [ ] Code signing certificate for Windows installer (removes SmartScreen warning)
 
