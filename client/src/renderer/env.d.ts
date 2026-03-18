@@ -74,6 +74,14 @@ declare global {
         getStatus: () => Promise<{ mode: string; proxyActive: boolean }>;
         testConnection: () => Promise<{ success: boolean; error?: string }>;
       };
+      api: {
+        proxiedFetch: (opts: {
+          url: string;
+          method: string;
+          headers: Record<string, string>;
+          body?: string;
+        }) => Promise<{ status: number; headers: Record<string, string>; body: string }>;
+      };
       shell: {
         openExternal: (url: string) => Promise<void>;
       };

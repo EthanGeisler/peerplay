@@ -6,7 +6,9 @@ import type { PrivacySettings } from "./store.js";
 import * as torrentManager from "./torrentManager.js";
 import * as gameLauncher from "./gameLauncher.js";
 import * as relayManager from "./relayManager.js";
-import { testProxyConnection } from "./proxyManager.js";
+import { testProxyConnection, getProxyAgent } from "./proxyManager.js";
+import * as https from "node:https";
+import * as http from "node:http";
 
 
 let mainWindow: BrowserWindow | null = null;
@@ -313,6 +315,74 @@ function setupIpcHandlers(): void {
     const stored = storeGet("privacySettings") as PrivacySettings | null;
     const settings = stored ?? DEFAULT_PRIVACY_SETTINGS;
     return testProxyConnection(settings);
+  });
+
+  // --- Proxied API fetch ---
+  ipcMain.handle("api:proxied-fetch", async (_event, opts: {
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+    body?: string;
+  }) => {
+    const stored = storeGet("privacySettings") as PrivacySettings | null;
+    const settings = stored ?? DEFAULT_PRIVACY_SETTINGS;
+
+    const agent = (settings.mode !== "off" && settings.routeApiTraffic)
+      ? getProxyAgent(settings)
+      : undefined;
+
+    const parsedUrl = new URL(opts.url);
+    const transport = parsedUrl.protocol === "https:" ? https : http;
+
+    return new Promise<{ status: number; headers: Record<string, string>; body: string }>((resolve, reject) => {
+      const req = transport.request(opts.url, {
+        method: opts.method,
+        headers: opts.headers,
+        agent,
+        timeout: 15_000,
+      }, (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk: Buffer) => chunks.push(chunk));
+        res.on("end", () => {
+          const responseHeaders: Record<string, string> = {};
+          for (const [key, value] of Object.entries(res.headers)) {
+            if (typeof value === "string") {
+              responseHeaders[key] = value;
+            } else if (Array.isArray(value)) {
+              responseHeaders[key] = value.join(", ");
+            }
+          }
+          resolve({
+            status: res.statusCode ?? 0,
+            headers: responseHeaders,
+            body: Buffer.concat(chunks).toString("utf-8"),
+          });
+        });
+        res.on("error", (err) => {
+          reject(new Error(`Response error: ${err.message}`));
+        });
+      });
+
+      req.on("timeout", () => {
+        req.destroy();
+        reject(new Error("Proxied request timed out after 15000ms"));
+      });
+
+      req.on("error", (err: NodeJS.ErrnoException) => {
+        if (err.code === "ECONNREFUSED") {
+          reject(new Error("Proxy connection refused — is the proxy running?"));
+        } else if (err.code === "ETIMEDOUT") {
+          reject(new Error("Proxy connection timed out — proxy may be unreachable"));
+        } else {
+          reject(new Error(err.message));
+        }
+      });
+
+      if (opts.body) {
+        req.write(opts.body);
+      }
+      req.end();
+    });
   });
 
   // --- Auto-update ---

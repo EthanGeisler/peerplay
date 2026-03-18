@@ -119,6 +119,16 @@ contextBridge.exposeInMainWorld("boilerdeck", {
       ipcRenderer.invoke("privacy:test-connection"),
   },
 
+  api: {
+    proxiedFetch: (opts: {
+      url: string;
+      method: string;
+      headers: Record<string, string>;
+      body?: string;
+    }): Promise<{ status: number; headers: Record<string, string>; body: string }> =>
+      ipcRenderer.invoke("api:proxied-fetch", opts),
+  },
+
   shell: {
     openExternal: (url: string): Promise<void> =>
       ipcRenderer.invoke("shell:open-external", url),
@@ -249,6 +259,14 @@ declare global {
         }) => Promise<{ success: boolean }>;
         getStatus: () => Promise<{ mode: string; proxyActive: boolean }>;
         testConnection: () => Promise<{ success: boolean; error?: string }>;
+      };
+      api: {
+        proxiedFetch: (opts: {
+          url: string;
+          method: string;
+          headers: Record<string, string>;
+          body?: string;
+        }) => Promise<{ status: number; headers: Record<string, string>; body: string }>;
       };
       shell: {
         openExternal: (url: string) => Promise<void>;
