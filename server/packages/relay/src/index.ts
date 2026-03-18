@@ -26,6 +26,22 @@ export {
   isImported,
 } from "./federation.js";
 
+// Kind definitions and validation
+export {
+  KIND_PROFILE,
+  KIND_TEXT_NOTE,
+  KIND_FOLLOW_LIST,
+  KIND_DELETION,
+  KIND_REACTION,
+  KIND_REVIEW,
+  KIND_ATTESTATION,
+  SUPPORTED_KINDS,
+  validateEventKind,
+  kindName,
+  isSupportedKind,
+} from "./kinds.js";
+export type { ValidationResult } from "./kinds.js";
+
 // Types
 export type {
   RelayEvent,
