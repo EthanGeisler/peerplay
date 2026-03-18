@@ -6,6 +6,7 @@ import type { PrivacySettings } from "./store.js";
 import * as torrentManager from "./torrentManager.js";
 import * as gameLauncher from "./gameLauncher.js";
 import * as relayManager from "./relayManager.js";
+import { testProxyConnection } from "./proxyManager.js";
 
 
 let mainWindow: BrowserWindow | null = null;
@@ -309,8 +310,9 @@ function setupIpcHandlers(): void {
   });
 
   ipcMain.handle("privacy:test-connection", async () => {
-    // Placeholder — will be wired to proxyManager in 6.2
-    return { success: false, error: "Not implemented yet — proxy manager not available until 6.2" };
+    const stored = storeGet("privacySettings") as PrivacySettings | null;
+    const settings = stored ?? DEFAULT_PRIVACY_SETTINGS;
+    return testProxyConnection(settings);
   });
 
   // --- Auto-update ---
