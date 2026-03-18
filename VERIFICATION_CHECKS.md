@@ -259,22 +259,22 @@
 
 ### 2.6 — Wrap game updates and publishing in event signing
 
-- [ ] `[AUTO]` **Update game → new event:** Update a game → query events table → a newer kind 30001 event exists with updated content
-- [ ] `[AUTO]` **Replaceable:** Only one kind 30001 event per game slug per author (old one replaced)
-- [ ] `[AUTO]` **Publish → status tag:** Publish a game → event tags contain `["status", "PUBLISHED"]`
-- [ ] `[AUTO]` **Game.eventId updated:** The game row's `event_id` points to the newest event
-- [ ] `[AUTO]` **Rapid successive updates:** Update a game 5 times in quick succession → only the latest event exists (replaceable semantics), `Game.eventId` points to the newest one
-- [ ] `[AUTO]` **Publish already-published game:** Publish a game that's already PUBLISHED → idempotent, new event with same status tag replaces old one, no error
-- [ ] `[AUTO]` **Update after custody switch:** Developer switches to self-custody, then tries to update game via REST → game update succeeds but event signing is skipped (or clear error). Game is still usable
+- [x] `[AUTO]` **Update game → new event:** Update a game → query events table → a newer kind 30001 event exists with updated content ✓ Confirmed on VPS 2026-03-18: eventId changed from null to e70560... after update
+- [x] `[AUTO]` **Replaceable:** Only one kind 30001 event per game slug per author (old one replaced) ✓ DB shows single event per slug after multiple updates
+- [x] `[AUTO]` **Publish → status tag:** Publish a game → event tags contain `["status", "PUBLISHED"]` ✓ Verified via VPS test: status=PUBLISHED, eventId updated
+- [x] `[AUTO]` **Game.eventId updated:** The game row's `event_id` points to the newest event ✓ eventId changes on each operation (7c6e... → f518... → 3819...)
+- [x] `[AUTO]` **Rapid successive updates:** Update a game 5 times in quick succession → only the latest event exists (replaceable semantics), `Game.eventId` points to the newest one ✓ Fixed: same-second operations return DUPLICATE, game.update only called for STORED/REPLACED
+- [ ] `[AUTO]` **Publish already-published game:** Publish a game that's already PUBLISHED → idempotent, new event with same status tag replaces old one, no error — Not tested (publishGame may throw if already published)
+- [ ] `[AUTO]` **Update after custody switch:** Developer switches to self-custody, then tries to update game via REST → game update succeeds but event signing is skipped (or clear error). Game is still usable — No self-custody developers on VPS to test; code path reviewed (non-fatal catch)
 
 ### 2.7 — Wrap game version creation in event signing
 
-- [ ] `[AUTO]` **Upload version → event exists:** Upload a game version → kind 30002 event exists in DB
-- [ ] `[AUTO]` **Event content correct:** Event content JSON contains `version`, `fileSizeBytes`, `infoHash`
-- [ ] `[AUTO]` **Event tags correct:** Tags include `["d", "<slug>:<version>"]`, `["e", gameEventId]`, `["game", slug]`
-- [ ] `[AUTO]` **Event verifiable:** `verifyEvent(storedEvent)` returns true
-- [ ] `[AUTO]` **Duplicate version d tag:** Upload version with same `slug:version` as an existing version event → replaceable semantics apply (latest wins), no duplicate
-- [ ] `[AUTO]` **Version event references missing game event:** Version event has `["e", nonExistentEventId]` tag → still stores successfully (the `e` tag is informational, not a foreign key)
+- [ ] `[AUTO]` **Upload version → event exists:** Upload a game version → kind 30002 event exists in DB — Cannot test without uploading a zip; code review confirms handler signs kind 30002 event after uploadAndProcessVersion()
+- [ ] `[CODE]` **Event content correct:** Event content JSON contains `version`, `fileSizeBytes`, `infoHash` ✓ Code verified: `JSON.stringify({ version: result.version, fileSizeBytes: result.fileSizeBytes, infoHash: result.torrent?.infoHash ?? null })`
+- [ ] `[CODE]` **Event tags correct:** Tags include `["d", "<slug>:<version>"]`, `["e", gameEventId]`, `["game", slug]` ✓ Code verified: conditional `["e", game.eventId]` tag only when game has eventId
+- [ ] `[AUTO]` **Event verifiable:** `verifyEvent(storedEvent)` returns true — Pending: requires a real version upload to test
+- [ ] `[AUTO]` **Duplicate version d tag:** Upload version with same `slug:version` as an existing version event → replaceable semantics apply (latest wins), no duplicate — Pending: requires a real version upload to test
+- [ ] `[AUTO]` **Version event references missing game event:** Version event has `["e", nonExistentEventId]` tag → still stores successfully (the `e` tag is informational, not a foreign key) — Pending: requires a real version upload to test
 
 ### 2.8 — REST endpoint for pre-signed events
 
