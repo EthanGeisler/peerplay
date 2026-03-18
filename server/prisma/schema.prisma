@@ -108,10 +108,12 @@ model Game {
   savePaths   String[]   @default([]) @map("save_paths")
   coverImageUrl String?  @map("cover_image_url")
   screenshots String[]   @default([])
+  eventId     String?    @unique @map("event_id")
   createdAt   DateTime   @default(now()) @map("created_at")
   updatedAt   DateTime   @updatedAt @map("updated_at")
 
   developer   Developer  @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  event       Event?     @relation(fields: [eventId], references: [id])
   versions    GameVersion[]
   licenses    License[]
   payments    Payment[]
@@ -183,6 +185,26 @@ model Payment {
   license               License?
 
   @@map("payments")
+}
+
+model Event {
+  id         String   @id                          // SHA-256 hash of canonical JSON (NIP-01)
+  pubkey     String                                // 64-char hex, x-only secp256k1 pubkey
+  createdAt  Int      @map("created_at_unix")      // Unix timestamp (seconds)
+  kind       Int                                   // Event kind (30001=listing, 30002=version, etc.)
+  tags       Json                                  // Array of string arrays (NIP-01)
+  content    String                                // Event content (often JSON-stringified)
+  sig        String                                // 128-char hex Schnorr signature
+  dTag       String?  @map("d_tag")                // Parameterized replaceable event identifier
+  receivedAt DateTime @default(now()) @map("received_at")
+
+  games      Game[]
+
+  @@unique([pubkey, kind, dTag])
+  @@index([kind])
+  @@index([pubkey])
+  @@index([createdAt])
+  @@map("events")
 }
 
 model SaveFile {
