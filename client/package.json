@@ -16,7 +16,6 @@
     "test:e2e": "npx playwright test"
   },
   "dependencies": {
-    "@boilerdeck/ui-shared": "*",
     "@noble/curves": "^2.0.0",
     "@noble/hashes": "^2.0.1",
     "@scure/base": "^2.0.0",
@@ -32,6 +31,7 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@boilerdeck/ui-shared": "*",
     "@playwright/test": "^1.58.2",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
@@ -53,7 +53,6 @@
     "files": [
       "dist/**/*",
       "node_modules/**/*",
-      "!node_modules/@boilerdeck/**",
       "package.json"
     ],
     "extraResources": [
