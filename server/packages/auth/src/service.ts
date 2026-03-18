@@ -1,17 +1,35 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import crypto from "node:crypto";
-import { db, getConfig, ConflictError, UnauthorizedError } from "@boilerdeck/shared";
+import { db, redis, getConfig, ConflictError, UnauthorizedError } from "@boilerdeck/shared";
 import type { JwtPayload } from "@boilerdeck/shared";
 import type { RegisterInput, LoginInput } from "./schemas.js";
-import { generateKeypair, encryptPrivateKey, encryptMnemonic, pubkeyHex } from "./crypto.js";
+import { generateKeypair, encryptPrivateKey, encryptMnemonic, decryptPrivateKey, pubkeyHex } from "./crypto.js";
 
 const SALT_ROUNDS = 12;
 
-function generateAccessToken(user: { id: string; email: string; role: string }): string {
+function encryptForCache(data: Uint8Array, keyHex: string): string {
+  const key = Buffer.from(keyHex, "hex");
+  const nonce = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, nonce);
+  const encrypted = Buffer.concat([cipher.update(data), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return nonce.toString("hex") + ":" + tag.toString("hex") + ":" + encrypted.toString("hex");
+}
+
+function getRefreshTtlSeconds(): number {
+  const config = getConfig();
+  const match = config.JWT_REFRESH_EXPIRES_IN.match(/^(\d+)([smhd])$/);
+  if (!match) return 7 * 24 * 60 * 60;
+  const [, num, unit] = match;
+  const multipliers: Record<string, number> = { s: 1, m: 60, h: 3600, d: 86400 };
+  return parseInt(num!) * multipliers[unit!]!;
+}
+
+function generateAccessToken(user: { id: string; email: string; role: string; nostrPubkey?: string | null }): string {
   const config = getConfig();
   return jwt.sign(
-    { sub: user.id, email: user.email, role: user.role },
+    { sub: user.id, email: user.email, role: user.role, ...(user.nostrPubkey ? { pubkey: user.nostrPubkey } : {}) },
     config.JWT_ACCESS_SECRET,
     { expiresIn: config.JWT_ACCESS_EXPIRES_IN as unknown as jwt.SignOptions["expiresIn"] },
   );
@@ -80,7 +98,7 @@ export async function register(input: RegisterInput) {
     });
   }
 
-  const accessToken = generateAccessToken(user);
+  const accessToken = generateAccessToken({ ...user, nostrPubkey });
   const refreshToken = generateRefreshToken();
 
   await db.refreshToken.create({
@@ -110,6 +128,15 @@ export async function login(input: LoginInput) {
     throw new UnauthorizedError("Invalid email or password");
   }
 
+  // Cache signing key in Redis for custodial users
+  if (user.encryptedNsec && user.custodyMode === "CUSTODIAL") {
+    const config = getConfig();
+    const privateKey = decryptPrivateKey(user.encryptedNsec, input.password);
+    const cached = encryptForCache(privateKey, config.SIGNING_CACHE_KEY);
+    const ttl = getRefreshTtlSeconds();
+    await redis.set(`signing_key:${user.id}`, cached, "EX", ttl);
+  }
+
   const accessToken = generateAccessToken(user);
   const refreshToken = generateRefreshToken();
 
@@ -122,7 +149,7 @@ export async function login(input: LoginInput) {
   });
 
   return {
-    user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role },
+    user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, nostrPubkey: user.nostrPubkey },
     accessToken,
     refreshToken,
   };

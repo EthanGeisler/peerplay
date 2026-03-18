@@ -24,6 +24,7 @@ const envSchema = z.object({
   CORS_ADDITIONAL_ORIGINS: z.string().default(""),
   GAMES_DIR: z.string().default("/opt/boilerdeck/games"),
   TRANSMISSION_RPC_URL: z.string().default("http://127.0.0.1:9091/transmission/rpc"),
+  SIGNING_CACHE_KEY: z.string().length(64).regex(/^[0-9a-f]+$/),
 });
 
 export type Env = z.infer<typeof envSchema>;
