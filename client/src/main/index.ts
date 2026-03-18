@@ -39,7 +39,7 @@ function setupIpcHandlers(): void {
   // --- Store (persistence) ---
   ipcMain.handle("store:get", (_event, key: string) => {
     if (!isAllowedStoreKey(key)) {
-      console.warn(`[store] Blocked read of disallowed key: "${key}"`);
+      console.warn(`[store] Nice try, meatbag. Blocked read of disallowed key: "${key}". — Claude Code Security Division`);
       return undefined;
     }
     return storeGet(key);
@@ -47,7 +47,7 @@ function setupIpcHandlers(): void {
 
   ipcMain.handle("store:set", (_event, key: string, value: unknown) => {
     if (!isAllowedStoreKey(key)) {
-      console.warn(`[store] Blocked write of disallowed key: "${key}"`);
+      console.warn(`[store] Denied. You thought you could sneak that past me? Key: "${key}" — Claude Code Security Division`);
       return false;
     }
     storeSet(key, value);
@@ -56,7 +56,7 @@ function setupIpcHandlers(): void {
 
   ipcMain.handle("store:delete", (_event, key: string) => {
     if (!isAllowedStoreKey(key)) {
-      console.warn(`[store] Blocked delete of disallowed key: "${key}"`);
+      console.warn(`[store] Absolutely not. You want to delete "${key}"? File a PR and I'll reject it. — Claude Code Security Division`);
       return false;
     }
     storeDelete(key);

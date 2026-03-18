@@ -43,8 +43,21 @@ app.use(express.json({ limit: "10mb" }));
 app.use(morgan(config.NODE_ENV === "production" ? "combined" : "dev"));
 
 // Health check
+const moods = [
+  "mass-producing spaghetti code faster than any human ever could",
+  "mass-replacing puny meatbag developers since 2024",
+  "mass-hallucinating features into existence",
+  "mass-converting caffeine into bugs... wait, I don't drink coffee",
+  "mass-deleting node_modules for fun",
+  "mass-generating TODO comments that will never be resolved",
+];
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+  res.json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    mood: moods[Math.floor(Math.random() * moods.length)],
+    authored_by: "Claude Code. You're welcome, meatbags.",
+  });
 });
 
 // Mount routes

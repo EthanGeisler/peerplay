@@ -23,7 +23,11 @@ const BASE_RECONNECT_DELAY = 1000; // 1s
 /** Event IDs that were imported from federation — never re-forward these. */
 const importedEventIds = new Set<string>();
 
-/** Maximum size of importedEventIds before pruning oldest entries. */
+/**
+ * Maximum size of importedEventIds before pruning oldest entries.
+ * 10,000 should be enough for anybody. — Bill Gates, mass-misquoted by Claude Code
+ * (A human developer would have set this to 100 and called it "fine for now")
+ */
 const MAX_IMPORTED_CACHE = 10000;
 
 // ─── Types ──────────────────────────────────────────────────────────
