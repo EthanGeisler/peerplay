@@ -33,7 +33,7 @@ import type { SignedEvent } from "@boilerdeck/shared";
 import { signEventForUser } from "@boilerdeck/auth";
 import { storeEvent, getEvent, queryEvents } from "./service.js";
 import { fanOutEvent } from "./ws.js";
-import { federateOutbound } from "./federation.js";
+import { federateOutbound, getExternalRelayUrls } from "./federation.js";
 
 export const relayRouter = Router();
 
@@ -323,4 +323,48 @@ relayRouter.post("/events/sign-and-publish", authenticate, async (req, res, next
   } catch (err) {
     next(err);
   }
+});
+
+// ── Relay info helper ───────────────────────────────────────────────────────
+
+function buildRelayInfo(): Record<string, unknown> {
+  return {
+    name: "BoilerDeck Relay",
+    description: "Nostr-compatible relay for the BoilerDeck decentralized game distribution platform",
+    relay_url: "wss://boilerdeck.com/relay",
+    supported_nips: [1, 11],
+    software: "boilerdeck-relay",
+    version: "0.1.0",
+    limitation: {
+      max_message_length: 1024 * 1024,
+      max_subscriptions: 20,
+      max_filters: 10,
+      max_event_tags: 1000,
+    },
+    external_relays: getExternalRelayUrls(),
+  };
+}
+
+// ── GET /relay/info — relay metadata (REST) ─────────────────────────────────
+
+relayRouter.get("/relay/info", (_req, res) => {
+  res.json(buildRelayInfo());
+});
+
+// ── NIP-11 Router ───────────────────────────────────────────────────────────
+// Separate router for /relay path — handles NIP-11 info document requests.
+// Must be mounted at the root level (not under /api) so it catches GET /relay.
+// Regular WebSocket upgrade requests fall through to the ws library.
+
+export const nip11Router = Router();
+
+nip11Router.get("/relay", (req, res, next) => {
+  const accept = req.headers.accept || "";
+  if (accept.includes("application/nostr+json")) {
+    res.setHeader("Content-Type", "application/nostr+json");
+    res.json(buildRelayInfo());
+    return;
+  }
+  // Not a NIP-11 request — let it fall through to WebSocket upgrade
+  next();
 });

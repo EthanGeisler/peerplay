@@ -3,7 +3,7 @@ export { storeEvent, getEvent, queryEvents, deleteEvent } from "./service.js";
 export type { DeleteResult } from "./service.js";
 
 // Routes
-export { relayRouter } from "./routes.js";
+export { relayRouter, nip11Router } from "./routes.js";
 
 // WebSocket
 export { attachRelayWebSocket, fanOutEvent } from "./ws.js";

@@ -620,18 +620,18 @@ These are in `server/packages/auth/package.json`. See `docs/handoff/1.1.md` for 
 
 ### Phase 3 In Progress — What's Built So Far
 
-Phase 3.1-3.5 are complete. The `@boilerdeck/relay` package includes:
+Phase 3 is COMPLETE (3.1-3.10). The `@boilerdeck/relay` package includes:
 - **crypto.ts** — re-exports from shared + auth (no duplication)
 - **types.ts** — NIP-01 protocol message types (ClientMessage, RelayMessage, Subscription, EventFilter)
 - **service.ts** — wraps shared eventStore + adds `deleteEvent`
-- **routes.ts** — owns `/api/events` REST endpoints + key management (`/relay/me/keys`, `/relay/me/import-key`)
-- **ws.ts** — NIP-01 WebSocket relay at `/relay` with REQ/EVENT/CLOSE, subscription management, fan-out
+- **routes.ts** — REST endpoints: `/api/events` CRUD, `/api/relay/me/keys`, `/api/relay/me/import-key`, `/api/events/sign-and-publish`, `/api/relay/info`, NIP-11 handler
+- **ws.ts** — NIP-01 WebSocket relay at `/relay` with REQ/EVENT/CLOSE, subscription management, fan-out (exported)
+- **federation.ts** — outbound + inbound federation with external relays, loop prevention, auto-reconnect
 - **Compound index** `[kind, createdAt]` on events table for efficient relay queries
 - **Nginx** WebSocket proxy configured on VPS for `wss://boilerdeck.com/relay`
+- **Electron client** `relayManager.ts` — relay connection manager with auto-reconnect, IPC bridge
 
-**Key note for 3.6+:** `fanOutEvent()` in `ws.ts` is module-private. Sub-task 3.6 (sign-and-publish) will need it exported or a shared broadcast mechanism so REST-published events also fan out to WS subscribers.
-
-See `docs/handoff/3.5.md` for full implementation details and `DECENTRALIZATION_PLAN.md` for next sub-tasks.
+See `docs/handoff/3.10.md` for latest implementation details and `DECENTRALIZATION_PLAN.md` for Phase 4 specs.
 
 ---
 
