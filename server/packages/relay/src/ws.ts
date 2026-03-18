@@ -35,6 +35,9 @@ const MAX_SUBSCRIPTIONS_PER_CONNECTION = 20;
 const MAX_MESSAGE_BYTES = 1 * 1024 * 1024; // 1MB
 const MAX_CONTENT_BYTES = 1 * 1024 * 1024; // 1MB
 const MAX_TAGS = 1000;
+const MAX_SUB_ID_LENGTH = 128;
+const MAX_FILTERS_PER_REQ = 10;
+const MAX_FILTER_VALUES = 1000;
 
 // ─── Connection State ─────────────────────────────────────────────────────────
 
@@ -142,7 +145,7 @@ async function handleReq(
   }
 
   const subId = msg[1] as string;
-  if (typeof subId !== "string" || subId.length === 0) {
+  if (typeof subId !== "string" || subId.length === 0 || subId.length > MAX_SUB_ID_LENGTH) {
     sendNotice(ws, "error: invalid subscription ID");
     return;
   }
@@ -160,7 +163,7 @@ async function handleReq(
   }
 
   const filters: EventFilter[] = [];
-  for (let i = 2; i < msg.length; i++) {
+  for (let i = 2; i < msg.length && filters.length < MAX_FILTERS_PER_REQ; i++) {
     const f = msg[i];
     if (typeof f === "object" && f !== null && !Array.isArray(f)) {
       filters.push(f as EventFilter);
