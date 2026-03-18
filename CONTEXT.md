@@ -555,7 +555,17 @@ ssh root@204.168.133.38 "cd /opt/boilerdeck && git pull origin main && npx vite 
 | 1.12 | Electron client: client-side keypair generation | DONE | `9d00e34` |
 | 1.13 | Password change flow | DONE | `ad69472` |
 | 2.1 | Create events table migration | DONE | `4bb9c6d` |
-| 2.2 | Event utility module | **NEXT** | — |
+| 2.2 | Event utility module | DONE | `cfdda0c` |
+| 2.3 | Event storage service | DONE | `1c33b09` |
+| 2.4 | Server-side signing service | DONE | `30c3402` |
+| 2.5 | Wrap game creation in event signing | DONE | `5e84a4c` |
+| 2.6 | Wrap game updates/publishing in event signing | DONE | `d43f85a` |
+| 2.7 | Wrap version upload in event signing | DONE | `d43f85a` |
+| 2.8 | REST endpoint for pre-signed events | DONE | `b612daa` |
+| 2.9 | Event materialization layer | DONE | `fe6d154` |
+| 2.10 | Add pubkey to public API responses | DONE | `c83b1c1` |
+| 2.11 | Frontend types and API updates | DONE | `46ad4ec` |
+| 3.1 | Relay: event schema + crypto utilities | **NEXT** | — |
 
 ### Implementation Workflow
 
@@ -587,17 +597,15 @@ These are in `server/packages/auth/package.json`. See `docs/handoff/1.1.md` for 
 - `@scure/bip39` ^2.0.1 — BIP39 mnemonic generation (12-word recovery phrases)
 - `@scure/base` ^2.0.0 — Hex/bech32 encoding (npub/nsec)
 
-### What 2.2 Needs to Do
+### Phase 2 Complete — What 3.1 Needs to Do
 
-See `DECENTRALIZATION_PLAN.md` sub-task 2.2 for full spec. Key points:
-- Create `server/packages/shared/src/events.ts` (NEW)
-- `serializeEvent(event)` → NIP-01 canonical JSON `[0, pubkey, created_at, kind, tags, content]` — deterministic, no whitespace, integer `created_at`, string `content`
-- `hashEvent(event)` → SHA-256 of serialized bytes → hex string (event ID)
-- `createEvent(params, privateKey)` → full signed event with `id` and `sig`
-- `verifyEvent(event)` → boolean (recompute hash, verify Schnorr signature)
-- Export kind constants: `EVENT_KIND_GAME_LISTING = 30001`, `EVENT_KIND_GAME_VERSION = 30002`, `EVENT_KIND_REVIEW = 31337`, `EVENT_KIND_ATTESTATION = 31338`
-- Re-export from `shared/src/index.ts`
-- Test: create + verify round-trip, tamper detection (modifying content/id/sig → verifyEvent returns false)
+Phase 2 (Event Schema & Signing) is fully implemented. All game creation, updates, publishing, and version uploads now produce signed Nostr-compatible events. REST endpoints for pre-signed events and event materialization are live.
+
+See `DECENTRALIZATION_PLAN.md` sub-task 3.1 for full spec. Phase 3 builds the relay infrastructure:
+- Create `server/packages/relay/` package with WebSocket endpoint
+- NIP-01 protocol (REQ/EVENT/CLOSE messages)
+- Federation with external relays
+- Electron client relay connection manager
 
 ---
 
