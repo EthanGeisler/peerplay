@@ -489,24 +489,29 @@ The version in `client/package.json` (`"version": "0.2.0"`) controls the install
 
 ### Releasing a New Client Version (full process)
 ```bash
-# 1. Bump version in client/package.json (e.g., 0.2.0 → 0.3.0)
+# 1. Bump version in client/package.json (e.g., 0.2.1 → 0.3.0)
 # 2. Update download links in web/src/App.tsx and web/src/pages/Store.tsx
 # 3. Commit + push + tag
 git add client/package.json web/src/App.tsx web/src/pages/Store.tsx
 git commit -m "Bump client version to 0.3.0 and update download links"
 git push origin main
 git tag v0.3.0 && git push origin v0.3.0
-# 4. CI builds and publishes to GitHub Releases (~5-10 min)
-gh run list --limit 1   # monitor progress
-# 5. Download installer from GitHub Release
+# 4. CI builds (~3-5 min) — creates a DRAFT GitHub Release
+gh run watch $(gh run list --limit 1 --json databaseId -q '.[0].databaseId') --exit-status
+# 5. CRITICAL: Publish the release (CI creates it as DRAFT — auto-updater can't see drafts!)
+gh release edit v0.3.0 --draft=false
+# 6. Download installer from GitHub Release
 gh release download v0.3.0 -p "BoilerDeck-Setup-0.3.0.exe" -D /tmp
-# 6. Upload to VPS (NOTE: GitHub uses hyphens, VPS needs spaces to match URL-encoded links)
+# 7. Upload to VPS (NOTE: GitHub uses hyphens, VPS needs spaces to match URL-encoded links)
+ssh root@204.168.133.38 "mkdir -p /opt/boilerdeck/downloads"
 scp /tmp/BoilerDeck-Setup-0.3.0.exe "root@204.168.133.38:/opt/boilerdeck/downloads/BoilerDeck Setup 0.3.0.exe"
-# 7. Deploy updated web storefront
+# 8. Deploy updated web storefront (may need: npm install @rollup/rollup-linux-x64-gnu)
 ssh root@204.168.133.38 "cd /opt/boilerdeck && git pull origin main && npx vite build web"
 ```
-**Gotcha:** GitHub Release assets use hyphens (`BoilerDeck-Setup-0.2.0.exe`) but the VPS download links use spaces (`BoilerDeck%20Setup%200.2.0.exe`). Must rename when SCP-ing to VPS.
+**Gotcha:** CI uses `electron-builder --publish onTagOrDraft` which creates **draft** releases. The `electron-updater` auto-update client ignores drafts — you MUST publish the release with `gh release edit --draft=false` or users won't see the update.
+**Gotcha:** GitHub Release assets use hyphens (`BoilerDeck-Setup-0.2.1.exe`) but the VPS download links use spaces (`BoilerDeck%20Setup%200.2.1.exe`). Must rename when SCP-ing to VPS.
 **Gotcha:** The `/opt/boilerdeck/downloads/` directory may not exist after VPS rebuild — create with `mkdir -p` before SCP.
+**Gotcha:** VPS `package-lock.json` from Windows may lack `@rollup/rollup-linux-x64-gnu`. If Vite build fails, run `npm install @rollup/rollup-linux-x64-gnu` first.
 
 ---
 
@@ -522,11 +527,7 @@ ssh root@204.168.133.38 "cd /opt/boilerdeck && git pull origin main && npx vite 
   5. `912f091` `Bump client version to 0.2.0 and update download links`
   6+ (earlier commits omitted — see `git log` for full history)
 - **Git identity:** `EthanGeisler` / `25466222+EthanGeisler@users.noreply.github.com`
-- **Tags:** `v0.1.0` (first release), `v0.2.0` (current release — auto-update, bug fixes)
-
-> **Important:** Commits 1–3 above are AFTER the v0.2.0 tag. The v0.2.0 release does NOT include cover image fixes or the Settings page update UI. A v0.2.1 release is needed to ship these to users via auto-update. The DRM removal changes are also uncommitted/post-tag and will need to be included in the next release.
-
-> **Uncommitted changes (as of 2026-03-17):** Full DRM system removal — migration `remove_drm_system` applied locally, all server/client/frontend code updated. Needs: commit, push, deploy to VPS (run migration, remove `DRM_MASTER_KEK` from VPS `.env`, rebuild frontends, restart server).
+- **Tags:** `v0.1.0` (first release), `v0.2.0` (auto-update, bug fixes), `v0.2.1` (current release — Phase 1 identity, DRM removal, mnemonic flows)
 
 ---
 
