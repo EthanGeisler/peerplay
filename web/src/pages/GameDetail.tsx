@@ -441,7 +441,7 @@ function TopSeedersSection({ infoHash }: { infoHash?: string | null }) {
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [slug]);
+  }, [infoHash]);
 
   return (
     <div
