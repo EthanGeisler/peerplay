@@ -15,4 +15,4 @@ export {
   pubkeyToNpub,
   privkeyToNsec,
 } from "./crypto.js";
-
+export { signEventForUser } from "./signing.js";
