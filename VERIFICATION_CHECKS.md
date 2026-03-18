@@ -131,7 +131,7 @@
 - [x] `[CODE]` `ApiAuthResponse` type in `client/src/renderer/types.ts` includes `mnemonic?: string`
 - [x] `[CODE]` Registration and login flows in Electron renderer show mnemonic modal (same behavior as web)
 - [x] `[AUTO]` `npx tsc --noEmit` from `client/` exits 0
-- [ ] `[MANUAL]` Register in Electron client → mnemonic modal appears
+- [x] `[MANUAL]` Register in Electron client → mnemonic modal appears
 
 ### 1.12 — Electron client: client-side keypair generation
 
