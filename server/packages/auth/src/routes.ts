@@ -1,8 +1,17 @@
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import { authenticate, ValidationError } from "@boilerdeck/shared";
-import { registerSchema, loginSchema, recoverMnemonicSchema } from "./schemas.js";
+import { registerSchema, loginSchema, recoverMnemonicSchema, pubkeyLoginSchema } from "./schemas.js";
 import * as authService from "./service.js";
 import { ZodError } from "zod";
+
+const challengeLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: { code: "TOO_MANY_REQUESTS", message: "Too many requests, please try again later" } },
+});
 
 export const authRouter = Router();
 
@@ -63,6 +72,30 @@ authRouter.post("/logout", async (req, res, next) => {
       await authService.logout(refreshToken);
     }
     res.json({ message: "Logged out" });
+  } catch (err) {
+    next(err);
+  }
+});
+
+authRouter.get("/challenge", challengeLimiter, async (_req, res, next) => {
+  try {
+    const result = await authService.generateChallenge();
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+authRouter.post("/login/pubkey", async (req, res, next) => {
+  try {
+    let input;
+    try {
+      input = pubkeyLoginSchema.parse(req.body);
+    } catch (err) {
+      handleZodError(err);
+    }
+    const result = await authService.loginWithPubkey(input);
+    res.json(result);
   } catch (err) {
     next(err);
   }

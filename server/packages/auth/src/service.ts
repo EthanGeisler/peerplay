@@ -1,10 +1,10 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import crypto from "node:crypto";
-import { db, redis, getConfig, ConflictError, UnauthorizedError, ValidationError } from "@boilerdeck/shared";
+import { db, redis, getConfig, ConflictError, UnauthorizedError, NotFoundError, ValidationError } from "@boilerdeck/shared";
 import type { JwtPayload } from "@boilerdeck/shared";
-import type { RegisterInput, LoginInput } from "./schemas.js";
-import { generateKeypair, encryptPrivateKey, encryptMnemonic, decryptPrivateKey, decryptMnemonic, pubkeyHex } from "./crypto.js";
+import type { RegisterInput, LoginInput, PubkeyLoginInput } from "./schemas.js";
+import { generateKeypair, encryptPrivateKey, encryptMnemonic, decryptPrivateKey, decryptMnemonic, schnorrVerify, pubkeyHex } from "./crypto.js";
 
 const SALT_ROUNDS = 12;
 
@@ -236,6 +236,61 @@ export async function recoverMnemonic(userId: string, password: string) {
 
   const mnemonic = decryptMnemonic(user.encryptedMnemonic, password);
   return { mnemonic };
+}
+
+const CHALLENGE_TTL = 300; // 5 minutes
+
+export async function generateChallenge() {
+  const challenge = crypto.randomBytes(32).toString("hex");
+  const expiresAt = new Date(Date.now() + CHALLENGE_TTL * 1000).toISOString();
+  await redis.set(`challenge:${challenge}`, "1", "EX", CHALLENGE_TTL);
+  return { challenge, expiresAt };
+}
+
+export async function loginWithPubkey(input: PubkeyLoginInput) {
+  // Verify challenge exists and hasn't expired
+  const exists = await redis.get(`challenge:${input.challenge}`);
+  if (!exists) {
+    throw new UnauthorizedError("Invalid or expired challenge");
+  }
+
+  // Delete challenge immediately (one-time use)
+  await redis.del(`challenge:${input.challenge}`);
+
+  // Verify Schnorr signature over SHA-256(challenge bytes)
+  const { sha256 } = await import("@noble/hashes/sha2.js");
+  const challengeBytes = new Uint8Array(Buffer.from(input.challenge, "hex"));
+  const messageHash = sha256(challengeBytes);
+  const pubkeyBytes = new Uint8Array(Buffer.from(input.pubkey, "hex"));
+  const signatureBytes = new Uint8Array(Buffer.from(input.signature, "hex"));
+
+  const valid = schnorrVerify(pubkeyBytes, messageHash, signatureBytes);
+  if (!valid) {
+    throw new UnauthorizedError("Invalid signature");
+  }
+
+  // Look up user by pubkey
+  const user = await db.user.findUnique({ where: { nostrPubkey: input.pubkey } });
+  if (!user) {
+    throw new NotFoundError("No account found for this pubkey");
+  }
+
+  const accessToken = generateAccessToken(user);
+  const refreshToken = generateRefreshToken();
+
+  await db.refreshToken.create({
+    data: {
+      userId: user.id,
+      token: refreshToken,
+      expiresAt: getRefreshExpiresAt(),
+    },
+  });
+
+  return {
+    user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, nostrPubkey: user.nostrPubkey },
+    accessToken,
+    refreshToken,
+  };
 }
 
 export async function getMe(userId: string) {
