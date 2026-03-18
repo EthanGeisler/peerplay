@@ -38,7 +38,7 @@ import { signEventForUser } from "@boilerdeck/auth";
 import { storeEvent, getEvent, queryEvents } from "./service.js";
 import { fanOutEvent } from "./ws.js";
 import { federateOutbound, getExternalRelayUrls } from "./federation.js";
-import { KIND_PROFILE } from "./kinds.js";
+import { KIND_PROFILE, KIND_REVIEW } from "./kinds.js";
 
 export const relayRouter = Router();
 
@@ -439,6 +439,190 @@ relayRouter.get("/profiles/:pubkey", async (req, res, next) => {
       pubkey: event.pubkey,
       ...profileData,
       created_at: event.created_at,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── POST /games/:slug/reviews — submit a review ─────────────────────────────
+
+relayRouter.post("/games/:slug/reviews", authenticate, async (req, res, next) => {
+  try {
+    const slug = String(req.params.slug);
+    const { rating, title, body } = req.body;
+
+    // Validate rating: must be an integer 1-5
+    if (
+      typeof rating !== "number" ||
+      !Number.isInteger(rating) ||
+      rating < 1 ||
+      rating > 5
+    ) {
+      throw new ValidationError(
+        "rating must be an integer between 1 and 5",
+      );
+    }
+
+    // Validate title and body: required strings
+    if (typeof title !== "string" || title.length === 0) {
+      throw new ValidationError("title is required and must be a non-empty string");
+    }
+    if (typeof body !== "string" || body.length === 0) {
+      throw new ValidationError("body is required and must be a non-empty string");
+    }
+
+    // Look up the game by slug
+    const game = await db.game.findUnique({
+      where: { slug },
+      select: { id: true },
+    });
+
+    if (!game) {
+      throw new NotFoundError("Game");
+    }
+
+    // Check license ownership — user must own this game with ACTIVE status
+    const license = await db.license.findUnique({
+      where: {
+        userId_gameId: {
+          userId: req.user!.sub,
+          gameId: game.id,
+        },
+      },
+      select: { status: true },
+    });
+
+    if (!license || license.status !== "ACTIVE") {
+      throw new ForbiddenError(
+        "You must own this game to submit a review",
+      );
+    }
+
+    // Create kind 31337 event: parameterized replaceable on d tag (one review per user per game)
+    const content = JSON.stringify({ rating, title, body });
+    const event = await signEventForUser(req.user!.sub, {
+      kind: KIND_REVIEW,
+      tags: [["d", slug]],
+      content,
+    });
+
+    // Store event (replaceable semantics: same pubkey + kind 31337 + d=slug → replaces)
+    await storeEvent(event);
+
+    // Broadcast to WebSocket subscribers
+    fanOutEvent(event);
+
+    // Forward to external relays
+    federateOutbound(event);
+
+    // Parse content back for response
+    res.status(201).json({
+      eventId: event.id,
+      pubkey: event.pubkey,
+      rating,
+      title,
+      body,
+      created_at: event.created_at,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── GET /games/:slug/reviews — get reviews for a game ────────────────────────
+
+relayRouter.get("/games/:slug/reviews", async (req, res, next) => {
+  try {
+    const slug = String(req.params.slug);
+    const limit = req.query.limit ? parseInt(String(req.query.limit), 10) : 50;
+    const offset = req.query.offset ? parseInt(String(req.query.offset), 10) : 0;
+
+    // Verify the game exists
+    const game = await db.game.findUnique({
+      where: { slug },
+      select: { id: true },
+    });
+
+    if (!game) {
+      throw new NotFoundError("Game");
+    }
+
+    // Query kind 31337 events with dTag = slug directly via Prisma
+    // (queryEvents doesn't support dTag filtering)
+    const clampedLimit = Math.min(Math.max(limit, 1), 100);
+    const clampedOffset = Math.max(offset, 0);
+
+    const [reviewEvents, totalCount] = await Promise.all([
+      db.event.findMany({
+        where: {
+          kind: KIND_REVIEW,
+          dTag: slug,
+        },
+        orderBy: { createdAt: "desc" },
+        take: clampedLimit,
+        skip: clampedOffset,
+      }),
+      db.event.count({
+        where: {
+          kind: KIND_REVIEW,
+          dTag: slug,
+        },
+      }),
+    ]);
+
+    // Parse review content from events and compute aggregation
+    const reviews = reviewEvents.map((e) => {
+      let parsed: { rating?: number; title?: string; body?: string } = {};
+      try {
+        parsed = JSON.parse(e.content);
+      } catch {
+        // malformed content — return defaults
+      }
+      return {
+        eventId: e.id,
+        pubkey: e.pubkey,
+        rating: parsed.rating ?? 0,
+        title: parsed.title ?? "",
+        body: parsed.body ?? "",
+        created_at: e.createdAt,
+      };
+    });
+
+    // Compute average rating across ALL reviews for this game (not just this page)
+    let averageRating = 0;
+    if (totalCount > 0) {
+      // Fetch all reviews for aggregation (they're replaceable, so count is bounded by unique users)
+      const allReviews = await db.event.findMany({
+        where: {
+          kind: KIND_REVIEW,
+          dTag: slug,
+        },
+        select: { content: true },
+      });
+
+      let ratingSum = 0;
+      let ratingCount = 0;
+      for (const r of allReviews) {
+        try {
+          const parsed = JSON.parse(r.content);
+          if (typeof parsed.rating === "number" && parsed.rating >= 1 && parsed.rating <= 5) {
+            ratingSum += parsed.rating;
+            ratingCount++;
+          }
+        } catch {
+          // skip malformed
+        }
+      }
+      averageRating = ratingCount > 0 ? ratingSum / ratingCount : 0;
+    }
+
+    res.json({
+      reviews,
+      averageRating,
+      reviewCount: totalCount,
+      limit: clampedLimit,
+      offset: clampedOffset,
     });
   } catch (err) {
     next(err);
