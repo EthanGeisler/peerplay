@@ -19,7 +19,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   error: null,
 
   login: async (email, password) => {
-    set({ loading: true, error: null });
+    set({ error: null });
     try {
       const data = await apiFetch<ApiAuthResponse>("/auth/login", {
         method: "POST",
@@ -27,10 +27,9 @@ export const useAuthStore = create<AuthState>((set) => ({
       });
       setAccessToken(data.accessToken);
       localStorage.setItem("pp_refresh_token", data.refreshToken);
-      set({ user: data.user, loading: false });
+      set({ user: data.user });
     } catch (err) {
       set({
-        loading: false,
         error: err instanceof ApiError ? err.message : "Login failed",
       });
       throw err;
@@ -38,7 +37,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   register: async (email, password, displayName) => {
-    set({ loading: true, error: null });
+    set({ error: null });
     try {
       const data = await apiFetch<ApiAuthResponse>("/auth/register", {
         method: "POST",
@@ -46,11 +45,10 @@ export const useAuthStore = create<AuthState>((set) => ({
       });
       setAccessToken(data.accessToken);
       localStorage.setItem("pp_refresh_token", data.refreshToken);
-      set({ user: data.user, loading: false });
+      set({ user: data.user });
       return data.mnemonic;
     } catch (err) {
       set({
-        loading: false,
         error: err instanceof ApiError ? err.message : "Registration failed",
       });
       throw err;
