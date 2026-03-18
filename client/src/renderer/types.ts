@@ -7,12 +7,14 @@ export interface ApiGame {
   description: string;
   priceCents: number;
   coverImageUrl: string | null;
+  eventId?: string | null;
   studioName: string;
 }
 
 export interface ApiGameDetail extends ApiGame {
   screenshots: string[];
   exePath: string | null;
+  pubkey?: string | null;
   latestVersion: {
     id: string;
     version: string;
@@ -30,6 +32,8 @@ export interface ApiUser {
   displayName: string;
   role: "USER" | "DEVELOPER" | "ADMIN";
   nostrPubkey?: string;
+  pubkey?: string | null;
+  custodyMode?: string;
 }
 
 export interface ApiAuthResponse {
@@ -150,6 +154,16 @@ export interface DevDetectResult {
   directory: string;
   executables: string[];
   recommended: string | null;
+}
+
+export interface NostrEvent {
+  id: string;
+  pubkey: string;
+  created_at: number;
+  kind: number;
+  tags: string[][];
+  content: string;
+  sig: string;
 }
 
 // Client-specific types
