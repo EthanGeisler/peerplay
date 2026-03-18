@@ -31,3 +31,9 @@ export {
   EVENT_KIND_ATTESTATION,
 } from "./events.js";
 export type { UnsignedEvent, SignedEvent } from "./events.js";
+export {
+  storeEvent,
+  getEvent,
+  queryEvents,
+} from "./eventStore.js";
+export type { StoreResult, EventFilter } from "./eventStore.js";
