@@ -1161,7 +1161,16 @@ relayRouter.get("/reputation/:pubkey", async (req, res, next) => {
       throw new ValidationError("pubkey must be a 64-character hex string");
     }
 
-    const reputation = await getReputation(pubkey.toLowerCase());
+    // Optional viewer pubkey for personalized (web-of-trust) scoring
+    const viewer = req.query.viewer ? String(req.query.viewer) : undefined;
+    if (viewer && (viewer.length !== 64 || !/^[0-9a-f]+$/i.test(viewer))) {
+      throw new ValidationError("viewer must be a 64-character hex pubkey");
+    }
+
+    const reputation = await getReputation(
+      pubkey.toLowerCase(),
+      viewer?.toLowerCase(),
+    );
     res.json(reputation);
   } catch (err) {
     next(err);

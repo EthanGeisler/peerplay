@@ -8,11 +8,19 @@
  * - Accounts less than 7 days old → weighted at 0.1x
  * - Max 20 attestations per attester per day (excess ignored)
  *
- * Redis caching: 15-minute TTL on reputation:{pubkey}
+ * Web of trust weighting (when viewerPubkey provided):
+ * - Attestation from a followed user → 1.0x trust weight
+ * - Attestation from an unknown user → 0.25x trust weight
+ * - Attestation from a muted user → 0x trust weight (completely ignored)
+ *
+ * Redis caching: 15-minute TTL
+ * - Global: reputation:{pubkey}
+ * - Personalized: reputation:{pubkey}:viewer:{viewerPubkey}
  */
 
 import { db, redis } from "@boilerdeck/shared";
-import { KIND_ATTESTATION } from "./kinds.js";
+import { KIND_ATTESTATION, KIND_FOLLOW_LIST } from "./kinds.js";
+import { queryEvents } from "./service.js";
 
 const CACHE_TTL_SECONDS = 900; // 15 minutes
 const CACHE_PREFIX = "reputation:";
@@ -20,6 +28,11 @@ const ACCOUNT_AGE_DAYS_THRESHOLD = 7;
 const NEW_ACCOUNT_WEIGHT_MULTIPLIER = 0.1;
 const MAX_ATTESTATIONS_PER_ATTESTER_PER_DAY = 20;
 const BYTES_PER_MB = 1024 * 1024;
+
+// Web of trust multipliers
+const TRUST_WEIGHT_FOLLOWED = 1.0;
+const TRUST_WEIGHT_UNKNOWN = 0.25;
+const TRUST_WEIGHT_MUTED = 0;
 
 export interface ReputationScore {
   pubkey: string;
@@ -29,15 +42,84 @@ export interface ReputationScore {
 }
 
 /**
+ * Fetch the set of pubkeys that the viewer follows (from their kind 3 event).
+ */
+async function getFollowedPubkeys(viewerPubkey: string): Promise<Set<string>> {
+  const events = await queryEvents({
+    kinds: [KIND_FOLLOW_LIST],
+    authors: [viewerPubkey],
+    limit: 1,
+  });
+
+  const followed = new Set<string>();
+  if (events.length > 0) {
+    const tags = events[0]!.tags;
+    for (const t of tags) {
+      if (t[0] === "p" && typeof t[1] === "string" && t[1].length > 0) {
+        followed.add(t[1].toLowerCase());
+      }
+    }
+  }
+  return followed;
+}
+
+/**
+ * Fetch the set of pubkeys muted by the viewer.
+ * Mute lists are stored in Redis as `mute_list:{userId}`.
+ * Need to map viewerPubkey → userId first.
+ */
+async function getMutedPubkeys(viewerPubkey: string): Promise<Set<string>> {
+  // Look up the user by their nostrPubkey to get their userId
+  const user = await db.user.findFirst({
+    where: { nostrPubkey: viewerPubkey },
+    select: { id: true },
+  });
+
+  if (!user) {
+    return new Set<string>();
+  }
+
+  const mutedList = await redis.smembers(`mute_list:${user.id}`);
+  return new Set(mutedList.map((p) => p.toLowerCase()));
+}
+
+/**
+ * Determine the trust weight for an attester relative to the viewer.
+ */
+function getTrustWeight(
+  attesterPubkey: string,
+  followedSet: Set<string>,
+  mutedSet: Set<string>,
+): number {
+  if (mutedSet.has(attesterPubkey)) {
+    return TRUST_WEIGHT_MUTED;
+  }
+  if (followedSet.has(attesterPubkey)) {
+    return TRUST_WEIGHT_FOLLOWED;
+  }
+  return TRUST_WEIGHT_UNKNOWN;
+}
+
+/**
  * Compute reputation score for a pubkey from attestation events.
+ *
+ * @param pubkey - The pubkey whose reputation to compute
+ * @param viewerPubkey - Optional viewer pubkey for personalized (web-of-trust) scoring.
+ *                       When omitted, returns the global (unweighted) score.
  *
  * 1. Check Redis cache
  * 2. If miss: query events table for kind 31338 where `p` tag contains target pubkey
- * 3. For each attestation, apply anti-sybil rules and compute weighted score
+ * 3. For each attestation, apply anti-sybil rules and trust weighting, compute score
  * 4. Cache result and return
  */
-export async function getReputation(pubkey: string): Promise<ReputationScore> {
-  const cacheKey = `${CACHE_PREFIX}${pubkey}`;
+export async function getReputation(
+  pubkey: string,
+  viewerPubkey?: string,
+): Promise<ReputationScore> {
+  // Build cache key — personalized scores get a separate key
+  const cacheKey = viewerPubkey
+    ? `${CACHE_PREFIX}${pubkey}:viewer:${viewerPubkey}`
+    : `${CACHE_PREFIX}${pubkey}`;
 
   // 1. Check Redis cache
   const cached = await redis.get(cacheKey);
@@ -92,6 +174,16 @@ export async function getReputation(pubkey: string): Promise<ReputationScore> {
 
   const now = new Date();
   const sevenDaysMs = ACCOUNT_AGE_DAYS_THRESHOLD * 24 * 60 * 60 * 1000;
+
+  // 3b. If viewer is specified, fetch their follow list and mute list for trust weighting
+  let followedSet: Set<string> | undefined;
+  let mutedSet: Set<string> | undefined;
+  if (viewerPubkey) {
+    [followedSet, mutedSet] = await Promise.all([
+      getFollowedPubkeys(viewerPubkey),
+      getMutedPubkeys(viewerPubkey),
+    ]);
+  }
 
   // 4. Group attestations by attester and day for rate limiting
   //    Key: `${attesterPubkey}:${YYYY-MM-DD}` → count
@@ -149,6 +241,16 @@ export async function getReputation(pubkey: string): Promise<ReputationScore> {
       }
     }
     // If attester is not in the users table (e.g., VPS seed box), no penalty applied
+
+    // Web of trust weighting: apply trust multiplier based on viewer's relationship to attester
+    if (followedSet && mutedSet) {
+      const trustWeight = getTrustWeight(attesterPubkey, followedSet, mutedSet);
+      if (trustWeight === 0) {
+        // Muted attester — completely ignored
+        continue;
+      }
+      weight *= trustWeight;
+    }
 
     // Logarithmic score accumulation
     score += Math.log2(1 + weight);
