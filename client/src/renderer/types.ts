@@ -21,6 +21,7 @@ export interface ApiGameDetail extends ApiGame {
     fileSizeBytes: number;
     changelog: string | null;
     createdAt: string;
+    infoHash?: string | null;
   } | null;
   createdAt: string;
   updatedAt: string;

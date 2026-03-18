@@ -95,6 +95,7 @@ export async function getGameBySlug(slug: string) {
           fileSizeBytes: true,
           changelog: true,
           createdAt: true,
+          torrent: { select: { infoHash: true } },
         },
       },
     },
@@ -118,8 +119,12 @@ export async function getGameBySlug(slug: string) {
     pubkey: game.developer.user?.nostrPubkey ?? null,
     latestVersion: game.versions[0]
       ? {
-          ...game.versions[0],
+          id: game.versions[0].id,
+          version: game.versions[0].version,
           fileSizeBytes: Number(game.versions[0].fileSizeBytes),
+          changelog: game.versions[0].changelog,
+          createdAt: game.versions[0].createdAt,
+          infoHash: game.versions[0].torrent?.infoHash ?? null,
         }
       : null,
     createdAt: game.createdAt,

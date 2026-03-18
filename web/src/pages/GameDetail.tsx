@@ -353,7 +353,7 @@ export function GameDetail() {
       </div>
 
       {/* Top Seeders */}
-      <TopSeedersSection slug={slug} />
+      <TopSeedersSection infoHash={game?.latestVersion?.infoHash} />
 
       {/* Review Form — only if logged in, owns game, and hasn't reviewed yet */}
       {slug && user && owned && !hasReviewed && (
@@ -394,17 +394,17 @@ function truncatePubkey(pubkey: string): string {
   return `${pubkey.slice(0, 8)}...${pubkey.slice(-8)}`;
 }
 
-function TopSeedersSection({ slug }: { slug?: string }) {
+function TopSeedersSection({ infoHash }: { infoHash?: string | null }) {
   const [seeders, setSeeders] = useState<SeederInfo[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!slug) {
+    if (!infoHash) {
       setLoading(false);
       return;
     }
 
-    // Query attestation events (kind 31338) that reference this game's slug via tags
+    // Query attestation events (kind 31338) and filter by d tag matching the game's infoHash
     apiFetch<Array<{ pubkey: string; tags: string[][] }>>(`/events?kinds=31338`)
       .then(async (events) => {
         if (!Array.isArray(events)) {
@@ -412,15 +412,12 @@ function TopSeedersSection({ slug }: { slug?: string }) {
           return;
         }
 
-        // Extract unique seeder pubkeys from "p" tags (the seeder being attested)
+        // Extract unique seeder pubkeys from "p" tags for attestations matching this game's infoHash
         const seederPubkeys = new Set<string>();
         for (const event of events) {
           if (!Array.isArray(event.tags)) continue;
-          // Check if this attestation relates to this game by checking for game slug in tags
-          const hasGameRef = event.tags.some(
-            (t) => (t[0] === "game" && t[1] === slug) || (t[0] === "d" && typeof t[1] === "string" && t[1].includes(slug))
-          );
-          if (!hasGameRef) continue;
+          const dTag = event.tags.find((t) => t[0] === "d" && t[1] === infoHash);
+          if (!dTag) continue;
           const pTag = event.tags.find((t) => t[0] === "p" && t[1]);
           if (pTag) seederPubkeys.add(pTag[1]);
         }
