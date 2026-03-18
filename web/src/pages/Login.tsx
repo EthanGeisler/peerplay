@@ -261,7 +261,7 @@ export function Login() {
         </div>
         <button
           type="button"
-          onClick={() => { setUseNostr(!useNostr); clearError(); }}
+          onClick={() => { setUseNostr(!useNostr); setHasExistingKey(false); setRecoveryPhrase(""); clearError(); }}
           style={{
             background: "none",
             border: "none",

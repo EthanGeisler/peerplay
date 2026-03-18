@@ -400,7 +400,7 @@ export function Login() {
       <div style={{ textAlign: "center" }}>
         <button
           type="button"
-          onClick={() => { setUseNostr(!useNostr); setError(""); }}
+          onClick={() => { setUseNostr(!useNostr); setHasExistingKey(false); setRecoveryPhrase(""); setError(""); }}
           style={styles.nostrToggleBtn}
         >
           {useNostr
