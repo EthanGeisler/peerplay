@@ -253,7 +253,7 @@ catalogRouter.post(
         handleZodError(err);
       }
       const developer = await catalogService.getDeveloperByUserId(req.user!.sub);
-      const game = await catalogService.createGame(developer.id, input);
+      let game = await catalogService.createGame(developer.id, input);
 
       // Sign and store a kind 30001 event for this game (non-blocking on failure)
       try {
@@ -268,7 +268,7 @@ catalogRouter.post(
           }),
         });
         await storeEvent(event);
-        await db.game.update({
+        game = await db.game.update({
           where: { id: game.id },
           data: { eventId: event.id },
         });
