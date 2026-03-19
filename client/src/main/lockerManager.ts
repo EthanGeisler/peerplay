@@ -1115,10 +1115,18 @@ export async function getEntries(): Promise<ListResult> {
  * Delete a locker entry by its entry ID.
  * Calls the server API (which publishes NIP-09 deletion + fans out)
  * and immediately removes from local index so re-sync won't resurrect it.
+ * If the server returns 404 (entry already gone), still clean up locally.
  */
 export async function deleteEntry(entryId: string): Promise<void> {
-  await apiRequest<{ success: true }>("DELETE", `/locker/entries/${entryId}`);
-  // Remove from local index immediately so the entry doesn't reappear on next sync
+  try {
+    await apiRequest<{ success: true }>("DELETE", `/locker/entries/${entryId}`);
+  } catch (err: unknown) {
+    const is404 = err instanceof Error && (err.message.includes("not found") || err.message.includes("Not Found"));
+    if (!is404) throw err;
+    // Entry already deleted server-side — fall through to clean up locally
+    console.log(`[locker] Entry ${entryId} already deleted on server, cleaning up locally`);
+  }
+  // Remove from local index so the entry disappears from the UI
   lockerStore.removeEntry(entryId);
 }
 
