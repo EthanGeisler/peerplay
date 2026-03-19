@@ -447,6 +447,10 @@ All have cover images uploaded. All are free ($0).
 53. **Locker sync WebSocket race (StrictMode)** — React StrictMode double-fires effects, causing `startLockerSync()` to be called twice in rapid succession (mount → cleanup → mount). The second `startLockerSync` must call `stopLockerSync` first, and `stopLockerSync` must wrap `ws.close()` in try/catch since the WebSocket may still be in CONNECTING state (readyState 0). Without this, Electron shows a "WebSocket is not open" error dialog.
 54. **WebTorrent torrent creation timeout scales with file size** — `createTorrentFromFile()` hashes the entire file to compute piece hashes. A 1.4GB file takes ~45s. Flat timeouts (e.g., 30s) cause "client already destroyed" errors when the timeout fires, destroys the client, and then the `ready` event tries to use it. Fix: scale timeout by file size and use a `settled` boolean guard to prevent the race.
 55. **Self-custody locker uploads must save to local index immediately** — `uploadFileSelfCustody()` must call `lockerStore.upsertEntry()` + `emitSyncUpdate()` right after creating the entry. Without this, the entry only appears if the relay round-trip succeeds (publish event → sync subscription picks it up), which often fails if the relay is disconnected. The local index is the source of truth for the UI.
+56. **Linux CI needs `@rollup/rollup-linux-x64-gnu` explicitly** — Windows-generated `package-lock.json` omits Linux-specific optional deps. The CI workflow has an explicit `npm install @rollup/rollup-linux-x64-gnu` step after `npm ci` for the Linux job. Same issue as gotcha #49 (VPS) but in CI context.
+57. **Linux icon must be PNG, not ICO** — electron-builder's `app-builder` cannot convert `.ico` to PNG on Linux (crashes with "unknown output format set"). The `linux.icon` config points to `resources/icon.png` (256x256). Windows config still uses `resources/icon.ico`.
+58. **Linux deb target requires `homepage` in package.json** — electron-builder's FPM target for `.deb` packages fails with "Please specify project homepage" if `homepage` is missing from `client/package.json`. Set to `https://boilerdeck.com`.
+59. **Linux AppImage SUID sandbox error** — On some Linux kernels, Electron's Chromium sandbox fails with "FATAL:setuid_sandbox_host.cc — suid sandbox helper binary not configured correctly." Fix: run with `--no-sandbox` flag, or enable unprivileged user namespaces: `sudo sysctl -w kernel.unprivileged_userns_clone=1`.
 
 ---
 
@@ -495,17 +499,19 @@ git tag v0.x.x && git push origin v0.x.x
 - **Auth:** Uses built-in `GITHUB_TOKEN` (no custom secrets needed)
 
 ### Version Bumping
-The version in `client/package.json` (`"version": "0.2.0"`) controls the installer filename and auto-update version comparison. The git tag should match (e.g., `v0.2.0`). Bump both together.
+The version in `client/package.json` (`"version": "0.5.0"`) controls the installer filename and auto-update version comparison. The git tag should match (e.g., `v0.5.0`). Bump both together.
 
 ### Current Release
-- **v0.4.0** — https://github.com/EthanGeisler/peerplay/releases/tag/v0.4.0
-- Published 2026-03-19, built via CI (GitHub Actions on `v0.4.0` tag push)
+- **v0.5.0** — https://github.com/EthanGeisler/peerplay/releases/tag/v0.5.0
+- Published 2026-03-19, first release with Linux support
 - Windows: NSIS installer (~95MB) + portable exe + blockmap (delta updates)
-- Linux: AppImage + deb (added post-v0.4.0, will be in next release)
-- Not code-signed (SmartScreen warning expected)
-- Includes: Phase 9 Data Locker (encrypted file storage, NIP-44 encryption, sharing, offline queue, batch operations, keyboard shortcuts)
-- VPS download: `https://boilerdeck.com/downloads/BoilerDeck%20Setup%200.4.0.exe`
-- **v0.3.1** — superseded, auto-update prompts users to v0.4.0
+- Linux: AppImage (deb was added after this release — next tag will include it)
+- Not code-signed (SmartScreen warning expected on Windows)
+- Linux gotcha: may need `--no-sandbox` flag or `sudo sysctl -w kernel.unprivileged_userns_clone=1` on some kernels
+- VPS download (Windows): `https://boilerdeck.com/downloads/BoilerDeck%20Setup%200.5.0.exe` (**not yet SCP'd to VPS — needs manual upload**)
+- Linux download: `https://github.com/EthanGeisler/peerplay/releases/download/v0.5.0/BoilerDeck-0.5.0.AppImage`
+- **v0.4.0** — superseded, Data Locker release
+- **v0.3.1** — superseded
 - **v0.3.0** — BURNED (runtime crash from ESM-only `socks-proxy-agent@9` inside asar). Do not distribute.
 - **v0.2.1** — superseded
 - **v0.2.0** — superseded
@@ -523,14 +529,15 @@ The version in `client/package.json` (`"version": "0.2.0"`) controls the install
 ### Download Buttons (Web Storefront)
 - **Header button** (`web/src/App.tsx`): Green "Download for Windows" button, text hidden below 768px via CSS `.download-label` class
 - **Store page banner** (`web/src/pages/Store.tsx`): Full-width CTA banner below search bar, hidden during search, wraps on mobile via `flexWrap`
-- Both link to `/downloads/BoilerDeck%20Setup%200.3.1.exe` — served directly from VPS. nginx serves from `/opt/boilerdeck/downloads/` with `Content-Disposition: attachment`.
+- Both link to `/downloads/BoilerDeck%20Setup%200.5.0.exe` — served directly from VPS. nginx serves from `/opt/boilerdeck/downloads/` with `Content-Disposition: attachment`.
+- Also referenced in `web/src/pages/LockerPage.tsx` (4 locations).
 
 ### Releasing a New Client Version (full process)
 ```bash
 # 1. Bump version in client/package.json (e.g., 0.3.1 → 0.4.0)
-# 2. Update download links in web/src/App.tsx and web/src/pages/Store.tsx
+# 2. Update download links in web/src/App.tsx, web/src/pages/Store.tsx, and web/src/pages/LockerPage.tsx
 # 3. Commit + push + tag
-git add client/package.json web/src/App.tsx web/src/pages/Store.tsx
+git add client/package.json web/src/App.tsx web/src/pages/Store.tsx web/src/pages/LockerPage.tsx
 git commit -m "Bump client version to X.Y.Z and update download links"
 git push origin main
 git tag vX.Y.Z && git push origin vX.Y.Z
@@ -565,7 +572,7 @@ ssh root@204.168.133.38 "cd /opt/boilerdeck && git pull origin main && npx vite 
   5. `912f091` `Bump client version to 0.2.0 and update download links`
   6+ (earlier commits omitted — see `git log` for full history)
 - **Git identity:** `EthanGeisler` / `25466222+EthanGeisler@users.noreply.github.com`
-- **Tags:** `v0.1.0` (first release), `v0.2.0` (auto-update, bug fixes), `v0.2.1` (Phase 1-2, DRM removal), `v0.3.0` (burned — asar crash), `v0.3.1` (current release — Phase 6 Privacy Layer)
+- **Tags:** `v0.1.0` (first release), `v0.2.0` (auto-update, bug fixes), `v0.2.1` (Phase 1-2, DRM removal), `v0.3.0` (burned — asar crash), `v0.3.1` (Phase 6 Privacy Layer), `v0.4.0` (Data Locker), `v0.5.0` (current — Linux support)
 
 ---
 
@@ -907,6 +914,8 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 - [ ] Electron client: handle duplicate torrent gracefully (currently errors on re-add of same info hash)
 - [ ] Electron client: store key whitelist (currently accepts any key — not a security issue since it's local-only, but good hygiene)
 - [ ] Electron client: first real end-to-end test (start app, browse store, download a game)
+- [ ] SCP v0.5.0 Windows installer to VPS and rebuild web storefront (download links updated to 0.5.0 but installer not yet on VPS)
+- [ ] Linux: game launching needs Wine/Proton integration or Linux-native builds
 
 ### Medium-term
 - [ ] Steam shortcuts.vdf integration (games appear in Steam library)
@@ -985,7 +994,7 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 | Build workflow (Electron) | `.github/workflows/build-client.yml` |
 | Electron build config | `client/package.json` (`"build"` field) |
 | Electron app icon | `client/resources/icon.ico` (placeholder — replace with real branding) |
-| GitHub Release (current) | https://github.com/EthanGeisler/peerplay/releases/tag/v0.3.1 |
+| GitHub Release (current) | https://github.com/EthanGeisler/peerplay/releases/tag/v0.5.0 |
 | Auto-update UI component | `client/src/renderer/components/UpdateBanner.tsx` |
 | Auto-update main process | `client/src/main/index.ts` (`setupAutoUpdater()`) |
 | Electron client API client | `client/src/renderer/api.ts` |
