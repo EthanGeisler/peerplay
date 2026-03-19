@@ -9,12 +9,14 @@ import { GameDetail } from "./pages/GameDetail";
 import { useAuthStore } from "./stores/authStore";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { Profile } from "./pages/Profile";
+import { LockerPage } from "./pages/LockerPage";
 import { SetupDeveloper, DevDashboard, DevGameDetail, DevGameEditor } from "./pages/developer";
 
 const NAV_ITEMS = [
   { label: "Store", path: "/" },
   { label: "Library", path: "/library" },
   { label: "Downloads", path: "/downloads" },
+  { label: "Locker", path: "/locker" },
   { label: "Settings", path: "/settings" },
 ] as const;
 
@@ -241,6 +243,7 @@ export function App() {
           <Route path="/listing/:slug" element={<GameDetail />} />
           <Route path="/library" element={<Library />} />
           <Route path="/downloads" element={<Downloads />} />
+          <Route path="/locker" element={<LockerPage />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/login" element={<Login />} />
           <Route path="/developer/setup" element={<SetupDeveloper />} />
