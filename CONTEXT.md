@@ -451,6 +451,13 @@ All have cover images uploaded. All are free ($0).
 57. **Linux icon must be PNG, not ICO** — electron-builder's `app-builder` cannot convert `.ico` to PNG on Linux (crashes with "unknown output format set"). The `linux.icon` config points to `resources/icon.png` (256x256). Windows config still uses `resources/icon.ico`.
 58. **Linux deb target requires `homepage` in package.json** — electron-builder's FPM target for `.deb` packages fails with "Please specify project homepage" if `homepage` is missing from `client/package.json`. Set to `https://boilerdeck.com`.
 59. **Linux AppImage SUID sandbox error** — On some Linux kernels, Electron's Chromium sandbox fails with "FATAL:setuid_sandbox_host.cc — suid sandbox helper binary not configured correctly." Fix: run with `--no-sandbox` flag, or enable unprivileged user namespaces: `sudo sysctl -w kernel.unprivileged_userns_clone=1`.
+60. **Locker custodyMode detection** — `lockerManager.ts` must use `storeGet("custodyMode") === "SELF_CUSTODY"` to determine custody mode, NOT `keyManager.hasKey() && !storeGet("relayPrivkey")`. The old check was wrong because: (1) `keyManager.hasKey()` checks for `selfCustodyKey` which exists for custodial users who registered via Electron, (2) `relayPrivkey` was only cached during review submission, not login. The fix persists `custodyMode` from the server's user object to electron-store on all 7 login/register paths + session load, and clears it on logout.
+61. **Locker LOCKER_DIR must be absolute** — `server/packages/locker/src/config.ts` uses `path.resolve()` on `LOCKER_DIR` to ensure it's always absolute. Transmission RPC rejects relative paths for `download-dir`. The server runs from `/opt/boilerdeck/server` (systemd `WorkingDirectory`), so the default `"./data/locker"` resolves to `/opt/boilerdeck/server/data/locker`.
+62. **Transmission RPC "unrecognized info"** — The `create-torrent` library may return a `Uint8Array` instead of a Node `Buffer`. When base64-encoding for Transmission RPC's `metainfo` field, this corrupts the data. Fix: read the .torrent file back from disk (`storage.readTorrentFile()`) before sending to Transmission, which guarantees a proper Buffer.
+63. **VPS Transmission cannot reach UDP trackers** — All UDP tracker connections from the Hetzner VPS fail ("Connection failed"). This means peers are never discovered via trackers. Fix: the Electron client adds the VPS as a direct peer via `torrent.addPeer("204.168.133.38:6881")` on the `infoHash` event, bypassing tracker discovery entirely. This applies to both locker downloads (`lockerManager.ts`) and game downloads (`torrentManager.ts`).
+64. **Locker custodial upload must save to local index** — After a custodial upload, `lockerStore.upsertEntry()` must be called with `downloadStatus: "downloaded"` and `localPath: filePath`. Without this, the entry only appears after the server sync runs (which sets `downloadStatus: "available"` / "Cloud"). The uploading device should show "Local" since it has the file.
+65. **Transmission doesn't persist locker torrents across restarts** — Like game torrents (gotcha #38), locker torrents are lost when the server restarts. Re-add with: `ssh root@204.168.133.38 'for d in /opt/boilerdeck/server/data/locker/<userId>/*/; do id=$(basename "$d"); f="$d/${id}.torrent"; [ -f "$f" ] && transmission-remote -a "$f" -w "/opt/boilerdeck/server/data/locker/<userId>"; done'`. The download-dir must be the USER directory (not the entry directory) because the torrent's internal name is the entryId folder.
+66. **WebTorrent `addPeer` and custom events need `as any`** — WebTorrent's TypeScript definitions are incomplete. `addPeer()`, and events `infoHash`, `wire`, `noPeers` are not typed. Cast torrent to `any` when using these.
 
 ---
 
@@ -499,17 +506,19 @@ git tag v0.x.x && git push origin v0.x.x
 - **Auth:** Uses built-in `GITHUB_TOKEN` (no custom secrets needed)
 
 ### Version Bumping
-The version in `client/package.json` (`"version": "0.5.0"`) controls the installer filename and auto-update version comparison. The git tag should match (e.g., `v0.5.0`). Bump both together.
+The version in `client/package.json` (`"version": "0.5.2"`) controls the installer filename and auto-update version comparison. The git tag should match (e.g., `v0.5.0`). Bump both together.
 
 ### Current Release
-- **v0.5.0** — https://github.com/EthanGeisler/peerplay/releases/tag/v0.5.0
-- Published 2026-03-19, first release with Linux support
-- Windows: NSIS installer (~95MB) + portable exe + blockmap (delta updates)
-- Linux: AppImage (deb was added after this release — next tag will include it)
+- **v0.5.2** — https://github.com/EthanGeisler/peerplay/releases/tag/v0.5.2
+- Published 2026-03-19, fixes locker cross-device sync + download stuck at 0%
+- Windows: NSIS installer + portable exe + blockmap (delta updates)
+- Linux: AppImage + deb
 - Not code-signed (SmartScreen warning expected on Windows)
 - Linux gotcha: may need `--no-sandbox` flag or `sudo sysctl -w kernel.unprivileged_userns_clone=1` on some kernels
-- VPS download (Windows): `https://boilerdeck.com/downloads/BoilerDeck%20Setup%200.5.0.exe` (**not yet SCP'd to VPS — needs manual upload**)
-- Linux download: `https://github.com/EthanGeisler/peerplay/releases/download/v0.5.0/BoilerDeck-0.5.0.AppImage`
+- VPS download (Windows): `https://boilerdeck.com/downloads/BoilerDeck%20Setup%200.5.2.exe`
+- Linux download: `https://github.com/EthanGeisler/peerplay/releases/download/v0.5.2/BoilerDeck-0.5.2-x86_64.AppImage`
+- **v0.5.1** — superseded, locker custodyMode fix
+- **v0.5.0** — superseded, first Linux release
 - **v0.4.0** — superseded, Data Locker release
 - **v0.3.1** — superseded
 - **v0.3.0** — BURNED (runtime crash from ESM-only `socks-proxy-agent@9` inside asar). Do not distribute.
@@ -529,7 +538,7 @@ The version in `client/package.json` (`"version": "0.5.0"`) controls the install
 ### Download Buttons (Web Storefront)
 - **Header button** (`web/src/App.tsx`): Green "Download for Windows" button, text hidden below 768px via CSS `.download-label` class
 - **Store page banner** (`web/src/pages/Store.tsx`): Full-width CTA banner below search bar, hidden during search, wraps on mobile via `flexWrap`
-- Both link to `/downloads/BoilerDeck%20Setup%200.5.0.exe` — served directly from VPS. nginx serves from `/opt/boilerdeck/downloads/` with `Content-Disposition: attachment`.
+- Both link to `/downloads/BoilerDeck%20Setup%200.5.2.exe` — served directly from VPS. nginx serves from `/opt/boilerdeck/downloads/` with `Content-Disposition: attachment`.
 - Also referenced in `web/src/pages/LockerPage.tsx` (4 locations).
 
 ### Releasing a New Client Version (full process)
@@ -572,7 +581,7 @@ ssh root@204.168.133.38 "cd /opt/boilerdeck && git pull origin main && npx vite 
   5. `912f091` `Bump client version to 0.2.0 and update download links`
   6+ (earlier commits omitted — see `git log` for full history)
 - **Git identity:** `EthanGeisler` / `25466222+EthanGeisler@users.noreply.github.com`
-- **Tags:** `v0.1.0` (first release), `v0.2.0` (auto-update, bug fixes), `v0.2.1` (Phase 1-2, DRM removal), `v0.3.0` (burned — asar crash), `v0.3.1` (Phase 6 Privacy Layer), `v0.4.0` (Data Locker), `v0.5.0` (current — Linux support)
+- **Tags:** `v0.1.0` (first release), `v0.2.0` (auto-update, bug fixes), `v0.2.1` (Phase 1-2, DRM removal), `v0.3.0` (burned — asar crash), `v0.3.1` (Phase 6 Privacy Layer), `v0.4.0` (Data Locker), `v0.5.0` (Linux support), `v0.5.1` (locker custodyMode fix), `v0.5.2` (current — locker download fix + direct VPS peer)
 
 ---
 

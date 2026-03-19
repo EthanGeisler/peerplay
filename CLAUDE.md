@@ -106,6 +106,7 @@ If any step fails, fix the issue and retry. Do not skip steps. Do not ask the us
 - **Download metadata** stored in module-level Map, not in Zustand (avoids re-render churn)
 - **WebTorrent download path** is `installDir` (NOT `installDir/slug`) — WebTorrent creates the torrent root folder automatically. The install path (for game registry) is `installDir/slug`.
 - **Torrent destroyed after download** — `torrent.destroy({ destroyStore: false })` releases file handles so the exe can be launched. The client does not seed after download.
+- **VPS direct peer for all downloads** — Both `torrentManager.ts` (game downloads) and `lockerManager.ts` (locker downloads) add the VPS as a direct peer via `(torrent as any).addPeer("204.168.133.38:6881")` on the `infoHash` event. This is required because Transmission on the Hetzner VPS cannot connect to any UDP trackers (all fail with "Connection failed"). Without the direct peer, downloads get stuck at 0%. WebTorrent's `addPeer` and custom event types need `as any` casts.
 - **Exe path is relative** to the game's torrent root directory (e.g., `PeerPlayBuild/Game.exe`). The client joins `installPath + exePath` to get the full path. Detection is recursive (walks subdirs).
 - **Native deps** (like `utp-native` for WebTorrent): must be in `asarUnpack` in electron-builder config
 - **Dev mode: kill stale Electron processes** — `taskkill //F //IM electron.exe` before relaunching. Zombie processes hold WebTorrent file locks causing EBUSY.
@@ -163,8 +164,12 @@ cd client && ../node_modules/.bin/electron .          # launch Electron (termina
 - **Storage:** Files at `LOCKER_DIR/<userId>/<entryId>/<filename>`. Torrent at `<entryId>.torrent` in same dir.
 - **Soft delete:** `deletedAt` timestamp on `LockerFile`. NIP-09 deletion event published. Cleanup via cron after retention period.
 - **Seed manager:** `seedManager.ts` queries Transmission RPC for locker torrent stats, pauses deleted, removes expired.
-- **Config:** `config.ts` reads `LOCKER_DIR`, `LOCKER_MAX_FILE_SIZE`, `LOCKER_QUOTA_GB`, `LOCKER_RETENTION_DAYS`, `LOCKER_MAX_STORAGE_GB` from env.
+- **Config:** `config.ts` reads `LOCKER_DIR`, `LOCKER_MAX_FILE_SIZE`, `LOCKER_QUOTA_GB`, `LOCKER_RETENTION_DAYS`, `LOCKER_MAX_STORAGE_GB` from env. `LOCKER_DIR` is resolved to absolute via `path.resolve()` — Transmission RPC rejects relative paths.
+- **Transmission seeding:** After upload, the server reads the saved `.torrent` file from disk (not the in-memory buffer) and sends it to Transmission RPC. The `download-dir` must be the **user directory** (`getUserDir(userId)`), NOT the entry directory — because the torrent's internal name is the entryId folder.
+- **Custody mode detection:** Use `storeGet("custodyMode") === "SELF_CUSTODY"` in the Electron client to determine custody mode. Do NOT infer from `keyManager.hasKey()` — that check is unreliable. The `custodyMode` string is persisted to electron-store on every login/register/session-load path.
+- **Custodial upload must save to local index:** After `uploadToServer()` succeeds, call `lockerStore.upsertEntry()` with `downloadStatus: "downloaded"` and `localPath: filePath`. Without this, the uploading device shows "Cloud" instead of "Local".
 - **Security:** See `docs/locker-security.md` for full threat model. Self-custody users' metadata is E2E encrypted. Custodial users trust the server.
+- **Locker torrents lost on server restart:** Transmission doesn't persist locker torrents. After `systemctl restart boilerdeck`, re-add them manually (see CONTEXT.md gotcha #65). Future: startup script to auto-re-add.
 
 ## Deployment to VPS
 Everything runs on a single Hetzner VPS (`boilerdeck.com` / `204.168.133.38`). HTTPS via Let's Encrypt (auto-renews). Deploy process:
