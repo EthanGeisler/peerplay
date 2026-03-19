@@ -2,6 +2,8 @@
 // Dev-Portal shared types
 // ──────────────────────────────────────────────
 
+export type ContentType = "GAME" | "VIDEO" | "SOFTWARE" | "AUDIO" | "OTHER";
+
 // ── Auth types ──────────────────────────────
 
 export interface User {
@@ -40,6 +42,8 @@ export interface GameForm {
   priceCents: number;
   exePath: string;
   coverImageUrl: string;
+  contentType?: ContentType;
+  metadata?: Record<string, unknown>;
 }
 
 export interface GameDir {
@@ -78,6 +82,8 @@ export interface GameData {
   coverImageUrl: string | null;
   screenshots: string[];
   exePath: string | null;
+  contentType?: ContentType;
+  metadata?: Record<string, unknown>;
   savePaths: string[];
   createdAt: string;
   updatedAt: string;
@@ -93,6 +99,8 @@ export interface GameSummary {
   status: string;
   priceCents: number;
   coverImageUrl: string | null;
+  contentType?: ContentType;
+  metadata?: Record<string, unknown>;
   versionsCount: number;
   licensesCount: number;
   salesCount: number;

@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { db, NotFoundError, ForbiddenError, ValidationError } from "@boilerdeck/shared";
+import type { ContentType, Prisma } from "@prisma/client";
 
 function slugify(title: string): string {
   const base = title
@@ -12,15 +13,17 @@ function slugify(title: string): string {
   return `${base}-${suffix}`;
 }
 
-export interface CreateGameInput {
+export interface CreateListingInput {
   title: string;
   description?: string;
   priceCents: number;
   exePath?: string;
   savePaths?: string[];
+  contentType?: ContentType;
+  metadata?: Prisma.InputJsonValue;
 }
 
-export interface UpdateGameInput {
+export interface UpdateListingInput {
   title?: string;
   description?: string;
   priceCents?: number;
@@ -28,9 +31,20 @@ export interface UpdateGameInput {
   savePaths?: string[];
   coverImageUrl?: string;
   screenshots?: string[];
+  contentType?: ContentType;
+  metadata?: Prisma.InputJsonValue;
 }
 
-export async function listPublishedGames(page: number, limit: number, search?: string) {
+// Aliases for backwards compatibility
+export type CreateGameInput = CreateListingInput;
+export type UpdateGameInput = UpdateListingInput;
+
+export async function listPublishedListings(
+  page: number,
+  limit: number,
+  search?: string,
+  contentType?: ContentType,
+) {
   const skip = (page - 1) * limit;
 
   const where = {
@@ -38,10 +52,11 @@ export async function listPublishedGames(page: number, limit: number, search?: s
     ...(search && {
       title: { contains: search, mode: "insensitive" as const },
     }),
+    ...(contentType && { contentType }),
   };
 
-  const [games, total] = await Promise.all([
-    db.game.findMany({
+  const [listings, total] = await Promise.all([
+    db.listing.findMany({
       where,
       select: {
         id: true,
@@ -50,6 +65,8 @@ export async function listPublishedGames(page: number, limit: number, search?: s
         description: true,
         priceCents: true,
         coverImageUrl: true,
+        contentType: true,
+        metadata: true,
         eventId: true,
         developer: {
           select: { studioName: true },
@@ -59,17 +76,19 @@ export async function listPublishedGames(page: number, limit: number, search?: s
       skip,
       take: limit,
     }),
-    db.game.count({ where }),
+    db.listing.count({ where }),
   ]);
 
   return {
-    games: games.map((g) => ({
+    games: listings.map((g) => ({
       id: g.id,
       slug: g.slug,
       title: g.title,
       description: g.description,
       priceCents: g.priceCents,
       coverImageUrl: g.coverImageUrl,
+      contentType: g.contentType,
+      metadata: g.metadata,
       eventId: g.eventId ?? null,
       studioName: g.developer.studioName,
     })),
@@ -80,8 +99,8 @@ export async function listPublishedGames(page: number, limit: number, search?: s
   };
 }
 
-export async function getGameBySlug(slug: string) {
-  const game = await db.game.findUnique({
+export async function getListingBySlug(slug: string) {
+  const game = await db.listing.findUnique({
     where: { slug },
     include: {
       developer: { select: { studioName: true, user: { select: { nostrPubkey: true } } } },
@@ -102,7 +121,7 @@ export async function getGameBySlug(slug: string) {
   });
 
   if (!game || game.status !== "PUBLISHED") {
-    throw new NotFoundError("Game");
+    throw new NotFoundError("Listing");
   }
 
   return {
@@ -114,6 +133,8 @@ export async function getGameBySlug(slug: string) {
     coverImageUrl: game.coverImageUrl,
     screenshots: game.screenshots,
     exePath: game.exePath,
+    contentType: game.contentType,
+    metadata: game.metadata,
     eventId: game.eventId ?? null,
     studioName: game.developer.studioName,
     pubkey: game.developer.user?.nostrPubkey ?? null,
@@ -132,10 +153,10 @@ export async function getGameBySlug(slug: string) {
   };
 }
 
-export async function createGame(developerId: string, input: CreateGameInput) {
+export async function createListing(developerId: string, input: CreateListingInput) {
   const slug = slugify(input.title);
 
-  const game = await db.game.create({
+  const game = await db.listing.create({
     data: {
       developerId,
       slug,
@@ -144,26 +165,28 @@ export async function createGame(developerId: string, input: CreateGameInput) {
       priceCents: input.priceCents,
       exePath: input.exePath ?? null,
       savePaths: input.savePaths ?? [],
+      contentType: input.contentType ?? "GAME",
+      metadata: input.metadata ?? {},
     },
   });
 
   return game;
 }
 
-export async function updateGame(
+export async function updateListing(
   gameId: string,
   developerId: string,
-  input: UpdateGameInput,
+  input: UpdateListingInput,
 ) {
-  const game = await db.game.findUnique({ where: { id: gameId } });
+  const game = await db.listing.findUnique({ where: { id: gameId } });
   if (!game) {
-    throw new NotFoundError("Game");
+    throw new NotFoundError("Listing");
   }
   if (game.developerId !== developerId) {
-    throw new ForbiddenError("You can only update your own games");
+    throw new ForbiddenError("You can only update your own listings");
   }
 
-  const updated = await db.game.update({
+  const updated = await db.listing.update({
     where: { id: gameId },
     data: {
       ...(input.title !== undefined && { title: input.title }),
@@ -173,6 +196,8 @@ export async function updateGame(
       ...(input.savePaths !== undefined && { savePaths: input.savePaths }),
       ...(input.coverImageUrl !== undefined && { coverImageUrl: input.coverImageUrl }),
       ...(input.screenshots !== undefined && { screenshots: input.screenshots }),
+      ...(input.contentType !== undefined && { contentType: input.contentType }),
+      ...(input.metadata !== undefined && { metadata: input.metadata }),
     },
   });
 
@@ -184,15 +209,15 @@ export async function createVersion(
   developerId: string,
   version: string,
 ) {
-  const game = await db.game.findUnique({ where: { id: gameId } });
+  const game = await db.listing.findUnique({ where: { id: gameId } });
   if (!game) {
-    throw new NotFoundError("Game");
+    throw new NotFoundError("Listing");
   }
   if (game.developerId !== developerId) {
-    throw new ForbiddenError("You can only create versions for your own games");
+    throw new ForbiddenError("You can only create versions for your own listings");
   }
 
-  const gameVersion = await db.gameVersion.create({
+  const gameVersion = await db.listingVersion.create({
     data: {
       gameId,
       version,
@@ -219,8 +244,8 @@ export async function getDeveloperByUserId(userId: string) {
   return developer;
 }
 
-export async function listDeveloperGames(developerId: string) {
-  const games = await db.game.findMany({
+export async function listDeveloperListings(developerId: string) {
+  const games = await db.listing.findMany({
     where: { developerId },
     include: {
       versions: {
@@ -248,6 +273,7 @@ export async function listDeveloperGames(developerId: string) {
     priceCents: g.priceCents,
     status: g.status,
     coverImageUrl: g.coverImageUrl,
+    contentType: g.contentType,
     exePath: g.exePath,
     createdAt: g.createdAt,
     updatedAt: g.updatedAt,
@@ -258,8 +284,8 @@ export async function listDeveloperGames(developerId: string) {
   }));
 }
 
-export async function getDeveloperGame(gameId: string, developerId: string) {
-  const game = await db.game.findUnique({
+export async function getDeveloperListing(gameId: string, developerId: string) {
+  const game = await db.listing.findUnique({
     where: { id: gameId },
     include: {
       versions: {
@@ -282,10 +308,10 @@ export async function getDeveloperGame(gameId: string, developerId: string) {
   });
 
   if (!game) {
-    throw new NotFoundError("Game");
+    throw new NotFoundError("Listing");
   }
   if (game.developerId !== developerId) {
-    throw new ForbiddenError("You can only view your own games");
+    throw new ForbiddenError("You can only view your own listings");
   }
 
   return {
@@ -297,6 +323,8 @@ export async function getDeveloperGame(gameId: string, developerId: string) {
     status: game.status,
     coverImageUrl: game.coverImageUrl,
     screenshots: game.screenshots,
+    contentType: game.contentType,
+    metadata: game.metadata,
     exePath: game.exePath,
     savePaths: game.savePaths,
     createdAt: game.createdAt,
@@ -315,8 +343,8 @@ export async function getDeveloperGame(gameId: string, developerId: string) {
   };
 }
 
-export async function publishGame(gameId: string, developerId: string) {
-  const game = await db.game.findUnique({
+export async function publishListing(gameId: string, developerId: string) {
+  const game = await db.listing.findUnique({
     where: { id: gameId },
     include: {
       versions: {
@@ -328,20 +356,20 @@ export async function publishGame(gameId: string, developerId: string) {
   });
 
   if (!game) {
-    throw new NotFoundError("Game");
+    throw new NotFoundError("Listing");
   }
   if (game.developerId !== developerId) {
-    throw new ForbiddenError("You can only publish your own games");
+    throw new ForbiddenError("You can only publish your own listings");
   }
 
-  // Paid games require Stripe Connect onboarding
+  // Paid listings require Stripe Connect onboarding
   if (game.priceCents > 0 && !game.developer.stripeOnboarded) {
     throw new ValidationError(
-      "Complete Stripe onboarding before publishing paid games. Free games can be published without Stripe.",
+      "Complete Stripe onboarding before publishing paid listings. Free listings can be published without Stripe.",
     );
   }
 
-  const updated = await db.game.update({
+  const updated = await db.listing.update({
     where: { id: gameId },
     data: { status: "PUBLISHED" },
   });
@@ -349,17 +377,17 @@ export async function publishGame(gameId: string, developerId: string) {
   return updated;
 }
 
-export async function unpublishGame(gameId: string, developerId: string) {
-  const game = await db.game.findUnique({ where: { id: gameId } });
+export async function unpublishListing(gameId: string, developerId: string) {
+  const game = await db.listing.findUnique({ where: { id: gameId } });
 
   if (!game) {
-    throw new NotFoundError("Game");
+    throw new NotFoundError("Listing");
   }
   if (game.developerId !== developerId) {
-    throw new ForbiddenError("You can only unpublish your own games");
+    throw new ForbiddenError("You can only unpublish your own listings");
   }
 
-  const updated = await db.game.update({
+  const updated = await db.listing.update({
     where: { id: gameId },
     data: { status: "DRAFT" },
   });
@@ -367,3 +395,12 @@ export async function unpublishGame(gameId: string, developerId: string) {
   return updated;
 }
 
+// ── Backwards-compatible aliases ──────────────────────────────────────────────
+export const listPublishedGames = listPublishedListings;
+export const getGameBySlug = getListingBySlug;
+export const createGame = createListing;
+export const updateGame = updateListing;
+export const listDeveloperGames = listDeveloperListings;
+export const getDeveloperGame = getDeveloperListing;
+export const publishGame = publishListing;
+export const unpublishGame = unpublishListing;

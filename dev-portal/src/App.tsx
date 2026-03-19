@@ -9,7 +9,6 @@ import { GameDetail } from "./pages/GameDetail";
 
 const NAV_ITEMS = [
   { label: "Dashboard", path: "/" },
-  { label: "Games", path: "/games" },
 ] as const;
 
 export function App() {

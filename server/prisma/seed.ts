@@ -55,7 +55,7 @@ async function main() {
   });
 
   // Create sample games
-  const game1 = await db.game.upsert({
+  const game1 = await db.listing.upsert({
     where: { slug: "space-explorer-abc1" },
     update: {},
     create: {
@@ -75,7 +75,7 @@ async function main() {
     },
   });
 
-  const game2 = await db.game.upsert({
+  const game2 = await db.listing.upsert({
     where: { slug: "dungeon-crawl-xyz2" },
     update: {},
     create: {
@@ -92,7 +92,7 @@ async function main() {
     },
   });
 
-  const game3 = await db.game.upsert({
+  const game3 = await db.listing.upsert({
     where: { slug: "pixel-racing-def3" },
     update: {},
     create: {
@@ -110,7 +110,7 @@ async function main() {
   });
 
   // Create PC01 Premium Edition (paid)
-  const game4 = await db.game.upsert({
+  const game4 = await db.listing.upsert({
     where: { slug: "player-character-01-premium" },
     update: {},
     create: {

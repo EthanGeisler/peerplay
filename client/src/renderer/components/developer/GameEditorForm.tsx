@@ -1,8 +1,17 @@
-import type { DevGameForm } from "../../types";
+import type { DevGameForm, ContentType } from "../../types";
 import { resolveCoverUrl } from "../../utils";
+
+const CONTENT_TYPES: { label: string; value: ContentType }[] = [
+  { label: "Game", value: "GAME" },
+  { label: "Video", value: "VIDEO" },
+  { label: "Software", value: "SOFTWARE" },
+  { label: "Audio", value: "AUDIO" },
+  { label: "Other", value: "OTHER" },
+];
 
 export interface GameEditorFormProps {
   form: DevGameForm;
+  isEditing: boolean;
   onUpdate: <K extends keyof DevGameForm>(key: K, value: DevGameForm[K]) => void;
   // Cover image props
   coverPreview: string | null;
@@ -17,6 +26,7 @@ export interface GameEditorFormProps {
 
 export function GameEditorForm({
   form,
+  isEditing,
   onUpdate,
   coverPreview,
   coverUploadState,
@@ -27,8 +37,45 @@ export function GameEditorForm({
   onCoverRemove,
   onShowCoverUrl,
 }: GameEditorFormProps) {
+  const contentType = form.contentType || "GAME";
+  const showExeRelated = contentType === "GAME" || contentType === "SOFTWARE";
+
   return (
     <>
+      {/* Content Type */}
+      <div>
+        <label style={labelStyle}>Content Type</label>
+        <div style={{ display: "flex", gap: 8 }}>
+          {CONTENT_TYPES.map((ct) => (
+            <button
+              key={ct.value}
+              type="button"
+              disabled={isEditing}
+              onClick={() => onUpdate("contentType", ct.value)}
+              style={{
+                padding: "6px 16px",
+                borderRadius: 4,
+                fontSize: 13,
+                fontWeight: 600,
+                border: "1px solid",
+                cursor: isEditing ? "not-allowed" : "pointer",
+                borderColor: contentType === ct.value ? "#e94560" : "#0f3460",
+                backgroundColor: contentType === ct.value ? "#e94560" : "#16213e",
+                color: contentType === ct.value ? "#fff" : "#888",
+                opacity: isEditing ? 0.6 : 1,
+              }}
+            >
+              {ct.label}
+            </button>
+          ))}
+        </div>
+        {isEditing && (
+          <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>
+            Content type cannot be changed after creation.
+          </div>
+        )}
+      </div>
+
       {/* Title */}
       <div>
         <label style={labelStyle}>Title *</label>
@@ -72,8 +119,8 @@ export function GameEditorForm({
         </div>
       </div>
 
-      {/* Copy Protection Guidance */}
-      <div
+      {/* Copy Protection Guidance — only for games/software */}
+      {showExeRelated && <div
         style={{
           padding: "14px 16px",
           borderRadius: 8,
@@ -127,7 +174,7 @@ export function GameEditorForm({
           Stripe payments with 99/1 revenue split, and BitTorrent distribution.
           Your game's library page shows ownership status — the rest is up to you.
         </div>
-      </div>
+      </div>}
 
       {/* Cover Image */}
       <div>

@@ -161,7 +161,7 @@ export function DevGameDetail() {
   if (error || !game) {
     return (
       <div style={{ padding: 40, textAlign: "center" }}>
-        <div style={{ color: "#e94560", marginBottom: 16 }}>{error || "Game not found"}</div>
+        <div style={{ color: "#e94560", marginBottom: 16 }}>{error || "Listing not found"}</div>
         <button
           onClick={() => navigate("/developer")}
           style={{ color: "#58a6ff", backgroundColor: "transparent", fontSize: 14, border: "none", cursor: "pointer" }}
@@ -368,7 +368,7 @@ export function DevGameDetail() {
       </div>
 
       {/* Game Details section */}
-      <Section title="Game Details">
+      <Section title="Listing Details">
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
           <DetailRow label="Executable" value={game.exePath || "Not set"} />
           <DetailRow label="Save Paths" value={game.savePaths.length > 0 ? game.savePaths.join(", ") : "None"} />
@@ -581,7 +581,7 @@ export function DevGameDetail() {
 
         {game.versions.length === 0 ? (
           <div style={{ fontSize: 14, color: "#888", padding: 16, textAlign: "center" }}>
-            No versions yet. Create a version to start distributing your game.
+            No versions yet. Create a version to start distributing your listing.
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

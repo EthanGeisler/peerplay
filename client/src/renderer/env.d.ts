@@ -89,6 +89,10 @@ declare global {
           body?: string;
         }) => Promise<{ status: number; headers: Record<string, string>; body: string }>;
       };
+      media: {
+        getFilePath: (installPath: string) => Promise<string | null>;
+        startServer: (dir: string, fileName: string) => Promise<string>;
+      };
       shell: {
         openExternal: (url: string) => Promise<void>;
       };

@@ -16,7 +16,8 @@
  *     "title": "OpenTTD",
  *     "description": "...",
  *     "version": "15.2.0",             // Must be semver (X.Y.Z)
- *     "priceCents": 0
+ *     "priceCents": 0,
+ *     "contentType": "GAME"            // Optional: GAME (default), VIDEO, SOFTWARE, AUDIO, OTHER
  *   }
  * ]
  *
@@ -147,21 +148,23 @@ async function main() {
     console.log(`── ${game.title} (${sizeMB} MB) ──`);
 
     try {
-      // 1. Create game
-      console.log("  Creating game entry...");
-      const created = await apiFetch("/developer/games", {
+      // 1. Create listing
+      console.log("  Creating listing entry...");
+      const createBody = {
+        title: game.title,
+        description: game.description,
+        priceCents: game.priceCents,
+      };
+      if (game.contentType) createBody.contentType = game.contentType;
+      const created = await apiFetch("/developer/listings", {
         method: "POST",
-        body: JSON.stringify({
-          title: game.title,
-          description: game.description,
-          priceCents: game.priceCents,
-        }),
+        body: JSON.stringify(createBody),
       });
-      console.log(`  ✓ Game created: ${created.slug}`);
+      console.log(`  ✓ Listing created: ${created.slug}`);
 
       // 2. Create version
       console.log(`  Creating version ${game.version}...`);
-      const version = await apiFetch(`/developer/games/${created.id}/versions`, {
+      const version = await apiFetch(`/developer/listings/${created.id}/versions`, {
         method: "POST",
         body: JSON.stringify({ version: game.version }),
       });
@@ -169,7 +172,7 @@ async function main() {
 
       // 3. Upload zip
       await uploadFile(
-        `${API}/developer/games/${created.id}/versions/${version.id}/upload`,
+        `${API}/developer/listings/${created.id}/versions/${version.id}/upload`,
         "gameZip", zipPath, "application/zip"
       );
       console.log(`  ✓ Zip uploaded & processed`);
@@ -181,7 +184,7 @@ async function main() {
           const ext = path.extname(coverPath).toLowerCase();
           const mime = MIME_MAP[ext] || "application/octet-stream";
           await uploadFile(
-            `${API}/developer/games/${created.id}/cover`,
+            `${API}/developer/listings/${created.id}/cover`,
             "cover", coverPath, mime
           );
           console.log(`  ✓ Cover uploaded`);
@@ -191,7 +194,7 @@ async function main() {
       }
 
       // 5. Publish
-      await apiFetch(`/developer/games/${created.id}/publish`, { method: "PATCH" });
+      await apiFetch(`/developer/listings/${created.id}/publish`, { method: "PATCH" });
       console.log(`  ✓ Published!`);
       success++;
     } catch (err) {
@@ -200,7 +203,7 @@ async function main() {
     console.log();
   }
 
-  console.log(`=== Done: ${success}/${games.length} games uploaded ===`);
+  console.log(`=== Done: ${success}/${games.length} listings uploaded ===`);
   if (success > 0) {
     console.log(`\n⚠ IMPORTANT: Re-seed torrents on VPS! Run:`);
     console.log(`  ssh root@204.168.133.38 'bash -s' < scripts/reseed-torrents.sh`);

@@ -176,7 +176,29 @@ export function GameDetail() {
             alignSelf: "start",
           }}
         >
-          <h1 style={{ fontSize: 24, fontWeight: 800, marginBottom: 8 }}>{game.title}</h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+            <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0 }}>{game.title}</h1>
+            {game.contentType && game.contentType !== "GAME" && (
+              <span style={{
+                padding: "3px 8px",
+                borderRadius: 4,
+                fontSize: 11,
+                fontWeight: 700,
+                textTransform: "uppercase",
+                backgroundColor: game.contentType === "VIDEO" ? "rgba(168,85,247,0.2)" :
+                  game.contentType === "SOFTWARE" ? "rgba(59,130,246,0.2)" :
+                  game.contentType === "AUDIO" ? "rgba(234,179,8,0.2)" : "rgba(107,114,128,0.2)",
+                color: game.contentType === "VIDEO" ? "#a855f7" :
+                  game.contentType === "SOFTWARE" ? "#3b82f6" :
+                  game.contentType === "AUDIO" ? "#eab308" : "#6b7280",
+                border: `1px solid ${game.contentType === "VIDEO" ? "#a855f7" :
+                  game.contentType === "SOFTWARE" ? "#3b82f6" :
+                  game.contentType === "AUDIO" ? "#eab308" : "#6b7280"}`,
+              }}>
+                {game.contentType}
+              </span>
+            )}
+          </div>
           <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>
             by {game.studioName}
           </p>

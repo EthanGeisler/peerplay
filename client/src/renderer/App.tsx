@@ -238,6 +238,7 @@ export function App() {
         <Routes>
           <Route path="/" element={<Store />} />
           <Route path="/game/:slug" element={<GameDetail />} />
+          <Route path="/listing/:slug" element={<GameDetail />} />
           <Route path="/library" element={<Library />} />
           <Route path="/downloads" element={<Downloads />} />
           <Route path="/settings" element={<Settings />} />

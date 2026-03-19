@@ -170,6 +170,7 @@ export function GameEditor() {
       };
       if (form.exePath) body.exePath = form.exePath;
       if (form.coverImageUrl) body.coverImageUrl = form.coverImageUrl;
+      if (form.contentType) body.contentType = form.contentType;
 
       if (isEditing) {
         await apiFetch(`/developer/games/${id}`, {
@@ -258,7 +259,7 @@ export function GameEditor() {
       </button>
 
       <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 24 }}>
-        {isEditing ? "Edit Game" : "New Game"}
+        {isEditing ? "Edit Listing" : "New Listing"}
       </h1>
 
       {error && (
@@ -280,6 +281,7 @@ export function GameEditor() {
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
         <GameEditorForm
           form={form}
+          isEditing={isEditing}
           onUpdate={update}
           coverPreview={coverPreview}
           coverUploadState={coverUploadState}
@@ -291,20 +293,22 @@ export function GameEditor() {
           onShowCoverUrl={setShowCoverUrl}
         />
 
-        <ExeDetector
-          isEditing={isEditing}
-          exePath={form.exePath}
-          onExePathChange={(path) => update("exePath", path)}
-          gameDirs={gameDirs}
-          dirsLoading={dirsLoading}
-          selectedDir={selectedDir}
-          onSelectedDirChange={setSelectedDir}
-          detectResult={detectResult}
-          onDetectResultClear={() => setDetectResult(null)}
-          detecting={detecting}
-          onLoadGameDirs={loadGameDirs}
-          onDetect={handleDetect}
-        />
+        {(form.contentType || "GAME") === "GAME" || form.contentType === "SOFTWARE" ? (
+          <ExeDetector
+            isEditing={isEditing}
+            exePath={form.exePath}
+            onExePathChange={(path) => update("exePath", path)}
+            gameDirs={gameDirs}
+            dirsLoading={dirsLoading}
+            selectedDir={selectedDir}
+            onSelectedDirChange={setSelectedDir}
+            detectResult={detectResult}
+            onDetectResultClear={() => setDetectResult(null)}
+            detecting={detecting}
+            onLoadGameDirs={loadGameDirs}
+            onDetect={handleDetect}
+          />
+        ) : null}
 
         <UploadManager
           isEditing={isEditing}
@@ -331,7 +335,7 @@ export function GameEditor() {
               opacity: saving ? 0.7 : 1,
             }}
           >
-            {saving && !isEditing ? "Uploading..." : saving ? "Saving..." : isEditing ? "Save Changes" : "Create Game & Upload"}
+            {saving && !isEditing ? "Uploading..." : saving ? "Saving..." : isEditing ? "Save Changes" : "Create Listing & Upload"}
           </button>
           <button
             type="button"

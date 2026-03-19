@@ -10,6 +10,8 @@ import { testProxyConnection, getProxyAgent } from "./proxyManager.js";
 import * as torManagerModule from "./torManager.js";
 import * as https from "node:https";
 import * as http from "node:http";
+import * as fsp from "node:fs/promises";
+import { startMediaServer, getMediaFileUrl } from "./mediaServer.js";
 
 
 let mainWindow: BrowserWindow | null = null;
@@ -422,6 +424,46 @@ function setupIpcHandlers(): void {
       console.error("[updater] Check failed:", message);
       return { updateAvailable: false, error: message };
     }
+  });
+
+  // --- Media (video/audio playback) ---
+  const MEDIA_EXTS = new Set([".mp4", ".webm", ".mkv", ".mp3", ".wav", ".ogg", ".flac"]);
+
+  ipcMain.handle("media:get-file-path", async (_event, installPath: string) => {
+    // Find the first media file in the install directory
+    try {
+      const entries = await fsp.readdir(installPath, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isFile()) {
+          const ext = path.extname(entry.name).toLowerCase();
+          if (MEDIA_EXTS.has(ext)) {
+            return entry.name;
+          }
+        }
+      }
+      // Check one level of subdirectories
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const subEntries = await fsp.readdir(path.join(installPath, entry.name), { withFileTypes: true });
+          for (const subEntry of subEntries) {
+            if (subEntry.isFile()) {
+              const ext = path.extname(subEntry.name).toLowerCase();
+              if (MEDIA_EXTS.has(ext)) {
+                return `${entry.name}/${subEntry.name}`;
+              }
+            }
+          }
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  });
+
+  ipcMain.handle("media:start-server", async (_event, dir: string, fileName: string) => {
+    await startMediaServer(dir);
+    return getMediaFileUrl(dir, fileName);
   });
 }
 

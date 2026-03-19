@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { apiFetch } from "../api";
-import type { ApiGame, ApiGameDetail, ApiGameListResponse } from "../types";
+import type { ApiGame, ApiGameDetail, ApiGameListResponse, ContentType } from "../types";
 
 interface GameState {
   games: ApiGame[];
@@ -11,7 +11,7 @@ interface GameState {
   currentGame: ApiGameDetail | null;
   currentGameLoading: boolean;
   currentGameError: string | null;
-  fetchGames: (page?: number) => Promise<void>;
+  fetchGames: (page?: number, contentType?: ContentType) => Promise<void>;
   fetchGameBySlug: (slug: string) => Promise<void>;
   clearCurrentGame: () => void;
 }
@@ -26,10 +26,12 @@ export const useGameStore = create<GameState>((set) => ({
   currentGameLoading: false,
   currentGameError: null,
 
-  fetchGames: async (page = 1) => {
+  fetchGames: async (page = 1, contentType?: ContentType) => {
     set({ loading: true });
     try {
-      const data = await apiFetch<ApiGameListResponse>(`/games?page=${page}&limit=20`);
+      const params = new URLSearchParams({ page: String(page), limit: "20" });
+      if (contentType) params.set("contentType", contentType);
+      const data = await apiFetch<ApiGameListResponse>(`/listings?${params}`);
       set({
         games: data.games,
         total: data.total,
@@ -45,10 +47,10 @@ export const useGameStore = create<GameState>((set) => ({
   fetchGameBySlug: async (slug: string) => {
     set({ currentGameLoading: true, currentGameError: null });
     try {
-      const data = await apiFetch<ApiGameDetail>(`/games/${slug}`);
+      const data = await apiFetch<ApiGameDetail>(`/listings/${slug}`);
       set({ currentGame: data, currentGameLoading: false });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load game";
+      const message = err instanceof Error ? err.message : "Failed to load listing";
       console.error("[gameStore] fetchGameBySlug failed:", message);
       set({ currentGame: null, currentGameLoading: false, currentGameError: message });
     }

@@ -144,6 +144,13 @@ contextBridge.exposeInMainWorld("boilerdeck", {
       ipcRenderer.invoke("api:proxied-fetch", opts),
   },
 
+  media: {
+    getFilePath: (installPath: string): Promise<string | null> =>
+      ipcRenderer.invoke("media:get-file-path", installPath),
+    startServer: (dir: string, fileName: string): Promise<string> =>
+      ipcRenderer.invoke("media:start-server", dir, fileName),
+  },
+
   shell: {
     openExternal: (url: string): Promise<void> =>
       ipcRenderer.invoke("shell:open-external", url),
@@ -289,6 +296,10 @@ declare global {
           headers: Record<string, string>;
           body?: string;
         }) => Promise<{ status: number; headers: Record<string, string>; body: string }>;
+      };
+      media: {
+        getFilePath: (installPath: string) => Promise<string | null>;
+        startServer: (dir: string, fileName: string) => Promise<string>;
       };
       shell: {
         openExternal: (url: string) => Promise<void>;

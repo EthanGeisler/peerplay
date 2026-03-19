@@ -221,7 +221,7 @@ developerRouter.get(
       const developer = await db.developer.findUnique({
         where: { userId: req.user!.sub },
         include: {
-          games: {
+          listings: {
             select: {
               id: true,
               slug: true,

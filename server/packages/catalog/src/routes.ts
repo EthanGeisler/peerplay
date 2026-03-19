@@ -26,10 +26,25 @@ const zipUpload = multer({
   }),
   limits: { fileSize: 2 * 1024 * 1024 * 1024 }, // 2GB
   fileFilter: (_req, file, cb) => {
-    if (file.mimetype === "application/zip" || file.originalname.endsWith(".zip")) {
+    // Accept zip files + common media types (validated post-upload based on contentType)
+    const allowedMimes = new Set([
+      "application/zip",
+      "application/x-zip-compressed",
+      "video/mp4",
+      "video/webm",
+      "video/x-matroska",
+      "audio/mpeg",
+      "audio/wav",
+      "audio/ogg",
+      "audio/flac",
+      "application/octet-stream",
+    ]);
+    const allowedExts = new Set([".zip", ".mp4", ".webm", ".mkv", ".mp3", ".wav", ".ogg", ".flac"]);
+    const ext = file.originalname.substring(file.originalname.lastIndexOf(".")).toLowerCase();
+    if (allowedMimes.has(file.mimetype) || allowedExts.has(ext)) {
       cb(null, true);
     } else {
-      cb(new ValidationError("Only .zip files are allowed"));
+      cb(new ValidationError("Unsupported file type"));
     }
   },
 });
@@ -61,10 +76,13 @@ const coverUpload = multer({
 
 // ── Schemas ──────────────────────────────────────────────────────────────────
 
+const contentTypeEnum = z.enum(["GAME", "VIDEO", "SOFTWARE", "AUDIO", "OTHER"]);
+
 const paginationSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   search: z.string().trim().max(200).optional(),
+  contentType: contentTypeEnum.optional(),
 });
 
 const createGameSchema = z.object({
@@ -73,6 +91,8 @@ const createGameSchema = z.object({
   priceCents: z.number().int().min(0, "Price must be non-negative"),
   exePath: z.string().max(500).optional(),
   savePaths: z.array(z.string().max(500)).max(20).optional(),
+  contentType: contentTypeEnum.optional(),
+  metadata: z.record(z.any()).optional().transform((v) => v as import("@prisma/client").Prisma.InputJsonValue | undefined),
 });
 
 const updateGameSchema = z.object({
@@ -101,7 +121,7 @@ catalogRouter.get("/games", async (req, res, next) => {
     } catch (err) {
       handleZodError(err);
     }
-    const result = await catalogService.listPublishedGames(params.page, params.limit, params.search);
+    const result = await catalogService.listPublishedListings(params.page, params.limit, params.search);
     res.json(result);
   } catch (err) {
     next(err);
@@ -110,8 +130,39 @@ catalogRouter.get("/games", async (req, res, next) => {
 
 catalogRouter.get("/games/:slug", async (req, res, next) => {
   try {
-    const game = await catalogService.getGameBySlug(String(req.params.slug));
+    const game = await catalogService.getListingBySlug(String(req.params.slug));
     res.json(game);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Public Listings Routes (generalized) ────────────────────────────────────
+
+catalogRouter.get("/listings", async (req, res, next) => {
+  try {
+    let params;
+    try {
+      params = paginationSchema.parse(req.query);
+    } catch (err) {
+      handleZodError(err);
+    }
+    const result = await catalogService.listPublishedListings(
+      params.page,
+      params.limit,
+      params.search,
+      params.contentType,
+    );
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+catalogRouter.get("/listings/:slug", async (req, res, next) => {
+  try {
+    const listing = await catalogService.getListingBySlug(String(req.params.slug));
+    res.json(listing);
   } catch (err) {
     next(err);
   }
@@ -172,7 +223,7 @@ catalogRouter.patch(
         });
         const result = await storeEvent(event);
         if (result !== "DUPLICATE") {
-          game = await db.game.update({
+          game = await db.listing.update({
             where: { id: game.id },
             data: { eventId: event.id },
           });
@@ -211,7 +262,7 @@ catalogRouter.patch(
         });
         const result = await storeEvent(event);
         if (result !== "DUPLICATE") {
-          game = await db.game.update({
+          game = await db.listing.update({
             where: { id: game.id },
             data: { eventId: event.id },
           });
@@ -221,6 +272,349 @@ catalogRouter.patch(
       }
 
       res.json(game);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ── Developer Listings Routes (generalized) ─────────────────────────────────
+
+catalogRouter.get(
+  "/developer/listings",
+  authenticate,
+  requireRole("DEVELOPER", "ADMIN"),
+  async (req, res, next) => {
+    try {
+      const developer = await catalogService.getDeveloperByUserId(req.user!.sub);
+      const listings = await catalogService.listDeveloperListings(developer.id);
+      res.json({ games: listings });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+catalogRouter.get(
+  "/developer/listings/:id",
+  authenticate,
+  requireRole("DEVELOPER", "ADMIN"),
+  async (req, res, next) => {
+    try {
+      const developer = await catalogService.getDeveloperByUserId(req.user!.sub);
+      const listing = await catalogService.getDeveloperListing(String(req.params.id), developer.id);
+      res.json(listing);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+catalogRouter.post(
+  "/developer/listings",
+  authenticate,
+  requireRole("DEVELOPER", "ADMIN"),
+  async (req, res, next) => {
+    try {
+      let input;
+      try {
+        input = createGameSchema.parse(req.body);
+      } catch (err) {
+        handleZodError(err);
+      }
+      const developer = await catalogService.getDeveloperByUserId(req.user!.sub);
+      let listing = await catalogService.createListing(developer.id, input);
+
+      // Sign and store a kind 30001 event (non-blocking on failure)
+      try {
+        const contentTag = input.contentType?.toLowerCase() ?? "game";
+        const event = await signEventForUser(req.user!.sub, {
+          kind: EVENT_KIND_GAME_LISTING,
+          tags: [["d", listing.slug], ["t", contentTag]],
+          content: JSON.stringify({
+            title: listing.title,
+            description: listing.description,
+            priceCents: listing.priceCents,
+            slug: listing.slug,
+            contentType: listing.contentType,
+          }),
+        });
+        const result = await storeEvent(event);
+        if (result !== "DUPLICATE") {
+          listing = await db.listing.update({
+            where: { id: listing.id },
+            data: { eventId: event.id },
+          });
+        }
+      } catch {
+        // Signing failure is non-fatal
+      }
+
+      res.status(201).json(listing);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+catalogRouter.put(
+  "/developer/listings/:id",
+  authenticate,
+  requireRole("DEVELOPER", "ADMIN"),
+  async (req, res, next) => {
+    try {
+      let input;
+      try {
+        input = updateGameSchema.parse(req.body);
+      } catch (err) {
+        handleZodError(err);
+      }
+      const developer = await catalogService.getDeveloperByUserId(req.user!.sub);
+      let listing = await catalogService.updateListing(String(req.params.id), developer.id, input);
+
+      // Sign and store event (non-fatal)
+      try {
+        const event = await signEventForUser(req.user!.sub, {
+          kind: EVENT_KIND_GAME_LISTING,
+          tags: [["d", listing.slug], ["t", listing.contentType.toLowerCase()], ["status", listing.status]],
+          content: JSON.stringify({
+            title: listing.title,
+            description: listing.description,
+            priceCents: listing.priceCents,
+            slug: listing.slug,
+            contentType: listing.contentType,
+          }),
+        });
+        const result = await storeEvent(event);
+        if (result !== "DUPLICATE") {
+          listing = await db.listing.update({
+            where: { id: listing.id },
+            data: { eventId: event.id },
+          });
+        }
+      } catch {
+        // Signing failure is non-fatal
+      }
+
+      res.json(listing);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+catalogRouter.patch(
+  "/developer/listings/:id/publish",
+  authenticate,
+  requireRole("DEVELOPER", "ADMIN"),
+  async (req, res, next) => {
+    try {
+      const developer = await catalogService.getDeveloperByUserId(req.user!.sub);
+      let listing = await catalogService.publishListing(String(req.params.id), developer.id);
+
+      try {
+        const event = await signEventForUser(req.user!.sub, {
+          kind: EVENT_KIND_GAME_LISTING,
+          tags: [["d", listing.slug], ["t", listing.contentType.toLowerCase()], ["status", "PUBLISHED"]],
+          content: JSON.stringify({
+            title: listing.title,
+            description: listing.description,
+            priceCents: listing.priceCents,
+            slug: listing.slug,
+            contentType: listing.contentType,
+          }),
+        });
+        const result = await storeEvent(event);
+        if (result !== "DUPLICATE") {
+          listing = await db.listing.update({
+            where: { id: listing.id },
+            data: { eventId: event.id },
+          });
+        }
+      } catch {
+        // Signing failure is non-fatal
+      }
+
+      res.json(listing);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+catalogRouter.patch(
+  "/developer/listings/:id/unpublish",
+  authenticate,
+  requireRole("DEVELOPER", "ADMIN"),
+  async (req, res, next) => {
+    try {
+      const developer = await catalogService.getDeveloperByUserId(req.user!.sub);
+      let listing = await catalogService.unpublishListing(String(req.params.id), developer.id);
+
+      try {
+        const event = await signEventForUser(req.user!.sub, {
+          kind: EVENT_KIND_GAME_LISTING,
+          tags: [["d", listing.slug], ["t", listing.contentType.toLowerCase()], ["status", "DRAFT"]],
+          content: JSON.stringify({
+            title: listing.title,
+            description: listing.description,
+            priceCents: listing.priceCents,
+            slug: listing.slug,
+            contentType: listing.contentType,
+          }),
+        });
+        const result = await storeEvent(event);
+        if (result !== "DUPLICATE") {
+          listing = await db.listing.update({
+            where: { id: listing.id },
+            data: { eventId: event.id },
+          });
+        }
+      } catch {
+        // Signing failure is non-fatal
+      }
+
+      res.json(listing);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+catalogRouter.post(
+  "/developer/listings/:id/versions",
+  authenticate,
+  requireRole("DEVELOPER", "ADMIN"),
+  async (req, res, next) => {
+    try {
+      let input;
+      try {
+        input = createVersionSchema.parse(req.body);
+      } catch (err) {
+        handleZodError(err);
+      }
+      const developer = await catalogService.getDeveloperByUserId(req.user!.sub);
+      const result = await catalogService.createVersion(
+        String(req.params.id),
+        developer.id,
+        input.version,
+      );
+      res.status(201).json(result);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+catalogRouter.post(
+  "/developer/listings/:id/cover",
+  authenticate,
+  requireRole("DEVELOPER", "ADMIN"),
+  coverUpload.single("cover"),
+  async (req, res, next) => {
+    const tmpPath = req.file?.path;
+    try {
+      if (!req.file) {
+        throw new ValidationError("No image file provided");
+      }
+
+      const listingId = String(req.params.id);
+      const developer = await catalogService.getDeveloperByUserId(req.user!.sub);
+      const listing = await catalogService.updateListing(listingId, developer.id, {
+        coverImageUrl: `/api/covers/${listingId}`,
+      });
+
+      const coversDir = path.join(getConfig().GAMES_DIR, "covers");
+      const uploadedExt = path.extname(req.file.filename).toLowerCase();
+      const finalPath = path.join(coversDir, `${listingId}${uploadedExt}`);
+
+      await fsp.rename(tmpPath!, finalPath);
+
+      for (const ext of [".jpg", ".jpeg", ".png", ".webp"]) {
+        if (ext !== uploadedExt) {
+          await fsp.unlink(path.join(coversDir, `${listingId}${ext}`)).catch(() => {});
+        }
+      }
+
+      res.json(listing);
+    } catch (err) {
+      if (tmpPath) {
+        await fsp.unlink(tmpPath).catch(() => {});
+      }
+      next(err);
+    }
+  },
+);
+
+catalogRouter.post(
+  "/developer/listings/:id/versions/:versionId/upload",
+  authenticate,
+  requireRole("DEVELOPER", "ADMIN"),
+  (req, _res, next) => {
+    req.setTimeout(30 * 60 * 1000);
+    next();
+  },
+  zipUpload.single("gameZip"),
+  async (req, res, next) => {
+    try {
+      if (!req.file) {
+        throw new ValidationError("No zip file provided");
+      }
+
+      const developer = await catalogService.getDeveloperByUserId(req.user!.sub);
+      const result = await uploadService.uploadAndProcessVersion(
+        String(req.params.id),
+        developer.id,
+        String(req.params.versionId),
+        req.file.path,
+      );
+
+      try {
+        const listing = await db.listing.findUnique({ where: { id: String(req.params.id) } });
+        if (listing) {
+          const event = await signEventForUser(req.user!.sub, {
+            kind: EVENT_KIND_GAME_VERSION,
+            tags: [
+              ["d", `${listing.slug}:${result.version}`],
+              ...(listing.eventId ? [["e", listing.eventId]] : []),
+              ["game", listing.slug],
+            ],
+            content: JSON.stringify({
+              version: result.version,
+              fileSizeBytes: result.fileSizeBytes,
+              infoHash: result.torrent?.infoHash ?? null,
+            }),
+          });
+          await storeEvent(event);
+        }
+      } catch {
+        // Signing failure is non-fatal
+      }
+
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+catalogRouter.post(
+  "/developer/listings/:id/detect-exe",
+  authenticate,
+  requireRole("DEVELOPER", "ADMIN"),
+  async (req, res, next) => {
+    try {
+      const { dirname } = req.body;
+      if (!dirname || typeof dirname !== "string") {
+        throw new ValidationError("dirname is required");
+      }
+      const developer = await catalogService.getDeveloperByUserId(req.user!.sub);
+      const result = await uploadService.autoDetectAndSetExe(
+        String(req.params.id),
+        developer.id,
+        dirname,
+      );
+      res.json(result);
     } catch (err) {
       next(err);
     }
@@ -311,7 +705,7 @@ catalogRouter.post(
         });
         const result = await storeEvent(event);
         if (result !== "DUPLICATE") {
-          game = await db.game.update({
+          game = await db.listing.update({
             where: { id: game.id },
             data: { eventId: event.id },
           });
@@ -356,7 +750,7 @@ catalogRouter.put(
         });
         const result = await storeEvent(event);
         if (result !== "DUPLICATE") {
-          game = await db.game.update({
+          game = await db.listing.update({
             where: { id: game.id },
             data: { eventId: event.id },
           });
@@ -511,7 +905,7 @@ catalogRouter.post(
 
       // Sign and store a kind 30002 event for the game version (non-fatal)
       try {
-        const game = await db.game.findUnique({ where: { id: String(req.params.id) } });
+        const game = await db.listing.findUnique({ where: { id: String(req.params.id) } });
         if (game) {
           const event = await signEventForUser(req.user!.sub, {
             kind: EVENT_KIND_GAME_VERSION,

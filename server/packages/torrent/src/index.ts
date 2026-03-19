@@ -1,2 +1,2 @@
 export { torrentRouter } from "./routes.js";
-export { createGameTorrent } from "./service.js";
+export { createTorrent, createGameTorrent } from "./service.js";

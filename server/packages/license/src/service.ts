@@ -4,12 +4,13 @@ export async function listUserLicenses(userId: string) {
   const licenses = await db.license.findMany({
     where: { userId },
     include: {
-      game: {
+      listing: {
         select: {
           id: true,
           slug: true,
           title: true,
           coverImageUrl: true,
+          contentType: true,
           developer: { select: { studioName: true } },
         },
       },
@@ -22,11 +23,12 @@ export async function listUserLicenses(userId: string) {
     status: l.status,
     createdAt: l.createdAt,
     game: {
-      id: l.game.id,
-      slug: l.game.slug,
-      title: l.game.title,
-      coverImageUrl: l.game.coverImageUrl,
-      studioName: l.game.developer.studioName,
+      id: l.listing.id,
+      slug: l.listing.slug,
+      title: l.listing.title,
+      coverImageUrl: l.listing.coverImageUrl,
+      contentType: l.listing.contentType,
+      studioName: l.listing.developer.studioName,
     },
   }));
 }

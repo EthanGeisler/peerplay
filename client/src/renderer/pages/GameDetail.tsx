@@ -9,6 +9,8 @@ import { formatPrice, formatSize, PLACEHOLDER_COVER, resolveCoverUrl } from "../
 import type { ApiReviewsResponse } from "../types";
 import { ReviewSection } from "../components/ReviewSection";
 import { ReviewForm } from "../components/ReviewForm";
+import { VideoPlayer } from "../components/VideoPlayer";
+import { useInstalledStore } from "../stores/installedStore";
 
 const styles = {
   back: {
@@ -160,6 +162,9 @@ export function GameDetail() {
 
   const game = currentGame;
   const owned = Array.isArray(licenses) && licenses.some((l) => l.game.id === game.id && l.status === "ACTIVE");
+  const installedGames = useInstalledStore((s) => s.installedGames);
+  const installed = installedGames[game.id];
+  const isVideo = game.contentType === "VIDEO";
 
   const handleBuy = async () => {
     if (!user) {
@@ -244,7 +249,29 @@ export function GameDetail() {
         }}
       />
 
-      <div style={styles.title}>{game.title}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={styles.title}>{game.title}</div>
+        {game.contentType && game.contentType !== "GAME" && (
+          <span style={{
+            padding: "4px 10px",
+            borderRadius: 4,
+            fontSize: 11,
+            fontWeight: 700,
+            textTransform: "uppercase",
+            backgroundColor: game.contentType === "VIDEO" ? "rgba(168,85,247,0.2)" :
+              game.contentType === "SOFTWARE" ? "rgba(59,130,246,0.2)" :
+              game.contentType === "AUDIO" ? "rgba(234,179,8,0.2)" : "rgba(107,114,128,0.2)",
+            color: game.contentType === "VIDEO" ? "#a855f7" :
+              game.contentType === "SOFTWARE" ? "#3b82f6" :
+              game.contentType === "AUDIO" ? "#eab308" : "#6b7280",
+            border: `1px solid ${game.contentType === "VIDEO" ? "#a855f7" :
+              game.contentType === "SOFTWARE" ? "#3b82f6" :
+              game.contentType === "AUDIO" ? "#eab308" : "#6b7280"}`,
+          }}>
+            {game.contentType}
+          </span>
+        )}
+      </div>
       <div style={styles.studio}>{game.studioName}</div>
       <div style={styles.description}>{game.description}</div>
 
@@ -257,16 +284,24 @@ export function GameDetail() {
             </span>
           </>
         )}
+        {(!game.contentType || game.contentType === "GAME") && game.exePath && (
+          <span style={styles.infoBadge}>{game.exePath}</span>
+        )}
       </div>
 
       <div style={styles.price}>{formatPrice(game.priceCents)}</div>
 
       {owned ? (
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <span style={styles.ownedBadge}>Owned</span>
-          <button style={styles.actionBtn} onClick={handleDownload}>
-            Download
-          </button>
+        <div>
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <span style={styles.ownedBadge}>Owned</span>
+            <button style={styles.actionBtn} onClick={handleDownload}>
+              Download
+            </button>
+          </div>
+          {isVideo && installed && (
+            <VideoPlayer installPath={installed.installPath} />
+          )}
         </div>
       ) : (
         <button

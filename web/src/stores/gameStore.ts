@@ -1,13 +1,13 @@
 import { create } from "zustand";
 import { apiFetch } from "../api";
-import type { ApiGame, ApiGameDetail, ApiGameListResponse } from "../types";
+import type { ApiGame, ApiGameDetail, ApiGameListResponse, ContentType } from "../types";
 
 interface GameState {
   games: ApiGame[];
   currentGame: ApiGameDetail | null;
   loading: boolean;
   error: string | null;
-  fetchGames: (search?: string) => Promise<void>;
+  fetchGames: (search?: string, contentType?: ContentType) => Promise<void>;
   fetchGameBySlug: (slug: string) => Promise<void>;
 }
 
@@ -17,12 +17,13 @@ export const useGameStore = create<GameState>((set) => ({
   loading: false,
   error: null,
 
-  fetchGames: async (search?: string) => {
+  fetchGames: async (search?: string, contentType?: ContentType) => {
     set({ loading: true, error: null });
     try {
       const params = new URLSearchParams({ limit: "50" });
       if (search) params.set("search", search);
-      const data = await apiFetch<ApiGameListResponse>(`/games?${params}`);
+      if (contentType) params.set("contentType", contentType);
+      const data = await apiFetch<ApiGameListResponse>(`/listings?${params}`);
       set({ games: data.games, loading: false });
     } catch (err) {
       set({ loading: false, error: (err as Error).message });
@@ -32,7 +33,7 @@ export const useGameStore = create<GameState>((set) => ({
   fetchGameBySlug: async (slug) => {
     set({ loading: true, error: null, currentGame: null });
     try {
-      const game = await apiFetch<ApiGameDetail>(`/games/${slug}`);
+      const game = await apiFetch<ApiGameDetail>(`/listings/${slug}`);
       set({ currentGame: game, loading: false });
     } catch (err) {
       set({ loading: false, error: (err as Error).message });

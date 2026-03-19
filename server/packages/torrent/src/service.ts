@@ -1,6 +1,6 @@
 /// <reference path="./vendor.d.ts" />
 import { db, NotFoundError, ForbiddenError } from "@boilerdeck/shared";
-import createTorrent from "create-torrent";
+import createTorrentLib from "create-torrent";
 import parseTorrent, { toMagnetURI } from "parse-torrent";
 
 export async function getLatestTorrent(userId: string, gameId: string) {
@@ -9,11 +9,11 @@ export async function getLatestTorrent(userId: string, gameId: string) {
     where: { userId_gameId: { userId, gameId } },
   });
   if (!license || license.status !== "ACTIVE") {
-    throw new ForbiddenError("You do not own a valid license for this game");
+    throw new ForbiddenError("You do not own a valid license for this listing");
   }
 
   // Find the latest READY version with its torrent
-  const version = await db.gameVersion.findFirst({
+  const version = await db.listingVersion.findFirst({
     where: {
       gameId,
       status: "READY",
@@ -45,10 +45,10 @@ export async function getLatestTorrentFile(userId: string, gameId: string): Prom
     where: { userId_gameId: { userId, gameId } },
   });
   if (!license || license.status !== "ACTIVE") {
-    throw new ForbiddenError("You do not own a valid license for this game");
+    throw new ForbiddenError("You do not own a valid license for this listing");
   }
 
-  const version = await db.gameVersion.findFirst({
+  const version = await db.listingVersion.findFirst({
     where: {
       gameId,
       status: "READY",
@@ -77,12 +77,12 @@ const ANNOUNCE_LIST = [
   ["wss://tracker.btorrent.xyz"],
 ];
 
-export async function createGameTorrent(
+export async function createTorrent(
   dirPath: string,
   name: string,
 ): Promise<{ torrentBuffer: Buffer; infoHash: string; magnetUri: string }> {
   const torrentBuffer = await new Promise<Buffer>((resolve, reject) => {
-    createTorrent(
+    createTorrentLib(
       dirPath,
       {
         name,
@@ -108,3 +108,6 @@ export async function createGameTorrent(
     magnetUri,
   };
 }
+
+// Backwards-compatible alias
+export const createGameTorrent = createTorrent;

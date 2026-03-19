@@ -1,7 +1,8 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGameStore } from "../stores/gameStore";
 import { formatPrice, PLACEHOLDER_COVER, resolveCoverUrl } from "../utils";
+import type { ContentType } from "../types";
 
 const styles = {
   heading: {
@@ -64,15 +65,24 @@ const styles = {
   } as React.CSSProperties,
 };
 
+const TABS: { label: string; value: ContentType | undefined }[] = [
+  { label: "All", value: undefined },
+  { label: "Games", value: "GAME" },
+  { label: "Videos", value: "VIDEO" },
+  { label: "Software", value: "SOFTWARE" },
+  { label: "Audio", value: "AUDIO" },
+];
+
 export function Store() {
   const navigate = useNavigate();
   const games = useGameStore((s) => s.games);
   const loading = useGameStore((s) => s.loading);
   const fetchGames = useGameStore((s) => s.fetchGames);
+  const [activeFilter, setActiveFilter] = useState<ContentType | undefined>(undefined);
 
   useEffect(() => {
-    fetchGames();
-  }, [fetchGames]);
+    fetchGames(1, activeFilter);
+  }, [fetchGames, activeFilter]);
 
   if (loading && games.length === 0) {
     return <p style={styles.loading}>Loading games...</p>;
@@ -81,6 +91,27 @@ export function Store() {
   return (
     <div>
       <h1 style={styles.heading}>Store</h1>
+      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+        {TABS.map((tab) => (
+          <button
+            key={tab.label}
+            onClick={() => setActiveFilter(tab.value)}
+            style={{
+              padding: "6px 16px",
+              borderRadius: 4,
+              fontSize: 13,
+              fontWeight: 600,
+              border: "1px solid",
+              cursor: "pointer",
+              borderColor: activeFilter === tab.value ? "#e94560" : "#0f3460",
+              backgroundColor: activeFilter === tab.value ? "#e94560" : "#16213e",
+              color: activeFilter === tab.value ? "#fff" : "#888",
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
       {games.length === 0 ? (
         <p style={styles.loading}>No games available yet.</p>
       ) : (

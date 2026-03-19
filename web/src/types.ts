@@ -1,3 +1,5 @@
+export type ContentType = "GAME" | "VIDEO" | "SOFTWARE" | "AUDIO" | "OTHER";
+
 export interface ApiGame {
   id: string;
   slug: string;
@@ -7,10 +9,13 @@ export interface ApiGame {
   coverImageUrl: string | null;
   eventId?: string | null;
   studioName: string;
+  contentType?: ContentType;
+  metadata?: Record<string, unknown>;
 }
 
 export interface ApiGameDetail extends ApiGame {
   screenshots: string[];
+  metadata?: Record<string, unknown>;
   exePath: string | null;
   pubkey?: string | null;
   latestVersion: {
@@ -52,6 +57,7 @@ export interface ApiLicense {
     title: string;
     coverImageUrl: string | null;
     studioName: string;
+    contentType?: ContentType;
   };
 }
 
@@ -115,3 +121,8 @@ export interface ProfileData {
   picture?: string;
   created_at?: number;
 }
+
+// Backwards-compatible aliases
+export type ApiListing = ApiGame;
+export type ApiListingDetail = ApiGameDetail;
+export type ApiListingListResponse = ApiGameListResponse;

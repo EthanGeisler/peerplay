@@ -3,15 +3,15 @@ import { db, AppError, NotFoundError, ConflictError, ValidationError, getStripe,
 
 export async function checkout(userId: string, gameId: string) {
   // 1. Verify game exists and is published
-  const game = await db.game.findUnique({
+  const game = await db.listing.findUnique({
     where: { id: gameId },
     include: { developer: true },
   });
   if (!game) {
-    throw new NotFoundError("Game");
+    throw new NotFoundError("Listing");
   }
   if (game.status !== "PUBLISHED") {
-    throw new ValidationError("Game is not available for purchase");
+    throw new ValidationError("Listing is not available for purchase");
   }
 
   // 2. Check user doesn't already own it
@@ -19,7 +19,7 @@ export async function checkout(userId: string, gameId: string) {
     where: { userId_gameId: { userId, gameId } },
   });
   if (existingLicense && existingLicense.status === "ACTIVE") {
-    throw new ConflictError("You already own this game");
+    throw new ConflictError("You already own this listing");
   }
 
   // 3. Calculate platform fee

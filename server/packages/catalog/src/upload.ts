@@ -68,10 +68,10 @@ export async function autoDetectAndSetExe(
   developerId: string,
   dirname: string,
 ) {
-  const game = await db.game.findUnique({ where: { id: gameId } });
-  if (!game) throw new NotFoundError("Game");
+  const game = await db.listing.findUnique({ where: { id: gameId } });
+  if (!game) throw new NotFoundError("Listing");
   if (game.developerId !== developerId) {
-    throw new ForbiddenError("You can only update your own games");
+    throw new ForbiddenError("You can only update your own listings");
   }
 
   const result = await detectExecutable(dirname);
@@ -79,7 +79,7 @@ export async function autoDetectAndSetExe(
     throw new NotFoundError("No executable found in directory");
   }
 
-  const updated = await db.game.update({
+  const updated = await db.listing.update({
     where: { id: gameId },
     data: { exePath: result.recommended },
   });
@@ -111,13 +111,13 @@ export async function uploadAndProcessVersion(
   zipPath: string,
 ) {
   // 1. Verify ownership and version status
-  const game = await db.game.findUnique({ where: { id: gameId } });
-  if (!game) throw new NotFoundError("Game");
+  const game = await db.listing.findUnique({ where: { id: gameId } });
+  if (!game) throw new NotFoundError("Listing");
   if (game.developerId !== developerId) {
-    throw new ForbiddenError("You can only upload to your own games");
+    throw new ForbiddenError("You can only upload to your own listings");
   }
 
-  const version = await db.gameVersion.findUnique({ where: { id: versionId } });
+  const version = await db.listingVersion.findUnique({ where: { id: versionId } });
   if (!version || version.gameId !== gameId) {
     throw new NotFoundError("Version");
   }
@@ -137,13 +137,15 @@ export async function uploadAndProcessVersion(
     // 3. Calculate total file size
     const fileSizeBytes = await getDirectorySize(extractDir);
 
-    // 4. Auto-detect exe
+    // 4. Auto-detect exe (only for GAME and SOFTWARE content types)
     let detectedExe: string | null = null;
-    try {
-      const result = await detectExecutable(game.slug);
-      detectedExe = result.recommended;
-    } catch {
-      // Non-fatal — exe detection is best-effort
+    if (game.contentType === "GAME" || game.contentType === "SOFTWARE") {
+      try {
+        const result = await detectExecutable(game.slug);
+        detectedExe = result.recommended;
+      } catch {
+        // Non-fatal — exe detection is best-effort
+      }
     }
 
     // 5. Create torrent
@@ -162,7 +164,7 @@ export async function uploadAndProcessVersion(
         },
       });
 
-      const ver = await tx.gameVersion.update({
+      const ver = await tx.listingVersion.update({
         where: { id: versionId },
         data: {
           torrentId: torrent.id,
@@ -176,9 +178,9 @@ export async function uploadAndProcessVersion(
         },
       });
 
-      // 8. Auto-set exePath if game doesn't have one
-      if (!game.exePath && detectedExe) {
-        await tx.game.update({
+      // 8. Auto-set exePath if listing doesn't have one (GAME/SOFTWARE only)
+      if (!game.exePath && detectedExe && (game.contentType === "GAME" || game.contentType === "SOFTWARE")) {
+        await tx.listing.update({
           where: { id: gameId },
           data: { exePath: detectedExe },
         });
@@ -204,7 +206,7 @@ export async function uploadAndProcessVersion(
     };
   } catch (err) {
     // On any error, mark version as FAILED
-    await db.gameVersion.update({
+    await db.listingVersion.update({
       where: { id: versionId },
       data: { status: "FAILED" },
     }).catch(() => {});

@@ -66,7 +66,7 @@ async function materializeGameListing(event: SignedEvent): Promise<"MATERIALIZED
   const developerId = user.developer.id;
 
   // Check for slug collision from different developer
-  const existingGame = await db.game.findUnique({
+  const existingGame = await db.listing.findUnique({
     where: { slug },
     select: { developerId: true, id: true },
   });
@@ -80,7 +80,7 @@ async function materializeGameListing(event: SignedEvent): Promise<"MATERIALIZED
   const status = statusTag?.[1] === "PUBLISHED" ? "PUBLISHED" : "DRAFT";
 
   // Upsert game
-  await db.game.upsert({
+  await db.listing.upsert({
     where: { slug },
     create: {
       developerId,
@@ -125,7 +125,7 @@ async function materializeGameVersion(event: SignedEvent): Promise<"MATERIALIZED
   }
 
   // Find the game by slug
-  const game = await db.game.findUnique({
+  const game = await db.listing.findUnique({
     where: { slug },
     select: { id: true, developerId: true },
   });
@@ -146,7 +146,7 @@ async function materializeGameVersion(event: SignedEvent): Promise<"MATERIALIZED
 
   // Upsert game version (idempotent by gameId + version unique constraint)
   try {
-    await db.gameVersion.upsert({
+    await db.listingVersion.upsert({
       where: {
         gameId_version: { gameId: game.id, version },
       },

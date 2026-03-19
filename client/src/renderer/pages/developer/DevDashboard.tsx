@@ -120,7 +120,7 @@ export function DevDashboard() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 32 }}>
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 4 }}>
-            Dashboard
+            Creator Dashboard
             {developer?.stripeOnboarded && developer?.stripePayoutsEnabled && (
               <span
                 style={{
@@ -155,14 +155,14 @@ export function DevDashboard() {
             cursor: "pointer",
           }}
         >
-          + New Game
+          + New Listing
         </button>
       </div>
 
       {/* Stats row */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 32 }}>
         {[
-          { label: "Total Games", value: games.length },
+          { label: "Total Listings", value: games.length },
           { label: "Published", value: publishedCount },
           { label: "Total Sales", value: totalSales },
         ].map((stat) => (
@@ -184,7 +184,7 @@ export function DevDashboard() {
       </div>
 
       {/* Games list */}
-      <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>Your Games</h2>
+      <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>Your Listings</h2>
 
       {loading ? (
         <div style={{ color: "#aaa", padding: 40, textAlign: "center" }}>Loading...</div>
@@ -199,7 +199,7 @@ export function DevDashboard() {
           }}
         >
           <div style={{ fontSize: 16, color: "#aaa", marginBottom: 16 }}>
-            No games yet. Create your first game to get started.
+            No listings yet. Create your first listing to get started.
           </div>
           <button
             onClick={() => navigate("/developer/games/new")}
@@ -214,7 +214,7 @@ export function DevDashboard() {
               cursor: "pointer",
             }}
           >
-            + New Game
+            + New Listing
           </button>
         </div>
       ) : (

@@ -45,7 +45,7 @@ export type DeleteResult = "DELETED" | "NOT_FOUND";
  */
 export async function deleteEvent(id: string): Promise<DeleteResult> {
   // Unlink any games referencing this event before deleting
-  await db.game.updateMany({
+  await db.listing.updateMany({
     where: { eventId: id },
     data: { eventId: null },
   });

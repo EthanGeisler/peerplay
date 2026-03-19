@@ -508,13 +508,13 @@ relayRouter.post("/games/:slug/reviews", authenticate, async (req, res, next) =>
     }
 
     // Look up the game by slug
-    const game = await db.game.findUnique({
+    const game = await db.listing.findUnique({
       where: { slug },
       select: { id: true },
     });
 
     if (!game) {
-      throw new NotFoundError("Game");
+      throw new NotFoundError("Listing");
     }
 
     // Check license ownership — user must own this game with ACTIVE status
@@ -530,7 +530,7 @@ relayRouter.post("/games/:slug/reviews", authenticate, async (req, res, next) =>
 
     if (!license || license.status !== "ACTIVE") {
       throw new ForbiddenError(
-        "You must own this game to submit a review",
+        "You must own this listing to submit a review",
       );
     }
 
@@ -574,13 +574,13 @@ relayRouter.get("/games/:slug/reviews", async (req, res, next) => {
     const offset = req.query.offset ? parseInt(String(req.query.offset), 10) : 0;
 
     // Verify the game exists
-    const game = await db.game.findUnique({
+    const game = await db.listing.findUnique({
       where: { slug },
       select: { id: true },
     });
 
     if (!game) {
-      throw new NotFoundError("Game");
+      throw new NotFoundError("Listing");
     }
 
     // Query kind 31337 events with dTag = slug directly via Prisma
@@ -662,6 +662,18 @@ relayRouter.get("/games/:slug/reviews", async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// ── Listings alias routes for reviews ────────────────────────────────────────
+// These redirect to the existing /games/:slug/reviews endpoints to avoid duplication.
+
+relayRouter.post("/listings/:slug/reviews", authenticate, (req, res) => {
+  res.redirect(307, `/api/games/${req.params.slug}/reviews`);
+});
+
+relayRouter.get("/listings/:slug/reviews", (req, res) => {
+  const qs = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
+  res.redirect(307, `/api/games/${req.params.slug}/reviews${qs}`);
 });
 
 // ── POST /follows — follow a user (add to kind 3 event) ─────────────────────

@@ -4,6 +4,15 @@ import { useGameStore } from "../stores/gameStore";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useAuthStore } from "../stores/authStore";
 import { formatPrice, PLACEHOLDER_COVER } from "../utils";
+import type { ContentType } from "../types";
+
+const CONTENT_TABS: { label: string; value: ContentType | undefined }[] = [
+  { label: "All", value: undefined },
+  { label: "Games", value: "GAME" },
+  { label: "Videos", value: "VIDEO" },
+  { label: "Software", value: "SOFTWARE" },
+  { label: "Audio", value: "AUDIO" },
+];
 
 export function Store() {
   const navigate = useNavigate();
@@ -15,21 +24,22 @@ export function Store() {
   const user = useAuthStore((s) => s.user);
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [contentFilter, setContentFilter] = useState<ContentType | undefined>(undefined);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
-    fetchGames();
-  }, [fetchGames]);
+    fetchGames(undefined, contentFilter);
+  }, [fetchGames, contentFilter]);
 
   const handleSearch = useCallback(
     (value: string) => {
       setSearchQuery(value);
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
-        fetchGames(value || undefined);
+        fetchGames(value || undefined, contentFilter);
       }, 300);
     },
-    [fetchGames],
+    [fetchGames, contentFilter],
   );
 
   useEffect(() => {
@@ -217,9 +227,33 @@ export function Store() {
         </div>
       )}
 
-      {/* Game grid */}
+      {/* Content type filter tabs */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+        {CONTENT_TABS.map((tab) => (
+          <button
+            key={tab.label}
+            onClick={() => setContentFilter(tab.value)}
+            style={{
+              padding: "6px 16px",
+              borderRadius: 20,
+              fontSize: 13,
+              fontWeight: 600,
+              border: "1px solid",
+              cursor: "pointer",
+              borderColor: contentFilter === tab.value ? "var(--accent)" : "var(--border)",
+              backgroundColor: contentFilter === tab.value ? "var(--accent)" : "transparent",
+              color: contentFilter === tab.value ? "#fff" : "var(--text-secondary)",
+              transition: "all 0.15s",
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Listing grid */}
       <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 20, color: "var(--text-primary)" }}>
-        {isSearching ? `Results for "${searchQuery}"` : "Browse Games"}
+        {isSearching ? `Results for "${searchQuery}"` : contentFilter ? `Browse ${contentFilter.charAt(0) + contentFilter.slice(1).toLowerCase()}s` : "Browse All"}
       </h2>
       <div
         style={{

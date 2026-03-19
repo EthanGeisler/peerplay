@@ -13,11 +13,21 @@ enum UserRole {
   ADMIN
 }
 
-enum GameStatus {
+enum ListingStatus {
   DRAFT
   PENDING_REVIEW
   PUBLISHED
   SUSPENDED
+  @@map("GameStatus")
+}
+
+enum ContentType {
+  GAME
+  VIDEO
+  SOFTWARE
+  AUDIO
+  OTHER
+  @@map("content_type")
 }
 
 enum VersionStatus {
@@ -91,30 +101,32 @@ model Developer {
   updatedAt       DateTime @updatedAt @map("updated_at")
 
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  games           Game[]
+  listings        Listing[]
 
   @@map("developers")
 }
 
-model Game {
-  id          String     @id @default(uuid())
-  developerId String     @map("developer_id")
-  slug        String     @unique
+model Listing {
+  id          String        @id @default(uuid())
+  developerId String        @map("developer_id")
+  slug        String        @unique
   title       String
-  description String     @default("")
-  priceCents  Int        @map("price_cents")
-  status      GameStatus @default(DRAFT)
-  exePath     String?    @map("exe_path")
-  savePaths   String[]   @default([]) @map("save_paths")
-  coverImageUrl String?  @map("cover_image_url")
-  screenshots String[]   @default([])
-  eventId     String?    @unique @map("event_id")
-  createdAt   DateTime   @default(now()) @map("created_at")
-  updatedAt   DateTime   @updatedAt @map("updated_at")
+  description String        @default("")
+  priceCents  Int           @map("price_cents")
+  status      ListingStatus @default(DRAFT)
+  exePath     String?       @map("exe_path")
+  savePaths   String[]      @default([]) @map("save_paths")
+  coverImageUrl String?     @map("cover_image_url")
+  screenshots String[]      @default([])
+  contentType ContentType   @default(GAME) @map("content_type")
+  metadata    Json          @default("{}")
+  eventId     String?       @unique @map("event_id")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
 
-  developer   Developer  @relation(fields: [developerId], references: [id], onDelete: Cascade)
-  event       Event?     @relation(fields: [eventId], references: [id])
-  versions    GameVersion[]
+  developer   Developer     @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  event       Event?        @relation(fields: [eventId], references: [id])
+  versions    ListingVersion[]
   licenses    License[]
   payments    Payment[]
   saveFiles   SaveFile[]
@@ -122,7 +134,7 @@ model Game {
   @@map("games")
 }
 
-model GameVersion {
+model ListingVersion {
   id            String        @id @default(uuid())
   gameId        String        @map("game_id")
   version       String
@@ -132,7 +144,7 @@ model GameVersion {
   changelog     String        @default("")
   createdAt     DateTime      @default(now()) @map("created_at")
 
-  game          Game          @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  listing       Listing       @relation(fields: [gameId], references: [id], onDelete: Cascade)
   torrent       Torrent?      @relation(fields: [torrentId], references: [id])
 
   @@unique([gameId, version])
@@ -146,7 +158,7 @@ model Torrent {
   torrentFile     Bytes        @map("torrent_file")
   createdAt       DateTime     @default(now()) @map("created_at")
 
-  version         GameVersion?
+  version         ListingVersion?
 
   @@map("torrents")
 }
@@ -161,7 +173,7 @@ model License {
   updatedAt         DateTime      @updatedAt @map("updated_at")
 
   user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  game              Game          @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  listing           Listing       @relation(fields: [gameId], references: [id], onDelete: Cascade)
   payment           Payment?      @relation(fields: [paymentId], references: [id])
 
   @@unique([userId, gameId])
@@ -181,7 +193,7 @@ model Payment {
   updatedAt             DateTime      @updatedAt @map("updated_at")
 
   user                  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  game                  Game          @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  listing               Listing       @relation(fields: [gameId], references: [id], onDelete: Cascade)
   license               License?
 
   @@map("payments")
@@ -198,7 +210,7 @@ model Event {
   dTag       String?  @map("d_tag")                // Parameterized replaceable event identifier
   receivedAt DateTime @default(now()) @map("received_at")
 
-  games      Game[]
+  listings   Listing[]
 
   @@unique([pubkey, kind, dTag])
   @@index([kind])
@@ -222,7 +234,7 @@ model SaveFile {
   updatedAt  DateTime @updatedAt @map("updated_at")
 
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  game       Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  listing    Listing  @relation(fields: [gameId], references: [id], onDelete: Cascade)
 
   @@unique([userId, gameId, slot, filePath])
   @@map("save_files")
