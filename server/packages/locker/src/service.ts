@@ -126,7 +126,7 @@ async function addToTransmission(torrentBuffer: Buffer, downloadDir: string): Pr
   const body = JSON.stringify({
     method: "torrent-add",
     arguments: {
-      "metainfo": torrentBuffer.toString("base64"),
+      "metainfo": Buffer.from(torrentBuffer).toString("base64"),
       "download-dir": downloadDir,
     },
   });
@@ -325,7 +325,10 @@ export async function uploadFile(
     torrentPath = await storage.saveTorrentFile(userId, entryId, torrentBuffer);
 
     // 6. Send to Transmission (non-blocking, non-fatal)
-    addToTransmission(torrentBuffer, storage.getUserDir(userId)).catch((err) => {
+    // Read .torrent back from disk to ensure clean Buffer (create-torrent may return Uint8Array)
+    storage.readTorrentFile(userId, entryId).then((diskBuf) => {
+      return addToTransmission(diskBuf, storage.getUserDir(userId));
+    }).catch((err) => {
       console.warn("[locker] Failed to add torrent to Transmission:", err);
     });
   }
