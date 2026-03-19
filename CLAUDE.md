@@ -107,6 +107,7 @@ If any step fails, fix the issue and retry. Do not skip steps. Do not ask the us
 - **Native deps** (like `utp-native` for WebTorrent): must be in `asarUnpack` in electron-builder config
 - **Dev mode: kill stale Electron processes** — `taskkill //F //IM electron.exe` before relaunching. Zombie processes hold WebTorrent file locks causing EBUSY.
 - **Game launch is direct** — `installedStore.launch()` spawns the exe immediately. No license verification or DRM checks at launch time.
+- **ESM-only packages in asar — MUST use dynamic import():** The main process compiles to CJS (`require()`). ESM-only npm packages (those with `"type": "module"` and only `"import"` in their `exports` map) work on a real filesystem via Node 22's `require(esm)`, but **crash inside Electron's asar** with "No 'exports' main defined". Fix: use `await import("package-name")` instead of static `import`. This applies to `socks-proxy-agent@9`, `agent-base@8`, and any future ESM-only dependency used in the main process. See `proxyManager.ts` for the pattern.
 
 ## Deployment to VPS
 Everything runs on a single Hetzner VPS (`boilerdeck.com` / `204.168.133.38`). HTTPS via Let's Encrypt (auto-renews). Deploy process:

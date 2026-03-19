@@ -1,8 +1,8 @@
 # Phase 6 Summary — Privacy Layer
 
-## Status: CODE COMPLETE, BUILD BROKEN
+## Status: COMPLETE — v0.3.1 released and deployed (2026-03-19)
 
-All 7 sub-tasks (6.1–6.7) are implemented and committed. The code is correct. **The Electron build is broken at runtime** — the v0.3.0 installer crashes on launch with a module resolution error. This must be fixed before shipping.
+All 7 sub-tasks (6.1–6.7) are implemented, the asar build issue is fixed, and v0.3.1 is live.
 
 ---
 
@@ -18,13 +18,13 @@ All 7 sub-tasks (6.1–6.7) are implemented and committed. The code is correct. 
 3. Moved `@boilerdeck/ui-shared` from `dependencies` to `devDependencies` — fixed CI build (asar packer no longer crashes on workspace symlink)
 4. Added `socks-proxy-agent/**`, `agent-base/**`, `socks/**`, `smart-buffer/**`, `ws/**` to `asarUnpack` — CI passes but **runtime still crashes**
 
-**What needs to happen next:**
-- The error message mentions a specific `package.json` path — need to get the FULL error text (including which package.json) to identify the exact module
-- Options to fix:
-  - **Option A:** Get full error path, add that specific module to `asarUnpack`
-  - **Option B:** Set `asar: false` temporarily to confirm the code works without asar, then systematically identify which module breaks
-  - **Option C:** Bundle main-process code with esbuild/webpack so all imports are resolved at build time (eliminates runtime module resolution entirely) — this is the nuclear option but permanently fixes the class of problem
-- After fixing, bump to v0.3.1 (v0.3.0 is burned — users who updated are stuck on a broken build and need to manually reinstall)
+**Resolution (2026-03-19):**
+
+**Root cause:** `socks-proxy-agent@9.0.0` and `agent-base@8.0.0` are ESM-only packages — their `exports` field only has an `"import"` condition, no `"require"` or `"default"`. The compiled main process output is CJS (`require()`). On a real filesystem, Node 22's `require(esm)` support handles this transparently. Inside Electron's asar virtual filesystem, it fails with the "No exports main defined" error.
+
+**Fix:** Converted the static `import { SocksProxyAgent } from "socks-proxy-agent"` in `proxyManager.ts` to a dynamic `await import("socks-proxy-agent")`. Dynamic `import()` always uses the ESM resolver even in CJS output, correctly matching the `"import"` exports condition. This made `getProxyAgent()` async — updated 3 call sites (`proxyManager.ts`, `index.ts`, `torrentManager.ts`).
+
+**Verification:** Option B (asar: false) confirmed the code works — app launched with 4 healthy processes. After applying the dynamic import fix, the asar-enabled build also launched successfully with 4 processes. Committed as `8447aba`, tagged `v0.3.1`, CI passed, published to GitHub Releases, uploaded to VPS, web storefront rebuilt.
 
 ---
 

@@ -489,12 +489,14 @@ git tag v0.x.x && git push origin v0.x.x
 The version in `client/package.json` (`"version": "0.2.0"`) controls the installer filename and auto-update version comparison. The git tag should match (e.g., `v0.2.0`). Bump both together.
 
 ### Current Release
-- **v0.2.1** — https://github.com/EthanGeisler/peerplay/releases/tag/v0.2.1
-- Published 2026-03-18, built via CI (GitHub Actions on `v0.2.1` tag push)
-- NSIS installer (~90MB) + portable exe (~89MB) + blockmap (delta updates)
+- **v0.3.1** — https://github.com/EthanGeisler/peerplay/releases/tag/v0.3.1
+- Published 2026-03-19, built via CI (GitHub Actions on `v0.3.1` tag push)
+- NSIS installer (~91MB) + portable exe + blockmap (delta updates)
 - Not code-signed (SmartScreen warning expected)
-- Includes: Phase 1 identity system, DRM removal, mnemonic flows, Phase 2 event system, cover image fixes, Settings update UI
-- **v0.2.0** — superseded, auto-update prompts users to v0.2.1
+- Includes: Phase 6 Privacy Layer (Tor/SOCKS5 proxy support, privacy settings UI, .onion endpoint support) + asar module resolution fix
+- **v0.3.0** — BURNED (runtime crash from ESM-only `socks-proxy-agent@9` inside asar). Do not distribute. Users who installed v0.3.0 must manually download v0.3.1.
+- **v0.2.1** — superseded, auto-update prompts users to v0.3.1
+- **v0.2.0** — superseded
 - **v0.1.0** — superseded
 
 ### Auto-Update (electron-updater) — fully working
@@ -509,26 +511,26 @@ The version in `client/package.json` (`"version": "0.2.0"`) controls the install
 ### Download Buttons (Web Storefront)
 - **Header button** (`web/src/App.tsx`): Green "Download for Windows" button, text hidden below 768px via CSS `.download-label` class
 - **Store page banner** (`web/src/pages/Store.tsx`): Full-width CTA banner below search bar, hidden during search, wraps on mobile via `flexWrap`
-- Both link to `/downloads/BoilerDeck%20Setup%200.2.1.exe` — served directly from VPS. nginx serves from `/opt/boilerdeck/downloads/` with `Content-Disposition: attachment`.
+- Both link to `/downloads/BoilerDeck%20Setup%200.3.1.exe` — served directly from VPS. nginx serves from `/opt/boilerdeck/downloads/` with `Content-Disposition: attachment`.
 
 ### Releasing a New Client Version (full process)
 ```bash
-# 1. Bump version in client/package.json (e.g., 0.2.1 → 0.3.0)
+# 1. Bump version in client/package.json (e.g., 0.3.1 → 0.4.0)
 # 2. Update download links in web/src/App.tsx and web/src/pages/Store.tsx
 # 3. Commit + push + tag
 git add client/package.json web/src/App.tsx web/src/pages/Store.tsx
-git commit -m "Bump client version to 0.3.0 and update download links"
+git commit -m "Bump client version to X.Y.Z and update download links"
 git push origin main
-git tag v0.3.0 && git push origin v0.3.0
+git tag vX.Y.Z && git push origin vX.Y.Z
 # 4. CI builds (~3-5 min) — creates a DRAFT GitHub Release
 gh run watch $(gh run list --limit 1 --json databaseId -q '.[0].databaseId') --exit-status
 # 5. CRITICAL: Publish the release (CI creates it as DRAFT — auto-updater can't see drafts!)
-gh release edit v0.3.0 --draft=false
+gh release edit vX.Y.Z --draft=false
 # 6. Download installer from GitHub Release
-gh release download v0.3.0 -p "BoilerDeck-Setup-0.3.0.exe" -D /tmp
+gh release download vX.Y.Z -p "BoilerDeck-Setup-X.Y.Z.exe" -D /tmp
 # 7. Upload to VPS (NOTE: GitHub uses hyphens, VPS needs spaces to match URL-encoded links)
 ssh root@204.168.133.38 "mkdir -p /opt/boilerdeck/downloads"
-scp /tmp/BoilerDeck-Setup-0.3.0.exe "root@204.168.133.38:/opt/boilerdeck/downloads/BoilerDeck Setup 0.3.0.exe"
+scp /tmp/BoilerDeck-Setup-X.Y.Z.exe "root@204.168.133.38:/opt/boilerdeck/downloads/BoilerDeck Setup X.Y.Z.exe"
 # 8. Deploy updated web storefront (may need: npm install @rollup/rollup-linux-x64-gnu)
 ssh root@204.168.133.38 "cd /opt/boilerdeck && git pull origin main && npx vite build web"
 ```
@@ -551,7 +553,7 @@ ssh root@204.168.133.38 "cd /opt/boilerdeck && git pull origin main && npx vite 
   5. `912f091` `Bump client version to 0.2.0 and update download links`
   6+ (earlier commits omitted — see `git log` for full history)
 - **Git identity:** `EthanGeisler` / `25466222+EthanGeisler@users.noreply.github.com`
-- **Tags:** `v0.1.0` (first release), `v0.2.0` (auto-update, bug fixes), `v0.2.1` (current release — Phase 1 identity, DRM removal, mnemonic flows, Phase 2 event system)
+- **Tags:** `v0.1.0` (first release), `v0.2.0` (auto-update, bug fixes), `v0.2.1` (Phase 1-2, DRM removal), `v0.3.0` (burned — asar crash), `v0.3.1` (current release — Phase 6 Privacy Layer)
 
 ---
 
@@ -744,7 +746,35 @@ All 6 sub-tasks (5.1–5.6) implemented and deployed. Handoff docs: `docs/handof
 **Env vars added on VPS:**
 - `VPS_SEED_PRIVKEY` — 64-char hex, seed box's signing key for attestation events
 
-See `docs/handoff/5.6.md` for latest implementation details and `DECENTRALIZATION_PLAN.md` for Phase 6 specs.
+See `docs/handoff/5.6.md` for latest implementation details.
+
+---
+
+### Phase 6 — Privacy Layer (6.1–6.7) — COMPLETE (v0.3.1, deployed 2026-03-19)
+
+**What it does:** Optional Tor/SOCKS5 proxy support in the Electron client. Users can route API traffic and BitTorrent tracker announces through a proxy to hide their IP.
+
+**Key files:**
+- **`client/src/main/proxyManager.ts`** — `getProxyAgent(settings)` returns SOCKS5 agent for Tor or custom proxy. `testProxyConnection()` verifies proxy works. Uses **dynamic `import("socks-proxy-agent")`** — see "ESM in asar" gotcha below.
+- **`client/src/main/torManager.ts`** — `startTor()`, `stopTor()`, `isTorRunning()`, `getTorStatus()`. Spawns `tor.exe` from extraResources, parses bootstrap progress, 60s timeout.
+- **`client/src/main/torrentManager.ts`** — Privacy-aware client: disables DHT/LSD/UTP, proxies tracker announces when SOCKS5 + `routeTorrentTraffic` enabled.
+- **`client/src/main/index.ts`** — IPC handlers: `privacy:get-settings`, `privacy:save-settings`, `privacy:get-status`, `privacy:test-connection`, `api:proxied-fetch`, `tor:start`, `tor:stop`, `tor:status`
+- **`client/src/renderer/pages/Settings.tsx`** — "Privacy & Network" section: radio group (Off/Tor/SOCKS5), SOCKS5 fields, routing checkboxes, test connection button, Tor bootstrap progress
+- **`client/src/renderer/api.ts`** — `shouldProxyApi()`, `proxiedApiFetch()`, `discoverOnionAddress()`, `getEffectiveApiBase()`
+- **`server/packages/shared/src/config.ts`** — `ONION_ADDRESS` optional Zod field
+- **`server/packages/relay/src/routes.ts`** — relay info includes `onion_address` when configured
+- **`docs/privacy.md`** — comprehensive privacy documentation
+- **`client/resources/tor/`** — placeholder for Tor Expert Bundle (tor.exe not committed, must be placed manually)
+
+**Critical gotcha — ESM-only packages in asar:**
+`socks-proxy-agent@9` and `agent-base@8` are ESM-only (their `exports` field only has an `"import"` condition, no `"require"`). The Electron main process compiles to CJS (`require()`). On a real filesystem Node 22's `require(esm)` handles this, but inside Electron's asar virtual filesystem it crashes with "No 'exports' main defined". **Fix:** Use `await import("socks-proxy-agent")` (dynamic import) instead of static `import { SocksProxyAgent } from "socks-proxy-agent"`. Dynamic `import()` always uses the ESM resolver even in CJS output. This made `getProxyAgent()` async — all callers use `await`.
+
+**Limitations:**
+- WebTorrent doesn't support SOCKS5 for peer-to-peer TCP connections — only tracker HTTP announces are proxied
+- Tor mode never routes torrent traffic (too slow for game downloads) — only API traffic
+- `tor.exe` must be manually placed in `client/resources/tor/` from the Tor Expert Bundle (not committed to repo)
+
+See `docs/handoff/phase-6-summary.md` and `docs/handoff/6.1.md` through `6.7.md` for full implementation details. See `DECENTRALIZATION_PLAN.md` for Phase 7 specs.
 
 ---
 
@@ -783,6 +813,7 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 - [x] Social features — profiles, follows, comments, moderation/mute (2026-03-18)
 - [x] Social tab / news feed — Twitter-like feed page with For You + Following tabs, compose box, paginated (2026-03-18)
 - [x] Seeding reputation — attestation events, logarithmic scoring, web of trust, top seeders UI (2026-03-18)
+- [x] Privacy Layer — Tor/SOCKS5 proxy in Electron client, privacy settings UI, .onion endpoint support (2026-03-19, v0.3.1)
 - [ ] Search / categories
 - [ ] Private opentracker instance + seed boxes
 - [ ] Code signing certificate for Windows installer (removes SmartScreen warning)
@@ -850,7 +881,7 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 | Build workflow (Electron) | `.github/workflows/build-client.yml` |
 | Electron build config | `client/package.json` (`"build"` field) |
 | Electron app icon | `client/resources/icon.ico` (placeholder — replace with real branding) |
-| GitHub Release (current) | https://github.com/EthanGeisler/peerplay/releases/tag/v0.2.1 |
+| GitHub Release (current) | https://github.com/EthanGeisler/peerplay/releases/tag/v0.3.1 |
 | Auto-update UI component | `client/src/renderer/components/UpdateBanner.tsx` |
 | Auto-update main process | `client/src/main/index.ts` (`setupAutoUpdater()`) |
 | Electron client API client | `client/src/renderer/api.ts` |
