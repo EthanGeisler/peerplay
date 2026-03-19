@@ -154,6 +154,15 @@ async function ensureValidToken(): Promise<string> {
 }
 
 /**
+ * Notify renderer that an upload is starting (before any bytes are sent).
+ */
+function emitUploadStarted(data: { entryId: string; filename: string; fileSize: number }): void {
+  if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+    mainWindowRef.webContents.send("locker:upload-started", data);
+  }
+}
+
+/**
  * Send upload progress to the renderer process.
  */
 function emitProgress(progress: UploadProgress): void {
@@ -814,6 +823,9 @@ export async function uploadFile(tags: string[] = []): Promise<LockerEntry | nul
   const stat = await fsp.stat(filePath);
   const fileSize = stat.size;
   const entryId = crypto.randomUUID();
+
+  // Notify renderer immediately so UI shows progress
+  emitUploadStarted({ entryId, filename, fileSize });
 
   // Check if this is a self-custody user
   const isSelfCustody = storeGet("custodyMode") === "SELF_CUSTODY";

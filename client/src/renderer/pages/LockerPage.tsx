@@ -170,6 +170,7 @@ export function LockerPage() {
   const setSelectedTags = useLockerStore((s) => s.setSelectedTags);
   const setSortField = useLockerStore((s) => s.setSortField);
   const setSortDir = useLockerStore((s) => s.setSortDir);
+  const handleUploadStarted = useLockerStore((s) => s.handleUploadStarted);
   const updateUploadProgress = useLockerStore((s) => s.updateUploadProgress);
   const updateDownloadProgress = useLockerStore((s) => s.updateDownloadProgress);
   const handleSyncUpdate = useLockerStore((s) => s.handleSyncUpdate);
@@ -264,6 +265,10 @@ export function LockerPage() {
     if (!user || listenersAttached.current) return;
     listenersAttached.current = true;
 
+    window.boilerdeck.locker.onUploadStarted((data) => {
+      handleUploadStarted(data);
+    });
+
     window.boilerdeck.locker.onUploadProgress((data) => {
       updateUploadProgress(data);
     });
@@ -277,12 +282,13 @@ export function LockerPage() {
     });
 
     return () => {
+      window.boilerdeck.locker.removeUploadStartedListener();
       window.boilerdeck.locker.removeUploadProgressListener();
       window.boilerdeck.locker.removeDownloadProgressListener();
       window.boilerdeck.locker.removeSyncUpdateListener();
       listenersAttached.current = false;
     };
-  }, [user, updateUploadProgress, updateDownloadProgress, handleSyncUpdate]);
+  }, [user, handleUploadStarted, updateUploadProgress, updateDownloadProgress, handleSyncUpdate]);
 
   // Start background sync
   useEffect(() => {

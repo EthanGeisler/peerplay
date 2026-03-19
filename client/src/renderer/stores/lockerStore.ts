@@ -111,6 +111,7 @@ interface LockerState {
   setSortField: (field: SortField) => void;
   setSortDir: (dir: SortDir) => void;
   refreshQuota: () => Promise<void>;
+  handleUploadStarted: (data: { entryId: string; filename: string; fileSize: number }) => void;
   updateUploadProgress: (data: { entryId: string; percent: number; bytesUploaded: number; bytesTotal: number }) => void;
   updateDownloadProgress: (data: { entryId: string; percent: number; bytesDownloaded: number; bytesTotal: number }) => void;
   handleSyncUpdate: (entries: LockerIndexEntry[]) => void;
@@ -236,11 +237,21 @@ export const useLockerStore = create<LockerState>((set, get) => ({
     try {
       const result = await window.boilerdeck.locker.uploadFile(token, tags);
       if (result) {
-        // Re-fetch entries to pick up the new one
+        // Remove from upload queue and refresh entries
+        set((s) => ({
+          uploadQueue: s.uploadQueue.filter((u) => u.id !== result.id),
+        }));
         await get().fetchEntries();
+      } else {
+        // User cancelled — clear any queue items that may have been added
+        set({ uploadQueue: [] });
       }
     } catch (err) {
-      set({ error: err instanceof Error ? err.message : "Upload failed" });
+      // Clear upload queue on failure
+      set({
+        uploadQueue: [],
+        error: err instanceof Error ? err.message : "Upload failed",
+      });
     }
   },
 
@@ -327,6 +338,22 @@ export const useLockerStore = create<LockerState>((set, get) => ({
     } catch {
       // Silently fail quota refresh
     }
+  },
+
+  handleUploadStarted: (data) => {
+    set((s) => {
+      // Avoid duplicates if event fires twice (StrictMode)
+      if (s.uploadQueue.some((u) => u.id === data.entryId)) return s;
+      return {
+        uploadQueue: [...s.uploadQueue, {
+          id: data.entryId,
+          filename: data.filename,
+          percent: 0,
+          bytesUploaded: 0,
+          bytesTotal: data.fileSize,
+        }],
+      };
+    });
   },
 
   updateUploadProgress: (data) => {

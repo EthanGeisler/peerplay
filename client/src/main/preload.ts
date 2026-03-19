@@ -286,6 +286,16 @@ contextBridge.exposeInMainWorld("boilerdeck", {
     }> => ipcRenderer.invoke("locker:get-shared-with-me", accessToken),
     revokeShare: (accessToken: string, shareId: string): Promise<{ success: boolean }> =>
       ipcRenderer.invoke("locker:revoke-share", accessToken, shareId),
+    onUploadStarted: (callback: (data: {
+      entryId: string;
+      filename: string;
+      fileSize: number;
+    }) => void): void => {
+      ipcRenderer.on("locker:upload-started", (_event, data) => callback(data));
+    },
+    removeUploadStartedListener: (): void => {
+      ipcRenderer.removeAllListeners("locker:upload-started");
+    },
     onUploadProgress: (callback: (data: {
       entryId: string;
       percent: number;
@@ -617,6 +627,12 @@ declare global {
           sharedFrom: Record<string, string>;
         }>;
         revokeShare: (accessToken: string, shareId: string) => Promise<{ success: boolean }>;
+        onUploadStarted: (callback: (data: {
+          entryId: string;
+          filename: string;
+          fileSize: number;
+        }) => void) => void;
+        removeUploadStartedListener: () => void;
         onUploadProgress: (callback: (data: {
           entryId: string;
           percent: number;

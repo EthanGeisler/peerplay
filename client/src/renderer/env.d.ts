@@ -204,6 +204,12 @@ declare global {
           sharedFrom: Record<string, string>;
         }>;
         revokeShare: (accessToken: string, shareId: string) => Promise<{ success: boolean }>;
+        onUploadStarted: (callback: (data: {
+          entryId: string;
+          filename: string;
+          fileSize: number;
+        }) => void) => void;
+        removeUploadStartedListener: () => void;
         onUploadProgress: (callback: (data: {
           entryId: string;
           percent: number;
