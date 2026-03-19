@@ -95,6 +95,7 @@
       ],
       "icon": "resources/icon.png",
       "category": "Game",
+      "artifactName": "BoilerDeck-${version}-${arch}.${ext}",
       "desktop": {
         "Name": "BoilerDeck",
         "Comment": "Decentralized game distribution powered by BitTorrent",
