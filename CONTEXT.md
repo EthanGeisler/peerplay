@@ -6,7 +6,7 @@
 
 ## What Is BoilerDeck?
 
-A **Steam competitor** that uses **BitTorrent for game file distribution** with a lightweight centralized backend for auth, payments, and metadata.
+A **multi-content marketplace** (games, videos, software, audio) that uses **BitTorrent for file distribution** with a lightweight centralized backend for auth, payments, and metadata.
 
 **Key value props:**
 - **99/1 revenue split** (developer/platform) — made possible by zero CDN costs (BitTorrent)
@@ -59,8 +59,8 @@ Fully functional REST API running on port **3001** (port 3000 is used by open-we
 | `saves` | Cloud save upload/download — **scaffolded but not implemented** | `src/index.ts` |
 
 **Database:** PostgreSQL 16 via Prisma ORM (`server/prisma/schema.prisma`)
-- 8 models: User, RefreshToken, Developer, Game, GameVersion, Torrent, License, Payment, SaveFile
-- 4 enums: UserRole, GameStatus, VersionStatus, LicenseStatus, PaymentStatus
+- 8 models: User, RefreshToken, Developer, Listing (@@map "games"), ListingVersion (@@map "game_versions"), Torrent, License, Payment, SaveFile
+- 5 enums: UserRole, ListingStatus (@@map "GameStatus"), VersionStatus, LicenseStatus, PaymentStatus, ContentType (GAME, VIDEO, SOFTWARE, AUDIO, OTHER)
 - All models use `@@map("snake_case")` for DB table names, PascalCase in code
 - BigInt columns (fileSizeBytes, sizeBytes) need `BigInt.prototype.toJSON` patch (in `shared/src/db.ts`)
 
@@ -631,6 +631,7 @@ See `CLAUDE.md` for updated conventions reflecting these changes.
 | 5.4 | Reputation aggregation service | DONE | Phase 5 batch |
 | 5.5 | Reputation display in UI | DONE | Phase 5 batch |
 | 5.6 | Web of trust weighting | DONE | Phase 5 batch |
+| 7.1–7.12 | Content generalization (Phase 7) | DONE | `e8284a3` |
 
 ### Implementation Workflow
 
@@ -774,7 +775,47 @@ See `docs/handoff/5.6.md` for latest implementation details.
 - Tor mode never routes torrent traffic (too slow for game downloads) — only API traffic
 - `tor.exe` must be manually placed in `client/resources/tor/` from the Tor Expert Bundle (not committed to repo)
 
-See `docs/handoff/phase-6-summary.md` and `docs/handoff/6.1.md` through `6.7.md` for full implementation details. See `DECENTRALIZATION_PLAN.md` for Phase 7 specs.
+See `docs/handoff/phase-6-summary.md` and `docs/handoff/6.1.md` through `6.7.md` for full implementation details.
+
+### Phase 7 COMPLETE — Content Generalization (deployed 2026-03-19)
+
+All 12 sub-tasks (7.1–7.12) implemented in a single commit (`e8284a3`), deployed as Batch C.
+
+**What changed — the naming layer:**
+- Prisma models renamed: `Game` → `Listing`, `GameVersion` → `ListingVersion`, `GameStatus` → `ListingStatus`
+- `@@map` preserves all DB table/column names — **zero SQL migration for the rename**, only one migration for adding the `content_type` enum column and `metadata` JSON column
+- FK field names (`gameId`) stay as-is with `@map("game_id")` — minimizes blast radius
+- All renamed functions/types have backwards-compatible aliases (e.g., `listPublishedGames = listPublishedListings`, `ApiGame = ApiListing`)
+- Old `/games` API routes kept working alongside new `/listings` routes
+
+**What changed — content type system:**
+- `ContentType` enum: `GAME`, `VIDEO`, `SOFTWARE`, `AUDIO`, `OTHER` (defaults to `GAME`)
+- `metadata` JSON field on Listing model (defaults to `{}`) — for future type-specific metadata
+- Server: `listPublishedListings()` accepts optional `contentType` filter; upload pipeline skips exe detection for non-GAME; multer accepts zip + media files
+- All 3 frontends: content type filter tabs on Store pages, content-type-aware detail pages (badges, conditional exe info), content type selector in editor forms (locked after creation), Copy Protection/ExeDetector only shown for GAME/SOFTWARE
+
+**New files:**
+- `client/src/main/mediaServer.ts` — local HTTP server for video streaming (Content-Range/206 Partial Content support)
+- `client/src/renderer/components/VideoPlayer.tsx` — HTML5 video player using IPC bridge to media server
+- `server/prisma/migrations/20260319011415_add_content_type_and_metadata/migration.sql`
+
+**New API routes (alongside existing `/games` routes):**
+- `GET /api/listings?contentType=GAME&limit=50` — filtered listing browse
+- `GET /api/listings/:slug` — listing detail
+- `POST /api/developer/listings` — create listing with optional `contentType`
+- `PUT /api/developer/listings/:id` — update listing
+- Full CRUD + upload + cover + publish/unpublish mirrored from `/developer/games`
+- `GET /api/listings/:slug/reviews` — redirects to `/games/:slug/reviews`
+
+**New IPC channels (Electron):**
+- `media:get-file-path` — scans install dir for media files (mp4/webm/mkv/mp3/wav/ogg/flac)
+- `media:start-server` — starts local media server, returns streaming URL
+
+**Upload script:** `scripts/upload-games.mjs` now uses `/developer/listings` routes and supports `contentType` in manifest.
+
+**Dev-portal:** Removed dead "Games" nav link (pointed to `/games` which had no route — catch-all redirected to Dashboard). Dashboard already shows "Your Listings".
+
+See `docs/handoff/phase-7-summary.md` for full details. See `DECENTRALIZATION_PLAN.md` for Phase 8 specs.
 
 ---
 
