@@ -184,6 +184,16 @@ export function Settings() {
   const [version, setVersion] = useState("...");
   const [installDir, setInstallDir] = useState("...");
 
+  // Identity & Keys state
+  const [hasIdentity, setHasIdentity] = useState(false);
+  const [pubkey, setPubkey] = useState<string | null>(null);
+  const [showMnemonic, setShowMnemonic] = useState(false);
+  const [mnemonic, setMnemonic] = useState<string | null>(null);
+  const [backedUp, setBackedUp] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [importInput, setImportInput] = useState("");
+  const [importError, setImportError] = useState<string | null>(null);
+
   // Update state
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>("idle");
   const [updateVersion, setUpdateVersion] = useState<string | null>(null);
@@ -212,6 +222,12 @@ export function Settings() {
   useEffect(() => {
     window.boilerdeck.platform.getVersion().then(setVersion);
     window.boilerdeck.platform.getInstallDir().then(setInstallDir);
+    window.boilerdeck.crypto.hasKey().then((has) => {
+      setHasIdentity(has);
+      if (has) {
+        window.boilerdeck.crypto.getPublicKey().then(setPubkey);
+      }
+    });
   }, []);
 
   // Attach updater listeners once
@@ -440,6 +456,156 @@ export function Settings() {
           </>
         ) : (
           <span style={styles.value}>Not signed in</span>
+        )}
+      </div>
+
+      {/* Identity & Keys */}
+      <div style={styles.section}>
+        <div style={styles.sectionTitle}>Identity &amp; Keys</div>
+
+        {!hasIdentity && !showMnemonic && (
+          <>
+            <p style={{ ...styles.value, marginBottom: 12 }}>
+              Generate a cryptographic identity to sign your activity on the network. This is independent of your account.
+            </p>
+            <button
+              style={styles.btnPrimary}
+              onClick={async () => {
+                const result = await window.boilerdeck.crypto.generateKeypair();
+                setMnemonic(result.mnemonic);
+                setPubkey(result.pubkeyHex);
+                setShowMnemonic(true);
+                setBackedUp(false);
+              }}
+            >
+              Generate Identity
+            </button>
+          </>
+        )}
+
+        {showMnemonic && mnemonic && (
+          <>
+            <p style={{ ...styles.label, marginBottom: 8 }}>
+              Write down your recovery phrase and store it somewhere safe:
+            </p>
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr 1fr",
+              gap: 8,
+              marginBottom: 16,
+              padding: 16,
+              backgroundColor: "#0d1b2a",
+              borderRadius: 4,
+              border: "1px solid #0f3460",
+            }}>
+              {mnemonic.split(" ").map((word, i) => (
+                <div key={i} style={{
+                  fontFamily: "monospace",
+                  fontSize: 14,
+                  color: "#e0e0e0",
+                  padding: "4px 8px",
+                }}>
+                  <span style={{ color: "#888", marginRight: 6 }}>{i + 1}.</span>
+                  {word}
+                </div>
+              ))}
+            </div>
+            <label style={{ ...styles.checkboxRow, marginBottom: 12 }}>
+              <input
+                type="checkbox"
+                checked={backedUp}
+                onChange={(e) => setBackedUp(e.target.checked)}
+              />
+              I have written down my recovery phrase
+            </label>
+            <button
+              style={{
+                ...styles.btnPrimary,
+                opacity: backedUp ? 1 : 0.4,
+                cursor: backedUp ? "pointer" : "not-allowed",
+              }}
+              disabled={!backedUp}
+              onClick={() => {
+                setShowMnemonic(false);
+                setMnemonic(null);
+                setHasIdentity(true);
+              }}
+            >
+              Continue
+            </button>
+          </>
+        )}
+
+        {hasIdentity && !showMnemonic && pubkey && (
+          <>
+            <div style={styles.row}>
+              <span style={styles.label}>Public Key</span>
+              <span style={{ ...styles.value, fontFamily: "monospace" }}>
+                {pubkey.slice(0, 8)}...{pubkey.slice(-8)}
+              </span>
+            </div>
+            <div style={styles.row}>
+              <span style={styles.label}>Status</span>
+              <span style={{ fontSize: 14, color: "#3fb950", fontWeight: 600 }}>Active</span>
+            </div>
+
+            {!showImport && (
+              <div style={{ marginTop: 12 }}>
+                <button
+                  style={styles.btn}
+                  onClick={() => { setShowImport(true); setImportError(null); setImportInput(""); }}
+                >
+                  Import Recovery Phrase
+                </button>
+              </div>
+            )}
+
+            {showImport && (
+              <div style={{ marginTop: 12 }}>
+                <div style={styles.inputRow}>
+                  <input
+                    type="text"
+                    style={styles.inputField}
+                    value={importInput}
+                    placeholder="Enter 12-word recovery phrase"
+                    onChange={(e) => { setImportInput(e.target.value); setImportError(null); }}
+                  />
+                  <button
+                    style={styles.btnPrimary}
+                    onClick={async () => {
+                      const words = importInput.trim().split(/\s+/);
+                      if (words.length !== 12) {
+                        setImportError("Recovery phrase must be exactly 12 words.");
+                        return;
+                      }
+                      try {
+                        const result = await window.boilerdeck.crypto.importMnemonic(importInput.trim());
+                        setPubkey(result.pubkeyHex);
+                        setShowImport(false);
+                        setImportInput("");
+                        setImportError(null);
+                      } catch (err: unknown) {
+                        setImportError(err instanceof Error ? err.message : "Import failed");
+                      }
+                    }}
+                  >
+                    Import
+                  </button>
+                  <button
+                    style={styles.btn}
+                    onClick={() => { setShowImport(false); setImportError(null); }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+                {importError && <div style={styles.errorText}>{importError}</div>}
+              </div>
+            )}
+
+            <div style={styles.infoBox}>
+              Your recovery phrase was shown when you generated your identity. It cannot be retrieved from this device.
+            </div>
+          </>
         )}
       </div>
 
