@@ -74,6 +74,8 @@ model User {
   payments        Payment[]
   saveFiles       SaveFile[]
   refreshTokens   RefreshToken[]
+  lockerFiles     LockerFile[]
+  lockerQuota     LockerQuota?
 
   @@map("users")
 }
@@ -275,4 +277,31 @@ model FederatedListing {
   @@index([slug])
   @@index([creatorPubkey])
   @@map("federated_listings")
+}
+
+model LockerFile {
+  id          String    @id @default(uuid())
+  userId      String    @map("user_id")
+  entryId     String    @unique @map("entry_id")
+  filename    String
+  size        BigInt
+  infoHash    String    @map("info_hash")
+  torrentPath String    @map("torrent_path")
+  filePath    String    @map("file_path")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  deletedAt   DateTime? @map("deleted_at")
+  user        User      @relation(fields: [userId], references: [id])
+
+  @@map("locker_files")
+  @@index([userId])
+}
+
+model LockerQuota {
+  id        String @id @default(uuid())
+  userId    String @unique @map("user_id")
+  usedBytes BigInt @default(0) @map("used_bytes")
+  maxBytes  BigInt @map("max_bytes")
+  user      User   @relation(fields: [userId], references: [id])
+
+  @@map("locker_quotas")
 }

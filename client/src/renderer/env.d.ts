@@ -119,6 +119,107 @@ declare global {
         getFilePath: (installPath: string) => Promise<string | null>;
         startServer: (dir: string, fileName: string) => Promise<string>;
       };
+      locker: {
+        uploadFile: (accessToken: string, tags?: string[]) => Promise<{
+          id: string;
+          filename: string;
+          size: number;
+          mimeType: string;
+          sha256: string;
+          infoHash: string;
+          magnetUri: string;
+          createdAt: number;
+          tags: string[];
+          version: number;
+        } | null>;
+        uploadDirectory: (accessToken: string, tags?: string[]) => Promise<{
+          id: string;
+          filename: string;
+          size: number;
+          mimeType: string;
+          sha256: string;
+          infoHash: string;
+          magnetUri: string;
+          createdAt: number;
+          tags: string[];
+          version: number;
+        } | null>;
+        getEntries: (accessToken: string) => Promise<{
+          entries: Array<{
+            id: string;
+            filename: string;
+            size: number;
+            mimeType: string;
+            sha256: string;
+            infoHash: string;
+            magnetUri: string;
+            createdAt: number;
+            tags: string[];
+            version: number;
+          }>;
+          quota: { used: number; max: number };
+        }>;
+        deleteEntry: (accessToken: string, entryId: string) => Promise<void>;
+        downloadEntry: (accessToken: string, entryId: string, downloadPath?: string) => Promise<string>;
+        startSync: (accessToken: string) => Promise<{ success: boolean }>;
+        stopSync: () => Promise<{ success: boolean }>;
+        getLocalEntries: () => Promise<Array<{
+          entryId: string;
+          filename: string;
+          size: number;
+          mimeType: string;
+          sha256: string;
+          infoHash: string;
+          magnetUri: string;
+          tags: string[];
+          downloadStatus: "available" | "downloading" | "downloaded" | "seeding" | "error";
+          localPath: string | null;
+          lastSynced: number;
+          createdAt: number;
+          version: number;
+        }>>;
+        setAutoDownload: (enabled: boolean) => Promise<{ success: boolean }>;
+        getSettings: () => Promise<{
+          autoDownload: boolean;
+          downloadPath: string;
+          seedAfterDownload: boolean;
+        }>;
+        setDownloadPath: (newPath: string) => Promise<{ success: boolean }>;
+        openFile: (filePath: string) => Promise<{ success: boolean; error?: string }>;
+        showInFolder: (filePath: string) => Promise<{ success: boolean }>;
+        onUploadProgress: (callback: (data: {
+          entryId: string;
+          percent: number;
+          bytesUploaded: number;
+          bytesTotal: number;
+        }) => void) => void;
+        removeUploadProgressListener: () => void;
+        onDownloadProgress: (callback: (data: {
+          entryId: string;
+          percent: number;
+          bytesDownloaded: number;
+          bytesTotal: number;
+        }) => void) => void;
+        removeDownloadProgressListener: () => void;
+        onSyncUpdate: (callback: (data: {
+          entries: Array<{
+            entryId: string;
+            filename: string;
+            size: number;
+            mimeType: string;
+            sha256: string;
+            infoHash: string;
+            magnetUri: string;
+            tags: string[];
+            downloadStatus: "available" | "downloading" | "downloaded" | "seeding" | "error";
+            localPath: string | null;
+            lastSynced: number;
+            createdAt: number;
+            version: number;
+          }>;
+        }) => void) => void;
+        removeSyncUpdateListener: () => void;
+      };
       shell: {
         openExternal: (url: string) => Promise<void>;
       };

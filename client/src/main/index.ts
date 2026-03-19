@@ -9,6 +9,7 @@ import * as relayManager from "./relayManager.js";
 import { testProxyConnection, getProxyAgent } from "./proxyManager.js";
 import * as torManagerModule from "./torManager.js";
 import * as keyManager from "./keyManager.js";
+import * as lockerManager from "./lockerManager.js";
 import * as https from "node:https";
 import * as http from "node:http";
 import * as fsp from "node:fs/promises";
@@ -517,6 +518,75 @@ function setupIpcHandlers(): void {
     }
   });
 
+  // --- Locker (data locker operations) ---
+  ipcMain.handle("locker:upload-file", async (_event, accessToken: string, tags?: string[]) => {
+    lockerManager.setAccessToken(accessToken);
+    return lockerManager.uploadFile(tags ?? []);
+  });
+
+  ipcMain.handle("locker:upload-directory", async (_event, accessToken: string, tags?: string[]) => {
+    lockerManager.setAccessToken(accessToken);
+    return lockerManager.uploadDirectory(tags ?? []);
+  });
+
+  ipcMain.handle("locker:get-entries", async (_event, accessToken: string) => {
+    lockerManager.setAccessToken(accessToken);
+    return lockerManager.getEntries();
+  });
+
+  ipcMain.handle("locker:delete-entry", async (_event, accessToken: string, entryId: string) => {
+    lockerManager.setAccessToken(accessToken);
+    return lockerManager.deleteEntry(entryId);
+  });
+
+  ipcMain.handle("locker:download-entry", async (_event, accessToken: string, entryId: string, downloadPath?: string) => {
+    lockerManager.setAccessToken(accessToken);
+    return lockerManager.downloadEntry(entryId, downloadPath);
+  });
+
+  // --- Locker sync & settings ---
+  ipcMain.handle("locker:start-sync", async (_event, accessToken: string) => {
+    lockerManager.setAccessToken(accessToken);
+    await lockerManager.startLockerSync();
+    return { success: true };
+  });
+
+  ipcMain.handle("locker:stop-sync", async () => {
+    lockerManager.stopLockerSync();
+    return { success: true };
+  });
+
+  ipcMain.handle("locker:get-local-entries", () => {
+    return lockerManager.getLocalEntries();
+  });
+
+  ipcMain.handle("locker:set-auto-download", (_event, enabled: boolean) => {
+    lockerManager.setAutoDownload(enabled);
+    return { success: true };
+  });
+
+  ipcMain.handle("locker:get-settings", () => {
+    return lockerManager.getLockerSettings();
+  });
+
+  ipcMain.handle("locker:set-download-path", (_event, newPath: string) => {
+    lockerManager.setDownloadPath(newPath);
+    return { success: true };
+  });
+
+  ipcMain.handle("locker:open-file", async (_event, filePath: string) => {
+    const errorMsg = await lockerManager.openFile(filePath);
+    if (errorMsg) {
+      return { success: false, error: errorMsg };
+    }
+    return { success: true };
+  });
+
+  ipcMain.handle("locker:show-in-folder", (_event, filePath: string) => {
+    lockerManager.showInFolder(filePath);
+    return { success: true };
+  });
+
   // --- Media (video/audio playback) ---
   const MEDIA_EXTS = new Set([".mp4", ".webm", ".mkv", ".mp3", ".wav", ".ogg", ".flac"]);
 
@@ -611,6 +681,7 @@ app.whenReady().then(() => {
     torrentManager.setMainWindow(mainWindow);
     relayManager.setMainWindow(mainWindow);
     torManagerModule.setMainWindow(mainWindow);
+    lockerManager.setMainWindow(mainWindow);
   }
   setupAutoUpdater();
 
@@ -629,6 +700,7 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   torrentManager.destroyClient();
+  lockerManager.stopLockerSync();
   if (torManagerModule.isTorRunning()) {
     torManagerModule.stopTor().catch((err) => {
       console.error("[tor] Error stopping Tor on quit:", err);

@@ -8,7 +8,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
+import { db } from "@boilerdeck/shared";
 import { getLockerConfig } from "./config.js";
+
+// Default max bytes: 50 GB
+const DEFAULT_MAX_BYTES = BigInt(50) * BigInt(1024) * BigInt(1024) * BigInt(1024); // 53687091200
 
 // ─── Directory helpers ──────────────────────────────────────────────
 
@@ -150,4 +154,64 @@ export async function entryExists(userId: string, entryId: string): Promise<bool
   } catch {
     return false;
   }
+}
+
+// ─── DB-based quota ────────────────────────────────────────────────
+
+export interface QuotaInfo {
+  used: bigint;
+  max: bigint;
+}
+
+/**
+ * Get a user's storage quota from the database.
+ * Creates a default quota record if one doesn't exist.
+ */
+export async function getQuota(userId: string): Promise<QuotaInfo> {
+  const quota = await db.lockerQuota.upsert({
+    where: { userId },
+    create: {
+      userId,
+      usedBytes: BigInt(0),
+      maxBytes: DEFAULT_MAX_BYTES,
+    },
+    update: {},
+  });
+
+  return {
+    used: quota.usedBytes,
+    max: quota.maxBytes,
+  };
+}
+
+/**
+ * Increment quota usage after a successful upload.
+ */
+export async function incrementQuota(userId: string, fileSize: bigint): Promise<void> {
+  await db.lockerQuota.upsert({
+    where: { userId },
+    create: {
+      userId,
+      usedBytes: fileSize,
+      maxBytes: DEFAULT_MAX_BYTES,
+    },
+    update: {
+      usedBytes: { increment: fileSize },
+    },
+  });
+}
+
+/**
+ * Decrement quota usage after a deletion.
+ */
+export async function decrementQuota(userId: string, fileSize: bigint): Promise<void> {
+  const quota = await db.lockerQuota.findUnique({ where: { userId } });
+  if (!quota) return;
+
+  // Prevent going below zero
+  const newUsed = quota.usedBytes - fileSize;
+  await db.lockerQuota.update({
+    where: { userId },
+    data: { usedBytes: newUsed < BigInt(0) ? BigInt(0) : newUsed },
+  });
 }

@@ -191,6 +191,128 @@ contextBridge.exposeInMainWorld("boilerdeck", {
       ipcRenderer.invoke("media:start-server", dir, fileName),
   },
 
+  locker: {
+    uploadFile: (accessToken: string, tags?: string[]): Promise<{
+      id: string;
+      filename: string;
+      size: number;
+      mimeType: string;
+      sha256: string;
+      infoHash: string;
+      magnetUri: string;
+      createdAt: number;
+      tags: string[];
+      version: number;
+    } | null> => ipcRenderer.invoke("locker:upload-file", accessToken, tags),
+    uploadDirectory: (accessToken: string, tags?: string[]): Promise<{
+      id: string;
+      filename: string;
+      size: number;
+      mimeType: string;
+      sha256: string;
+      infoHash: string;
+      magnetUri: string;
+      createdAt: number;
+      tags: string[];
+      version: number;
+    } | null> => ipcRenderer.invoke("locker:upload-directory", accessToken, tags),
+    getEntries: (accessToken: string): Promise<{
+      entries: Array<{
+        id: string;
+        filename: string;
+        size: number;
+        mimeType: string;
+        sha256: string;
+        infoHash: string;
+        magnetUri: string;
+        createdAt: number;
+        tags: string[];
+        version: number;
+      }>;
+      quota: { used: number; max: number };
+    }> => ipcRenderer.invoke("locker:get-entries", accessToken),
+    deleteEntry: (accessToken: string, entryId: string): Promise<void> =>
+      ipcRenderer.invoke("locker:delete-entry", accessToken, entryId),
+    downloadEntry: (accessToken: string, entryId: string, downloadPath?: string): Promise<string> =>
+      ipcRenderer.invoke("locker:download-entry", accessToken, entryId, downloadPath),
+    startSync: (accessToken: string): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke("locker:start-sync", accessToken),
+    stopSync: (): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke("locker:stop-sync"),
+    getLocalEntries: (): Promise<Array<{
+      entryId: string;
+      filename: string;
+      size: number;
+      mimeType: string;
+      sha256: string;
+      infoHash: string;
+      magnetUri: string;
+      tags: string[];
+      downloadStatus: "available" | "downloading" | "downloaded" | "seeding" | "error";
+      localPath: string | null;
+      lastSynced: number;
+      createdAt: number;
+      version: number;
+    }>> => ipcRenderer.invoke("locker:get-local-entries"),
+    setAutoDownload: (enabled: boolean): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke("locker:set-auto-download", enabled),
+    getSettings: (): Promise<{
+      autoDownload: boolean;
+      downloadPath: string;
+      seedAfterDownload: boolean;
+    }> => ipcRenderer.invoke("locker:get-settings"),
+    setDownloadPath: (newPath: string): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke("locker:set-download-path", newPath),
+    openFile: (filePath: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke("locker:open-file", filePath),
+    showInFolder: (filePath: string): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke("locker:show-in-folder", filePath),
+    onUploadProgress: (callback: (data: {
+      entryId: string;
+      percent: number;
+      bytesUploaded: number;
+      bytesTotal: number;
+    }) => void): void => {
+      ipcRenderer.on("locker:upload-progress", (_event, data) => callback(data));
+    },
+    removeUploadProgressListener: (): void => {
+      ipcRenderer.removeAllListeners("locker:upload-progress");
+    },
+    onDownloadProgress: (callback: (data: {
+      entryId: string;
+      percent: number;
+      bytesDownloaded: number;
+      bytesTotal: number;
+    }) => void): void => {
+      ipcRenderer.on("locker:download-progress", (_event, data) => callback(data));
+    },
+    removeDownloadProgressListener: (): void => {
+      ipcRenderer.removeAllListeners("locker:download-progress");
+    },
+    onSyncUpdate: (callback: (data: {
+      entries: Array<{
+        entryId: string;
+        filename: string;
+        size: number;
+        mimeType: string;
+        sha256: string;
+        infoHash: string;
+        magnetUri: string;
+        tags: string[];
+        downloadStatus: "available" | "downloading" | "downloaded" | "seeding" | "error";
+        localPath: string | null;
+        lastSynced: number;
+        createdAt: number;
+        version: number;
+      }>;
+    }) => void): void => {
+      ipcRenderer.on("locker:sync-update", (_event, data) => callback(data));
+    },
+    removeSyncUpdateListener: (): void => {
+      ipcRenderer.removeAllListeners("locker:sync-update");
+    },
+  },
+
   shell: {
     openExternal: (url: string): Promise<void> =>
       ipcRenderer.invoke("shell:open-external", url),
@@ -366,6 +488,107 @@ declare global {
       media: {
         getFilePath: (installPath: string) => Promise<string | null>;
         startServer: (dir: string, fileName: string) => Promise<string>;
+      };
+      locker: {
+        uploadFile: (accessToken: string, tags?: string[]) => Promise<{
+          id: string;
+          filename: string;
+          size: number;
+          mimeType: string;
+          sha256: string;
+          infoHash: string;
+          magnetUri: string;
+          createdAt: number;
+          tags: string[];
+          version: number;
+        } | null>;
+        uploadDirectory: (accessToken: string, tags?: string[]) => Promise<{
+          id: string;
+          filename: string;
+          size: number;
+          mimeType: string;
+          sha256: string;
+          infoHash: string;
+          magnetUri: string;
+          createdAt: number;
+          tags: string[];
+          version: number;
+        } | null>;
+        getEntries: (accessToken: string) => Promise<{
+          entries: Array<{
+            id: string;
+            filename: string;
+            size: number;
+            mimeType: string;
+            sha256: string;
+            infoHash: string;
+            magnetUri: string;
+            createdAt: number;
+            tags: string[];
+            version: number;
+          }>;
+          quota: { used: number; max: number };
+        }>;
+        deleteEntry: (accessToken: string, entryId: string) => Promise<void>;
+        downloadEntry: (accessToken: string, entryId: string, downloadPath?: string) => Promise<string>;
+        startSync: (accessToken: string) => Promise<{ success: boolean }>;
+        stopSync: () => Promise<{ success: boolean }>;
+        getLocalEntries: () => Promise<Array<{
+          entryId: string;
+          filename: string;
+          size: number;
+          mimeType: string;
+          sha256: string;
+          infoHash: string;
+          magnetUri: string;
+          tags: string[];
+          downloadStatus: "available" | "downloading" | "downloaded" | "seeding" | "error";
+          localPath: string | null;
+          lastSynced: number;
+          createdAt: number;
+          version: number;
+        }>>;
+        setAutoDownload: (enabled: boolean) => Promise<{ success: boolean }>;
+        getSettings: () => Promise<{
+          autoDownload: boolean;
+          downloadPath: string;
+          seedAfterDownload: boolean;
+        }>;
+        setDownloadPath: (newPath: string) => Promise<{ success: boolean }>;
+        openFile: (filePath: string) => Promise<{ success: boolean; error?: string }>;
+        showInFolder: (filePath: string) => Promise<{ success: boolean }>;
+        onUploadProgress: (callback: (data: {
+          entryId: string;
+          percent: number;
+          bytesUploaded: number;
+          bytesTotal: number;
+        }) => void) => void;
+        removeUploadProgressListener: () => void;
+        onDownloadProgress: (callback: (data: {
+          entryId: string;
+          percent: number;
+          bytesDownloaded: number;
+          bytesTotal: number;
+        }) => void) => void;
+        removeDownloadProgressListener: () => void;
+        onSyncUpdate: (callback: (data: {
+          entries: Array<{
+            entryId: string;
+            filename: string;
+            size: number;
+            mimeType: string;
+            sha256: string;
+            infoHash: string;
+            magnetUri: string;
+            tags: string[];
+            downloadStatus: "available" | "downloading" | "downloaded" | "seeding" | "error";
+            localPath: string | null;
+            lastSynced: number;
+            createdAt: number;
+            version: number;
+          }>;
+        }) => void) => void;
+        removeSyncUpdateListener: () => void;
       };
       shell: {
         openExternal: (url: string) => Promise<void>;

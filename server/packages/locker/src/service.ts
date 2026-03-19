@@ -30,7 +30,6 @@ import {
 import { signEventForUser } from "@boilerdeck/auth";
 import { nip44Encrypt, nip44Decrypt } from "@boilerdeck/auth";
 import { createTorrent } from "@boilerdeck/torrent";
-import { getLockerConfig } from "./config.js";
 import * as storage from "./storage.js";
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -264,16 +263,18 @@ export async function uploadFile(
   fileSize: number,
   userTags: string[] = [],
 ): Promise<UploadResult> {
-  const config = getLockerConfig();
   const entryId = uuidv4();
 
-  // Check quota (filesystem-based for now, Prisma tracking in 9.4)
-  const usedBytes = await storage.getUserStorageBytes(userId);
-  const maxBytes = config.LOCKER_QUOTA_GB * 1024 * 1024 * 1024;
-  if (usedBytes + fileSize > maxBytes) {
+  // Check quota (DB-based)
+  const fileSizeBig = BigInt(fileSize);
+  const quota = await storage.getQuota(userId);
+  if (quota.used + fileSizeBig > quota.max) {
+    const usedMB = Number(quota.used / BigInt(1024 * 1024));
+    const maxGB = Number(quota.max / BigInt(1024 * 1024 * 1024));
+    const fileMB = Math.round(fileSize / (1024 * 1024));
     throw new ForbiddenError(
-      `Storage quota exceeded. Used: ${Math.round(usedBytes / (1024 * 1024))} MB, ` +
-      `Max: ${config.LOCKER_QUOTA_GB} GB, File: ${Math.round(fileSize / (1024 * 1024))} MB`,
+      `Storage quota exceeded. Used: ${usedMB} MB, ` +
+      `Max: ${maxGB} GB, File: ${fileMB} MB`,
     );
   }
 
@@ -291,7 +292,7 @@ export async function uploadFile(
   const { torrentBuffer, infoHash, magnetUri } = await createTorrent(entryDir, entryId);
 
   // 5. Save .torrent file
-  await storage.saveTorrentFile(userId, entryId, torrentBuffer);
+  const torrentPath = await storage.saveTorrentFile(userId, entryId, torrentBuffer);
 
   // 6. Send to Transmission (non-blocking, non-fatal)
   addToTransmission(torrentBuffer, storage.getUserDir(userId)).catch((err) => {
@@ -328,6 +329,20 @@ export async function uploadFile(
 
   // Store the event
   await storeEvent(event);
+
+  // 10. Create LockerFile record and update quota in DB
+  await db.lockerFile.create({
+    data: {
+      userId,
+      entryId,
+      filename: originalFilename,
+      size: fileSizeBig,
+      infoHash,
+      torrentPath,
+      filePath,
+    },
+  });
+  await storage.incrementQuota(userId, fileSizeBig);
 
   return {
     entryId,
@@ -368,16 +383,14 @@ export async function listEntries(userId: string): Promise<ListResult> {
     }
   }
 
-  // Compute quota (filesystem-based for now)
-  const config = getLockerConfig();
-  const usedBytes = await storage.getUserStorageBytes(userId);
-  const maxBytes = config.LOCKER_QUOTA_GB * 1024 * 1024 * 1024;
+  // Compute quota (DB-based)
+  const quota = await storage.getQuota(userId);
 
   return {
     entries,
     quota: {
-      used: usedBytes,
-      max: maxBytes,
+      used: Number(quota.used),
+      max: Number(quota.max),
     },
   };
 }
@@ -439,6 +452,16 @@ export async function deleteEntry(
     removeFromTransmission(infoHash).catch((err) => {
       console.warn(`[locker] Failed to remove torrent ${infoHash} from Transmission:`, err);
     });
+  }
+
+  // Soft-delete the LockerFile record and decrement quota
+  const lockerFile = await db.lockerFile.findUnique({ where: { entryId } });
+  if (lockerFile) {
+    await db.lockerFile.update({
+      where: { entryId },
+      data: { deletedAt: new Date() },
+    });
+    await storage.decrementQuota(userId, lockerFile.size);
   }
 
   // Mark files for cleanup (actual deletion in Phase 9.10 cron)
