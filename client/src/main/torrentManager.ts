@@ -73,7 +73,7 @@ async function getClient(privacyActive?: boolean): Promise<any> {
 
     if (wantPrivacy) {
       const settings = getPrivacySettings();
-      const agent = getProxyAgent(settings);
+      const agent = await getProxyAgent(settings);
 
       // Disable DHT and LSD — both use UDP and leak the real IP
       clientOpts.dht = false;

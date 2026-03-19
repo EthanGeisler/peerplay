@@ -105,7 +105,7 @@ export function App() {
 
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <a
-            href="/downloads/BoilerDeck%20Setup%200.3.0.exe"
+            href="/downloads/BoilerDeck%20Setup%200.3.1.exe"
             download
             style={{
               display: "flex",
@@ -211,7 +211,7 @@ export function App() {
           color: "var(--text-muted)",
         }}
       >
-        BoilerDeck v0.3.0 — Decentralized game distribution. 99/1 revenue split.
+        BoilerDeck v0.3.1 — Decentralized game distribution. 99/1 revenue split.
         Built with BitTorrent.
       </footer>
     </div>

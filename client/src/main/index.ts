@@ -329,7 +329,7 @@ function setupIpcHandlers(): void {
     const settings = stored ?? DEFAULT_PRIVACY_SETTINGS;
 
     const agent = (settings.mode !== "off" && settings.routeApiTraffic)
-      ? getProxyAgent(settings)
+      ? await getProxyAgent(settings)
       : undefined;
 
     const parsedUrl = new URL(opts.url);

@@ -1,4 +1,3 @@
-import { SocksProxyAgent } from "socks-proxy-agent";
 import * as https from "node:https";
 import * as http from "node:http";
 import type { PrivacySettings } from "./store.js";
@@ -7,17 +6,23 @@ const TOR_PROXY_URL = "socks5h://127.0.0.1:9150";
 const TEST_URL = "https://boilerdeck.com/api/health";
 const TEST_TIMEOUT_MS = 10_000;
 
+// Dynamic import to avoid CJS require() of ESM-only socks-proxy-agent inside asar
+async function createSocksProxyAgent(url: string): Promise<http.Agent> {
+  const { SocksProxyAgent } = await import("socks-proxy-agent");
+  return new SocksProxyAgent(url) as unknown as http.Agent;
+}
+
 /**
  * Returns an http.Agent configured for the active proxy, or undefined if off.
  * Uses socks5h:// so DNS resolves through the proxy (important for Tor).
  */
-export function getProxyAgent(settings: PrivacySettings): http.Agent | undefined {
+export async function getProxyAgent(settings: PrivacySettings): Promise<http.Agent | undefined> {
   if (settings.mode === "off") {
     return undefined;
   }
 
   if (settings.mode === "tor") {
-    return new SocksProxyAgent(TOR_PROXY_URL) as unknown as http.Agent;
+    return createSocksProxyAgent(TOR_PROXY_URL);
   }
 
   // socks5 mode — build URL with optional auth
@@ -32,7 +37,7 @@ export function getProxyAgent(settings: PrivacySettings): http.Agent | undefined
     proxyUrl = `socks5h://${socksHost}:${socksPort}`;
   }
 
-  return new SocksProxyAgent(proxyUrl) as unknown as http.Agent;
+  return createSocksProxyAgent(proxyUrl);
 }
 
 interface TestSuccess {
@@ -59,7 +64,7 @@ export async function testProxyConnection(settings: PrivacySettings): Promise<Te
 
   let agent: http.Agent;
   try {
-    const maybeAgent = getProxyAgent(settings);
+    const maybeAgent = await getProxyAgent(settings);
     if (!maybeAgent) {
       return { success: false, error: "Failed to create proxy agent" };
     }
