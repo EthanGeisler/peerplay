@@ -67,6 +67,17 @@ contextBridge.exposeInMainWorld("boilerdeck", {
       ipcRenderer.invoke("events:cache-relay-keys", keys),
   },
 
+  relays: {
+    list: (): Promise<Array<{ url: string; name: string; isDefault: boolean; enabled: boolean }>> =>
+      ipcRenderer.invoke("relays:list"),
+    add: (url: string): Promise<Array<{ url: string; name: string; isDefault: boolean; enabled: boolean }>> =>
+      ipcRenderer.invoke("relays:add", url),
+    remove: (url: string): Promise<{ error?: string } | Array<{ url: string; name: string; isDefault: boolean; enabled: boolean }>> =>
+      ipcRenderer.invoke("relays:remove", url),
+    toggle: (url: string, enabled: boolean): Promise<Array<{ url: string; name: string; isDefault: boolean; enabled: boolean }>> =>
+      ipcRenderer.invoke("relays:toggle", url, enabled),
+  },
+
   relay: {
     connect: (url: string): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke("relay:connect", url),
@@ -255,6 +266,12 @@ declare global {
           body: string;
         }) => Promise<unknown>;
         cacheRelayKeys: (keys: { pubkey: string; privkey: string }) => Promise<{ success: boolean }>;
+      };
+      relays: {
+        list: () => Promise<Array<{ url: string; name: string; isDefault: boolean; enabled: boolean }>>;
+        add: (url: string) => Promise<Array<{ url: string; name: string; isDefault: boolean; enabled: boolean }>>;
+        remove: (url: string) => Promise<{ error?: string } | Array<{ url: string; name: string; isDefault: boolean; enabled: boolean }>>;
+        toggle: (url: string, enabled: boolean) => Promise<Array<{ url: string; name: string; isDefault: boolean; enabled: boolean }>>;
       };
       relay: {
         connect: (url: string) => Promise<{ success: boolean; error?: string }>;

@@ -219,9 +219,17 @@ export function Settings() {
   const torListenerAttached = useRef(false);
   const privacyLoaded = useRef(false);
 
+  // Relay management state
+  type RelayEntry = { url: string; name: string; isDefault: boolean; enabled: boolean };
+  const [relayList, setRelayList] = useState<RelayEntry[]>([]);
+  const [newRelayUrl, setNewRelayUrl] = useState("");
+  const [relayAddError, setRelayAddError] = useState<string | null>(null);
+  const [relayAdding, setRelayAdding] = useState(false);
+
   useEffect(() => {
     window.boilerdeck.platform.getVersion().then(setVersion);
     window.boilerdeck.platform.getInstallDir().then(setInstallDir);
+    window.boilerdeck.relays.list().then(setRelayList);
     window.boilerdeck.crypto.hasKey().then((has) => {
       setHasIdentity(has);
       if (has) {
@@ -852,6 +860,102 @@ export function Settings() {
         <div style={styles.infoBox}>
           Tor hides your identity from the BoilerDeck server. For private game downloads at full speed,
           use a VPN provider's SOCKS5 proxy (PIA, Mullvad, NordVPN, etc.).
+        </div>
+      </div>
+
+      {/* Relays */}
+      <div style={styles.section}>
+        <div style={styles.sectionTitle}>Relays</div>
+
+        {/* Relay list */}
+        {relayList.map((relay) => (
+          <div key={relay.url} style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "8px 0",
+            borderBottom: "1px solid #0f3460",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
+              <div style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                backgroundColor: relay.enabled ? "#3fb950" : "#555",
+                flexShrink: 0,
+              }} />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "#e0e0e0" }}>{relay.name}</div>
+                <div style={{ fontSize: 12, fontFamily: "monospace", color: "#888", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{relay.url}</div>
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#888", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={relay.enabled}
+                  onChange={async (e) => {
+                    const updated = await window.boilerdeck.relays.toggle(relay.url, e.target.checked);
+                    setRelayList(updated);
+                  }}
+                />
+                {relay.enabled ? "Enabled" : "Disabled"}
+              </label>
+              {!relay.isDefault && (
+                <button
+                  style={{ ...styles.btn, color: "#e94560", borderColor: "#e94560", padding: "2px 8px", fontSize: 12 }}
+                  onClick={async () => {
+                    const result = await window.boilerdeck.relays.remove(relay.url);
+                    if (Array.isArray(result)) {
+                      setRelayList(result);
+                    }
+                  }}
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+
+        {/* Add Relay */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
+          <input
+            type="text"
+            style={{ ...styles.inputField, flex: 1 }}
+            value={newRelayUrl}
+            placeholder="wss://relay.example.com"
+            onChange={(e) => { setNewRelayUrl(e.target.value); setRelayAddError(null); }}
+          />
+          <button
+            style={{
+              ...styles.btnPrimary,
+              opacity: relayAdding ? 0.5 : 1,
+              cursor: relayAdding ? "not-allowed" : "pointer",
+            }}
+            disabled={relayAdding}
+            onClick={async () => {
+              if (!newRelayUrl.trim()) return;
+              setRelayAdding(true);
+              setRelayAddError(null);
+              try {
+                const updated = await window.boilerdeck.relays.add(newRelayUrl.trim());
+                setRelayList(updated);
+                setNewRelayUrl("");
+              } catch (err: unknown) {
+                setRelayAddError(err instanceof Error ? err.message : "Failed to add relay");
+              } finally {
+                setRelayAdding(false);
+              }
+            }}
+          >
+            {relayAdding ? "Adding..." : "Add"}
+          </button>
+        </div>
+        {relayAddError && <div style={styles.errorText}>{relayAddError}</div>}
+
+        <div style={styles.infoBox}>
+          Relays are servers that share listing data. The default BoilerDeck relay cannot be removed.
         </div>
       </div>
 

@@ -1,8 +1,8 @@
 import { app, BrowserWindow, ipcMain, shell, dialog } from "electron";
 import * as path from "path";
 import { autoUpdater } from "electron-updater";
-import { initStore, storeGet, storeSet, storeDelete, getDefaultInstallDir, isAllowedStoreKey, DEFAULT_PRIVACY_SETTINGS } from "./store.js";
-import type { PrivacySettings } from "./store.js";
+import { initStore, storeGet, storeSet, storeDelete, getDefaultInstallDir, isAllowedStoreKey, DEFAULT_PRIVACY_SETTINGS, DEFAULT_RELAYS } from "./store.js";
+import type { PrivacySettings, RelayEntry } from "./store.js";
 import * as torrentManager from "./torrentManager.js";
 import * as gameLauncher from "./gameLauncher.js";
 import * as relayManager from "./relayManager.js";
@@ -275,6 +275,84 @@ function setupIpcHandlers(): void {
     const stored = storeGet("privacySettings") as PrivacySettings | null;
     const settings = stored ?? DEFAULT_PRIVACY_SETTINGS;
     return testProxyConnection(settings);
+  });
+
+  // --- Relay management (stored relay list) ---
+  ipcMain.handle("relays:list", () => {
+    let relays = storeGet("relays") as RelayEntry[] | null;
+    if (!relays || relays.length === 0) {
+      relays = DEFAULT_RELAYS;
+      storeSet("relays", relays);
+    }
+    return relays;
+  });
+
+  ipcMain.handle("relays:add", async (_event, url: string) => {
+    // Validate URL format
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new Error("Invalid URL format");
+    }
+    if (parsed.protocol !== "wss:" && parsed.protocol !== "ws:") {
+      throw new Error("URL must use wss:// or ws:// protocol");
+    }
+
+    // Convert wss:// to https:// (or ws:// to http://) for info endpoint
+    const httpUrl = url.replace(/^wss:\/\//, "https://").replace(/^ws:\/\//, "http://");
+    // Strip trailing path to get base, then append /api/relay/info
+    const base = httpUrl.replace(/\/+$/, "").replace(/\/relay$/, "");
+    const infoUrl = `${base}/api/relay/info`;
+
+    // Validate by fetching relay info
+    const transport = infoUrl.startsWith("https:") ? https : http;
+    await new Promise<void>((resolve, reject) => {
+      const req = transport.get(infoUrl, { timeout: 10_000 }, (res) => {
+        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+          res.resume();
+          resolve();
+        } else {
+          res.resume();
+          reject(new Error(`Relay info returned status ${res.statusCode}`));
+        }
+      });
+      req.on("timeout", () => { req.destroy(); reject(new Error("Relay info request timed out")); });
+      req.on("error", (err) => reject(new Error(`Could not reach relay: ${err.message}`)));
+    });
+
+    let relays = (storeGet("relays") as RelayEntry[] | null) ?? [...DEFAULT_RELAYS];
+    // Don't add duplicates
+    if (relays.some((r) => r.url === url)) {
+      throw new Error("Relay already exists");
+    }
+
+    // Extract name from hostname
+    const name = parsed.hostname;
+    relays.push({ url, name, isDefault: false, enabled: true });
+    storeSet("relays", relays);
+    return relays;
+  });
+
+  ipcMain.handle("relays:remove", (_event, url: string) => {
+    let relays = (storeGet("relays") as RelayEntry[] | null) ?? [...DEFAULT_RELAYS];
+    const target = relays.find((r) => r.url === url);
+    if (target?.isDefault) {
+      return { error: "Cannot remove the default BoilerDeck relay" };
+    }
+    relays = relays.filter((r) => r.url !== url);
+    storeSet("relays", relays);
+    return relays;
+  });
+
+  ipcMain.handle("relays:toggle", (_event, url: string, enabled: boolean) => {
+    const relays = (storeGet("relays") as RelayEntry[] | null) ?? [...DEFAULT_RELAYS];
+    const target = relays.find((r) => r.url === url);
+    if (target) {
+      target.enabled = enabled;
+      storeSet("relays", relays);
+    }
+    return relays;
   });
 
   // --- Proxied API fetch ---

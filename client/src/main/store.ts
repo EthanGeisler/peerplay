@@ -25,6 +25,17 @@ export const DEFAULT_PRIVACY_SETTINGS: PrivacySettings = {
   routeTorrentTraffic: false,
 };
 
+export interface RelayEntry {
+  url: string;
+  name: string;
+  isDefault: boolean;
+  enabled: boolean;
+}
+
+export const DEFAULT_RELAYS: RelayEntry[] = [
+  { url: "wss://boilerdeck.com/relay", name: "BoilerDeck", isDefault: true, enabled: true },
+];
+
 interface StoreData {
   refreshToken?: string;
   installDir?: string;
@@ -37,6 +48,7 @@ interface StoreData {
   relayPrivkey?: string;
   relayPubkey?: string;
   privacySettings?: PrivacySettings;
+  relays?: RelayEntry[];
 }
 
 interface InstalledGameEntry {
@@ -62,6 +74,7 @@ export const STORE_KEY_WHITELIST = new Set([
   "relayPrivkey",
   "relayPubkey",
   "privacySettings",
+  "relays",
 ]);
 
 export function isAllowedStoreKey(key: string): boolean {
