@@ -1235,6 +1235,263 @@ relayRouter.get("/followers/:pubkey", async (req, res, next) => {
   }
 });
 
+// ── GET /relay/listings — public listing feed for relay consumers ────────────
+
+relayRouter.get("/relay/listings", async (req, res, next) => {
+  try {
+    const limit = Math.min(Math.max(parseInt(String(req.query.limit || "50"), 10) || 50, 1), 100);
+    const offset = Math.max(parseInt(String(req.query.offset || "0"), 10) || 0, 0);
+    const contentType = req.query.contentType ? String(req.query.contentType) : undefined;
+    const creator = req.query.creator ? String(req.query.creator) : undefined;
+
+    // Validate contentType if provided
+    const validContentTypes = ["GAME", "VIDEO", "SOFTWARE", "AUDIO", "OTHER"];
+    if (contentType && !validContentTypes.includes(contentType)) {
+      throw new ValidationError(`contentType must be one of: ${validContentTypes.join(", ")}`);
+    }
+
+    // Validate creator pubkey format if provided
+    if (creator && (creator.length !== 64 || !/^[0-9a-f]+$/i.test(creator))) {
+      throw new ValidationError("creator must be a 64-character hex pubkey");
+    }
+
+    const where: Record<string, unknown> = { status: "PUBLISHED" as const };
+    if (contentType) {
+      where.contentType = contentType;
+    }
+    if (creator) {
+      where.creatorPublicKey = creator.toLowerCase();
+    }
+
+    const [listings, total] = await Promise.all([
+      db.listing.findMany({
+        where,
+        select: {
+          id: true,
+          slug: true,
+          title: true,
+          description: true,
+          priceCents: true,
+          contentType: true,
+          coverImageUrl: true,
+          creatorPublicKey: true,
+          signature: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: "desc" },
+        skip: offset,
+        take: limit,
+      }),
+      db.listing.count({ where }),
+    ]);
+
+    res.json({
+      listings: listings.map((l) => ({
+        id: l.id,
+        slug: l.slug,
+        title: l.title,
+        description: l.description,
+        priceCents: l.priceCents,
+        contentType: l.contentType,
+        coverImageUrl: l.coverImageUrl,
+        creatorPublicKey: l.creatorPublicKey,
+        signature: l.signature,
+        createdAt: l.createdAt,
+      })),
+      total,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── GET /relay/listings/:id — single listing detail ──────────────────────────
+
+relayRouter.get("/relay/listings/:id", async (req, res, next) => {
+  try {
+    const listing = await db.listing.findUnique({
+      where: { id: String(req.params.id) },
+      include: {
+        versions: {
+          where: { status: "READY" },
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            version: true,
+            fileSizeBytes: true,
+            changelog: true,
+            createdAt: true,
+          },
+        },
+        developer: {
+          select: { studioName: true },
+        },
+      },
+    });
+
+    if (!listing || listing.status !== "PUBLISHED") {
+      throw new NotFoundError("Listing");
+    }
+
+    res.json({
+      id: listing.id,
+      slug: listing.slug,
+      title: listing.title,
+      description: listing.description,
+      priceCents: listing.priceCents,
+      contentType: listing.contentType,
+      coverImageUrl: listing.coverImageUrl,
+      creatorPublicKey: listing.creatorPublicKey,
+      signature: listing.signature,
+      createdAt: listing.createdAt,
+      studioName: listing.developer.studioName,
+      versions: listing.versions.map((v) => ({
+        id: v.id,
+        version: v.version,
+        fileSizeBytes: Number(v.fileSizeBytes),
+        changelog: v.changelog,
+        createdAt: v.createdAt,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── GET /relay/creators — list unique creators with pubkeys ──────────────────
+
+relayRouter.get("/relay/creators", async (req, res, next) => {
+  try {
+    // Find developers whose users have nostrPubkey set, along with their published listing count
+    const developers = await db.developer.findMany({
+      where: {
+        user: { nostrPubkey: { not: null } },
+      },
+      select: {
+        studioName: true,
+        user: { select: { nostrPubkey: true } },
+        _count: {
+          select: {
+            listings: { where: { status: "PUBLISHED" } },
+          },
+        },
+      },
+    });
+
+    const creators = developers
+      .filter((d) => d.user.nostrPubkey)
+      .map((d) => ({
+        pubkey: d.user.nostrPubkey!,
+        displayName: d.studioName,
+        listingCount: d._count.listings,
+      }));
+
+    res.json({ creators });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── POST /relay/listings — submit a signed listing (federation) ──────────────
+
+relayRouter.post("/relay/listings", async (req, res, next) => {
+  try {
+    const { listing, signature, creatorPublicKey } = req.body;
+
+    // Validate required fields
+    if (!listing || typeof listing !== "object") {
+      throw new ValidationError("listing object is required");
+    }
+    if (!signature || typeof signature !== "string") {
+      throw new ValidationError("signature is required");
+    }
+    if (
+      !creatorPublicKey ||
+      typeof creatorPublicKey !== "string" ||
+      creatorPublicKey.length !== 64 ||
+      !/^[0-9a-f]+$/i.test(creatorPublicKey)
+    ) {
+      throw new ValidationError("creatorPublicKey must be a 64-character hex string");
+    }
+
+    const { title, slug, description, priceCents, contentType } = listing;
+
+    // Validate listing fields
+    if (!title || typeof title !== "string") {
+      throw new ValidationError("listing.title is required");
+    }
+    if (!slug || typeof slug !== "string") {
+      throw new ValidationError("listing.slug is required");
+    }
+
+    const validContentTypes = ["GAME", "VIDEO", "SOFTWARE", "AUDIO", "OTHER"];
+    if (contentType && !validContentTypes.includes(contentType)) {
+      throw new ValidationError(`listing.contentType must be one of: ${validContentTypes.join(", ")}`);
+    }
+
+    // Verify Schnorr signature over canonical listing data
+    const canonicalData = JSON.stringify({
+      title,
+      slug,
+      description: description ?? "",
+      priceCents: priceCents ?? 0,
+      contentType: contentType ?? "GAME",
+    });
+    const messageHash = Buffer.from(
+      nodeCrypto.createHash("sha256").update(canonicalData).digest(),
+    );
+    const sigBytes = Buffer.from(signature, "hex");
+    const pubkeyBytes = Buffer.from(creatorPublicKey, "hex");
+
+    let sigValid = false;
+    try {
+      sigValid = schnorr.verify(sigBytes, messageHash, pubkeyBytes);
+    } catch {
+      sigValid = false;
+    }
+
+    if (!sigValid) {
+      throw new ValidationError("Invalid signature: Schnorr verification failed");
+    }
+
+    // Store as FederatedListing (upsert by relayUrl + remoteId)
+    const relayUrl = "external"; // federated submissions don't have a relay URL origin
+    const remoteId = listing.id || `${creatorPublicKey}:${slug}`;
+
+    const federated = await db.federatedListing.upsert({
+      where: {
+        relayUrl_remoteId: { relayUrl, remoteId },
+      },
+      create: {
+        relayUrl,
+        remoteId,
+        slug,
+        title,
+        description: description ?? "",
+        creatorPubkey: creatorPublicKey,
+        signature,
+        contentType: contentType ?? "GAME",
+        priceCents: priceCents ?? 0,
+        coverImageUrl: listing.coverImageUrl ?? null,
+      },
+      update: {
+        slug,
+        title,
+        description: description ?? "",
+        creatorPubkey: creatorPublicKey,
+        signature,
+        contentType: contentType ?? "GAME",
+        priceCents: priceCents ?? 0,
+        coverImageUrl: listing.coverImageUrl ?? null,
+      },
+    });
+
+    res.status(201).json({ success: true, id: federated.id });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ── Relay info helper ───────────────────────────────────────────────────────
 
 function buildRelayInfo(): Record<string, unknown> {
