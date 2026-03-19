@@ -938,3 +938,37 @@ These must remain true throughout the entire implementation:
 - [ ] `[CODE]` `selectedEntryIds` state exists in `client/src/renderer/stores/lockerStore.ts`
 - [ ] `[AUTO]` `npx tsc --noEmit` passes in `server/` directory
 - [ ] `[AUTO]` `npx tsc --noEmit` passes in `client/` directory
+
+---
+
+## Electron Client Verification (applies to ALL Electron feature work)
+
+> **Purpose:** These checks must be run whenever any code in `client/src/main/` or `client/src/main/preload.ts` is added or modified. Server-side and `[CODE]` checks alone are insufficient — Electron features must be verified as a running application.
+
+### Build & Compile
+
+- [ ] `[AUTO]` `cd client && npx tsc -p tsconfig.main.json` compiles with zero errors — this produces the actual `dist/main/` output that Electron loads. `--noEmit` alone is NOT sufficient; the compiled output must be regenerated after every main process change.
+- [ ] `[AUTO]` `dist/main/preload.js` contains all IPC channels referenced by the renderer. Spot-check: every `window.boilerdeck.<namespace>.<method>` call in renderer source has a corresponding `ipcRenderer.invoke` in the compiled `preload.js`.
+
+### IPC Bridge Consistency
+
+- [ ] `[CODE]` Every IPC channel registered via `ipcMain.handle("channel:name", ...)` in `client/src/main/index.ts` has a matching entry in `client/src/main/preload.ts` under `contextBridge.exposeInMainWorld`.
+- [ ] `[CODE]` Every method exposed in `preload.ts` has a matching type declaration in BOTH `preload.ts` (declare global) AND `client/src/renderer/env.d.ts`.
+- [ ] `[CODE]` All IPC handlers that call async functions are wrapped in try/catch to prevent unhandled rejections from surfacing as Electron error dialogs.
+
+### Runtime — Manual Smoke Tests
+
+- [ ] `[MANUAL]` Launch Electron via `dev-client.bat` (or: start Vite, compile main, run electron). App window appears with no error dialogs.
+- [ ] `[MANUAL]` Navigate to every major tab/page in the app. No blank screens, no error dialogs, no uncaught errors in the DevTools console (ignore Autofill and CSP warnings).
+- [ ] `[MANUAL]` Complete the primary user flow for the feature being built (e.g., upload a file → verify it appears in the list → download it → delete it). UI updates correctly at each step.
+- [ ] `[MANUAL]` For features that use WebSocket connections: navigate away from the page and back. No "WebSocket is not open" errors, no duplicate connections (check main process console output for double "Connected" messages beyond React StrictMode's expected mount/unmount/remount).
+
+### Self-Custody Path (when applicable)
+
+- [ ] `[MANUAL]` Test the feature as a self-custody user (local keys, no server-side signing). The self-custody code path often diverges from custodial and may bypass the server entirely — both paths must be exercised.
+- [ ] `[CODE]` Any data created client-side (entries, metadata, index records) is persisted to the local index/store immediately — not dependent on a relay or server round-trip to appear in the UI.
+
+### WebTorrent / Long-Running Operations (when applicable)
+
+- [ ] `[MANUAL]` Test with a large file (>500MB). Operations that hash or seed files must have timeouts scaled to file size, not flat constants.
+- [ ] `[CODE]` Any Promise that races a timeout against an async operation uses a `settled` guard (or equivalent) to prevent double-resolve/reject and "already destroyed" errors.

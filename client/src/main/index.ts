@@ -520,13 +520,23 @@ function setupIpcHandlers(): void {
 
   // --- Locker (data locker operations) ---
   ipcMain.handle("locker:upload-file", async (_event, accessToken: string, tags?: string[]) => {
-    lockerManager.setAccessToken(accessToken);
-    return lockerManager.uploadFile(tags ?? []);
+    try {
+      lockerManager.setAccessToken(accessToken);
+      return await lockerManager.uploadFile(tags ?? []);
+    } catch (err) {
+      console.error("[locker] upload-file error:", err);
+      throw err;
+    }
   });
 
   ipcMain.handle("locker:upload-directory", async (_event, accessToken: string, tags?: string[]) => {
-    lockerManager.setAccessToken(accessToken);
-    return lockerManager.uploadDirectory(tags ?? []);
+    try {
+      lockerManager.setAccessToken(accessToken);
+      return await lockerManager.uploadDirectory(tags ?? []);
+    } catch (err) {
+      console.error("[locker] upload-directory error:", err);
+      throw err;
+    }
   });
 
   ipcMain.handle("locker:get-entries", async (_event, accessToken: string) => {
@@ -546,9 +556,14 @@ function setupIpcHandlers(): void {
 
   // --- Locker sync & settings ---
   ipcMain.handle("locker:start-sync", async (_event, accessToken: string) => {
-    lockerManager.setAccessToken(accessToken);
-    await lockerManager.startLockerSync();
-    return { success: true };
+    try {
+      lockerManager.setAccessToken(accessToken);
+      await lockerManager.startLockerSync();
+      return { success: true };
+    } catch (err) {
+      console.warn("[locker] start-sync error:", err);
+      return { success: false };
+    }
   });
 
   ipcMain.handle("locker:stop-sync", async () => {

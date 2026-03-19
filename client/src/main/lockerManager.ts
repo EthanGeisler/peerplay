@@ -22,9 +22,10 @@ import * as crypto from "node:crypto";
 import * as https from "node:https";
 import * as http from "node:http";
 import WebSocket from "ws";
-import { storeGet } from "./store.js";
+import { storeGet, storeSet, storeDelete } from "./store.js";
 import * as keyManager from "./keyManager.js";
 import * as relayManager from "./relayManager.js";
+import type { RelayEvent } from "./relayManager.js";
 import { nip44Encrypt, nip44Decrypt } from "./nip44.js";
 import * as lockerStore from "./lockerStore.js";
 import type { LockerIndexEntry, DownloadStatus } from "./lockerStore.js";
@@ -135,6 +136,21 @@ function getApiBase(): string {
  */
 function getAccessToken(): string | null {
   return cachedAccessToken;
+}
+
+/**
+ * Ensure the cached access token is valid. If it looks expired or missing,
+ * attempt a refresh using the stored refresh token.
+ * Returns the valid token or throws.
+ */
+async function ensureValidToken(): Promise<string> {
+  let token = getAccessToken();
+  if (!token) {
+    // Try refreshing — maybe the renderer set a token earlier that's now null
+    token = await refreshAccessTokenMainProcess();
+    if (!token) throw new Error("Not authenticated. Please log in first.");
+  }
+  return token;
 }
 
 /**
@@ -256,10 +272,7 @@ async function uploadToServer(
   tags: string[],
   entryId: string,
 ): Promise<UploadResult> {
-  const token = getAccessToken();
-  if (!token) {
-    throw new Error("Not authenticated. Please log in first.");
-  }
+  const token = await ensureValidToken();
 
   const apiBase = getApiBase();
   const url = `${apiBase}/locker/upload`;
@@ -363,25 +376,100 @@ async function uploadToServer(
   });
 }
 
+// ─── Token Refresh (main process) ────────────────────────────────
+
+let refreshPromise: Promise<string | null> | null = null;
+
+/**
+ * Refresh the access token using the stored refresh token.
+ * Serialized so concurrent callers share one in-flight request.
+ */
+async function refreshAccessTokenMainProcess(): Promise<string | null> {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = doRefreshToken();
+  try {
+    return await refreshPromise;
+  } finally {
+    refreshPromise = null;
+  }
+}
+
+async function doRefreshToken(): Promise<string | null> {
+  const refreshToken = storeGet("refreshToken") as string | null;
+  if (!refreshToken) return null;
+
+  const apiBase = getApiBase();
+  const url = `${apiBase}/auth/refresh`;
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken }),
+    });
+
+    if (!res.ok) {
+      storeDelete("refreshToken");
+      return null;
+    }
+
+    const data = await res.json() as { accessToken: string; refreshToken: string };
+    storeSet("refreshToken", data.refreshToken);
+    cachedAccessToken = data.accessToken;
+    return data.accessToken;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Make a JSON API request to the locker endpoints.
+ * Automatically refreshes the access token on 401 and retries once.
  */
 async function apiRequest<T>(
   method: string,
   urlPath: string,
   body?: unknown,
 ): Promise<T> {
-  const token = getAccessToken();
-  if (!token) {
-    throw new Error("Not authenticated. Please log in first.");
+  const token = await ensureValidToken();
+
+  const result = await rawApiRequest<T>(method, urlPath, body, token);
+
+  // Auto-refresh on 401 and retry once
+  if (result.statusCode === 401) {
+    const newToken = await refreshAccessTokenMainProcess();
+    if (newToken) {
+      const retry = await rawApiRequest<T>(method, urlPath, body, newToken);
+      if (retry.statusCode && retry.statusCode >= 200 && retry.statusCode < 300) {
+        return retry.data as T;
+      }
+      throw new Error(retry.errorMessage ?? `API request failed (HTTP ${retry.statusCode})`);
+    }
+    throw new Error(result.errorMessage ?? "Invalid or expired token");
   }
 
+  if (result.data !== undefined) return result.data;
+  throw new Error(result.errorMessage ?? `API request failed (HTTP ${result.statusCode})`);
+}
+
+interface RawApiResult<T> {
+  statusCode: number | undefined;
+  data?: T;
+  errorMessage?: string;
+}
+
+function rawApiRequest<T>(
+  method: string,
+  urlPath: string,
+  body: unknown | undefined,
+  token: string,
+): Promise<RawApiResult<T>> {
   const apiBase = getApiBase();
   const url = `${apiBase}${urlPath}`;
   const parsedUrl = new URL(url);
   const transport = parsedUrl.protocol === "https:" ? https : http;
 
-  return new Promise<T>((resolve, reject) => {
+  return new Promise<RawApiResult<T>>((resolve, reject) => {
     const bodyStr = body ? JSON.stringify(body) : undefined;
     const headers: Record<string, string> = {
       "Authorization": `Bearer ${token}`,
@@ -403,7 +491,7 @@ async function apiRequest<T>(
         const responseBody = Buffer.concat(chunks).toString("utf-8");
         if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
           try {
-            resolve(JSON.parse(responseBody) as T);
+            resolve({ statusCode: res.statusCode, data: JSON.parse(responseBody) as T });
           } catch {
             reject(new Error(`Invalid JSON response: ${responseBody.slice(0, 200)}`));
           }
@@ -415,7 +503,7 @@ async function apiRequest<T>(
           } catch {
             // Use default message
           }
-          reject(new Error(message));
+          resolve({ statusCode: res.statusCode, errorMessage: message });
         }
       });
       res.on("error", (err) => reject(new Error(`Response error: ${err.message}`)));
@@ -525,6 +613,8 @@ async function createTorrentFromFile(
   const tempClient: any = new WT();
 
   return new Promise<{ torrentBuffer: Buffer; infoHash: string; magnetUri: string }>((resolve, reject) => {
+    let settled = false;
+
     const torrent: any = tempClient.seed(filePath, {
       name,
       comment: "BoilerDeck Data Locker",
@@ -533,7 +623,19 @@ async function createTorrentFromFile(
       private: false,
     });
 
+    // Scale timeout by file size: 30s base + 30s per GB
+    const timeoutMs = 30_000 + Math.ceil(fs.statSync(filePath).size / (1024 * 1024 * 1024)) * 30_000;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try { tempClient.destroy(); } catch { /* ignore */ }
+      reject(new Error(`Torrent creation timed out after ${Math.round(timeoutMs / 1000)}s`));
+    }, timeoutMs);
+
     torrent.on("ready", () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       try {
         const torrentBuffer = torrent.torrentFile as Buffer;
         const infoHash = torrent.infoHash as string;
@@ -542,26 +644,23 @@ async function createTorrentFromFile(
         // Destroy the temp client — we don't need to keep seeding
         // (the main torrent client will handle that)
         torrent.destroy({ destroyStore: false }, () => {
-          tempClient.destroy();
+          try { tempClient.destroy(); } catch { /* ignore */ }
         });
 
         resolve({ torrentBuffer, infoHash, magnetUri });
       } catch (err) {
-        tempClient.destroy();
+        try { tempClient.destroy(); } catch { /* ignore */ }
         reject(err);
       }
     });
 
     torrent.on("error", (err: Error) => {
-      tempClient.destroy();
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { tempClient.destroy(); } catch { /* ignore */ }
       reject(err);
     });
-
-    // Timeout after 30 seconds
-    setTimeout(() => {
-      tempClient.destroy();
-      reject(new Error("Torrent creation timed out after 30 seconds"));
-    }, 30_000);
   });
 }
 
@@ -576,10 +675,7 @@ async function uploadRawToVps(
   torrentBuffer: Buffer,
   entryId: string,
 ): Promise<void> {
-  const token = getAccessToken();
-  if (!token) {
-    throw new Error("Not authenticated. Please log in first.");
-  }
+  const token = await ensureValidToken();
 
   const apiBase = getApiBase();
   const url = `${apiBase}/locker/upload`;
@@ -827,13 +923,31 @@ async function uploadFileSelfCustody(
   // 8. Sign event locally
   const signedEvent = await keyManager.signEvent(encrypted, 30078, eventTags);
 
-  // 9. Publish to all configured relays (primary + additional)
+  // 9. Save to local index immediately so it appears in the UI
+  lockerStore.upsertEntry({
+    entryId,
+    filename,
+    size: fileSize,
+    mimeType,
+    sha256,
+    infoHash,
+    magnetUri,
+    tags,
+    downloadStatus: "downloaded",
+    localPath: filePath,
+    lastSynced: Math.floor(Date.now() / 1000),
+    createdAt: lockerEntry.createdAt,
+    version: 1,
+  });
+  emitSyncUpdate(lockerStore.getAllEntries());
+
+  // 10. Publish to all configured relays (primary + additional)
   const anyPublished = await publishToAllRelays(signedEvent);
   if (!anyPublished) {
     console.warn("[locker] Failed to publish to any relay. Event still created locally.");
   }
 
-  // 10. Upload raw file + .torrent to VPS for persistent seeding (non-fatal)
+  // 11. Upload raw file + .torrent to VPS for persistent seeding (non-fatal)
   uploadRawToVps(filePath, filename, fileSize, torrentBuffer, entryId).catch((err) => {
     console.warn("[locker] VPS seed upload failed (non-fatal):", err);
   });
@@ -1004,10 +1118,7 @@ export async function downloadEntry(
   entryId: string,
   downloadPath?: string,
 ): Promise<string> {
-  const token = getAccessToken();
-  if (!token) {
-    throw new Error("Not authenticated. Please log in first.");
-  }
+  const token = await ensureValidToken();
 
   // Determine download path from settings if not provided
   const settings = lockerSettings.getSettings();
@@ -1437,6 +1548,9 @@ function subscribeOnAdditionalRelay(relayUrl: string, pubkey: string): void {
  * Reconnects on disconnect with exponential backoff.
  */
 export async function startLockerSync(): Promise<void> {
+  // Stop any existing sync first (prevents double connections from StrictMode)
+  stopLockerSync();
+
   // Get the user's pubkey
   const pubkey = await getUserPubkey();
   if (!pubkey) {
@@ -1505,10 +1619,14 @@ export function stopLockerSync(): void {
   }
 
   if (syncWs) {
-    if (syncSubId && syncWs.readyState === WebSocket.OPEN) {
-      syncWs.send(JSON.stringify(["CLOSE", syncSubId]));
+    try {
+      if (syncSubId && syncWs.readyState === WebSocket.OPEN) {
+        syncWs.send(JSON.stringify(["CLOSE", syncSubId]));
+      }
+      syncWs.close();
+    } catch {
+      // Ignore errors closing a CONNECTING socket
     }
-    syncWs.close();
     syncWs = null;
   }
 
@@ -1697,7 +1815,7 @@ async function checkServerOnline(): Promise<boolean> {
  * Publish an event to all configured relays (primary + additional).
  * Returns true if at least one relay accepted the event.
  */
-async function publishToAllRelays(signedEvent: unknown): Promise<boolean> {
+async function publishToAllRelays(signedEvent: RelayEvent): Promise<boolean> {
   let anySuccess = false;
 
   // Try primary relay via relayManager

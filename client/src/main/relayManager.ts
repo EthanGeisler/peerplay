@@ -13,7 +13,7 @@ import type { BrowserWindow } from "electron";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
-interface RelayEvent {
+export interface RelayEvent {
   id: string;
   pubkey: string;
   created_at: number;

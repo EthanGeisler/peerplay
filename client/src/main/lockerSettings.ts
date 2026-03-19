@@ -64,7 +64,7 @@ export function loadSettings(): LockerSettings {
   if (settings) return { ...settings };
   try {
     const raw = fs.readFileSync(getSettingsPath(), "utf-8");
-    settings = { ...getDefaults(), ...JSON.parse(raw) };
+    settings = { ...getDefaults(), ...JSON.parse(raw) } as LockerSettings;
   } catch {
     settings = getDefaults();
   }
