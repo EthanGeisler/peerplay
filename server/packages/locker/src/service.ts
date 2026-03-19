@@ -31,6 +31,7 @@ import { signEventForUser } from "@boilerdeck/auth";
 import { nip44Encrypt, nip44Decrypt } from "@boilerdeck/auth";
 import { createTorrent } from "@boilerdeck/torrent";
 import * as storage from "./storage.js";
+import { findDuplicate, createSymlink } from "./dedup.js";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -278,7 +279,7 @@ export async function uploadFile(
     );
   }
 
-  // 1. Save file to entry directory
+  // 1. Save file to a temp location first to compute hash before final placement
   const filePath = await storage.saveFile(tempFilePath, userId, entryId, originalFilename);
 
   // 2. Compute SHA-256
@@ -287,17 +288,47 @@ export async function uploadFile(
   // 3. Detect MIME type
   const mimeType = mime.lookup(originalFilename) || "application/octet-stream";
 
-  // 4. Create torrent for the entry directory
-  const entryDir = storage.getEntryDir(userId, entryId);
-  const { torrentBuffer, infoHash, magnetUri } = await createTorrent(entryDir, entryId);
+  // 3.5. Deduplication check — if identical file exists, reuse its torrent
+  const duplicate = await findDuplicate(sha256);
+  let infoHash: string;
+  let magnetUri: string;
+  let torrentPath: string;
+  let torrentBuffer: Buffer;
 
-  // 5. Save .torrent file
-  const torrentPath = await storage.saveTorrentFile(userId, entryId, torrentBuffer);
+  if (duplicate) {
+    // Reuse existing torrent — create symlink instead of keeping separate copy
+    console.log(`[locker:dedup] File ${originalFilename} matches existing ${duplicate.entryId} (sha256: ${sha256.slice(0, 12)}...)`);
+    infoHash = duplicate.infoHash;
 
-  // 6. Send to Transmission (non-blocking, non-fatal)
-  addToTransmission(torrentBuffer, storage.getUserDir(userId)).catch((err) => {
-    console.warn("[locker] Failed to add torrent to Transmission:", err);
-  });
+    // Read existing torrent file to get magnetUri
+    const existingTorrentBuf = await storage.readTorrentFile(
+      duplicate.userId,
+      duplicate.entryId,
+    );
+    torrentBuffer = existingTorrentBuf;
+
+    // Save a copy of the .torrent file in the new entry's dir
+    torrentPath = await storage.saveTorrentFile(userId, entryId, torrentBuffer);
+
+    // We don't need to re-add to Transmission — it's already seeding the content
+    // Build magnetUri from the existing infoHash
+    magnetUri = `magnet:?xt=urn:btih:${infoHash}`;
+  } else {
+    // 4. Create torrent for the entry directory (new unique file)
+    const entryDir = storage.getEntryDir(userId, entryId);
+    const result = await createTorrent(entryDir, entryId);
+    torrentBuffer = result.torrentBuffer;
+    infoHash = result.infoHash;
+    magnetUri = result.magnetUri;
+
+    // 5. Save .torrent file
+    torrentPath = await storage.saveTorrentFile(userId, entryId, torrentBuffer);
+
+    // 6. Send to Transmission (non-blocking, non-fatal)
+    addToTransmission(torrentBuffer, storage.getUserDir(userId)).catch((err) => {
+      console.warn("[locker] Failed to add torrent to Transmission:", err);
+    });
+  }
 
   // 7. Build LockerEntry
   const lockerEntry: LockerEntry = {
@@ -337,6 +368,7 @@ export async function uploadFile(
       entryId,
       filename: originalFilename,
       size: fileSizeBig,
+      sha256,
       infoHash,
       torrentPath,
       filePath,
@@ -466,6 +498,204 @@ export async function deleteEntry(
 
   // Mark files for cleanup (actual deletion in Phase 9.10 cron)
   await storage.markForCleanup(userId, entryId);
+
+  return { success: true };
+}
+
+// ─── Sharing ─────────────────────────────────────────────────────────
+
+/**
+ * In-memory rate limiter for share operations.
+ * Key: userId, Value: { count, resetTime }
+ */
+const shareRateLimit = new Map<string, { count: number; resetTime: number }>();
+const SHARE_RATE_MAX = 100;
+const SHARE_RATE_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+
+function checkShareRateLimit(userId: string): void {
+  const now = Date.now();
+  const entry = shareRateLimit.get(userId);
+  if (!entry || now >= entry.resetTime) {
+    shareRateLimit.set(userId, { count: 1, resetTime: now + SHARE_RATE_WINDOW_MS });
+    return;
+  }
+  if (entry.count >= SHARE_RATE_MAX) {
+    throw new ForbiddenError(
+      `Share rate limit exceeded. Max ${SHARE_RATE_MAX} shares per hour.`,
+    );
+  }
+  entry.count++;
+}
+
+export interface ShareResult {
+  shareId: string;
+  eventId: string;
+}
+
+export interface SharedWithMeResult {
+  entries: LockerEntry[];
+  sharedFrom: Record<string, string>; // entryId -> senderPubkey
+}
+
+/**
+ * Share a locker entry with another user.
+ *
+ * 1. Look up original locker event (kind 30078, d-tag = entryId, authored by user)
+ * 2. Decrypt the LockerEntry using sender's key
+ * 3. Re-encrypt with NIP-44 to recipient's pubkey
+ * 4. Create new event with share-specific tags
+ * 5. Sign & publish
+ */
+export async function shareEntry(
+  userId: string,
+  entryId: string,
+  recipientPubkey: string,
+): Promise<ShareResult> {
+  // Rate limit
+  checkShareRateLimit(userId);
+
+  const senderPubkey = await getUserPubkey(userId);
+  const senderPrivkey = await getUserPrivkeyHex(userId);
+
+  // Cannot share with yourself
+  if (recipientPubkey === senderPubkey) {
+    throw new ForbiddenError("Cannot share with yourself.");
+  }
+
+  // Find the original locker event
+  const events = await queryEvents({
+    kinds: [LOCKER_ENTRY_KIND],
+    authors: [senderPubkey],
+    limit: 500,
+  });
+
+  const originalEvent = events.find((event) =>
+    event.tags.some((tag) => tag[0] === "d" && tag[1] === entryId),
+  );
+
+  if (!originalEvent) {
+    throw new NotFoundError("Locker entry");
+  }
+
+  // Decrypt the original entry (encrypted to sender's own pubkey)
+  const plaintext = nip44Decrypt(originalEvent.content, senderPrivkey, senderPubkey);
+  const entry = deserializeLockerEntry(plaintext);
+
+  // Re-encrypt to recipient's pubkey
+  const encryptedForRecipient = nip44Encrypt(
+    serializeLockerEntry(entry),
+    senderPrivkey,
+    recipientPubkey,
+  );
+
+  // Generate new share ID
+  const shareId = uuidv4();
+
+  // Build share event tags
+  const shareTags: string[][] = [
+    ["d", shareId],
+    ["p", recipientPubkey],
+    ["shared-from", senderPubkey],
+    ["shared-entry", entryId],
+  ];
+
+  // Sign & publish
+  const shareEvent = await signEventForUser(userId, {
+    kind: LOCKER_ENTRY_KIND,
+    tags: shareTags,
+    content: encryptedForRecipient,
+  });
+
+  await storeEvent(shareEvent);
+
+  return {
+    shareId,
+    eventId: shareEvent.id,
+  };
+}
+
+/**
+ * Get locker entries shared with the current user.
+ *
+ * Queries for kind 30078 events that have a `p` tag matching the user's pubkey,
+ * then decrypts each. The sender's pubkey is extracted from the `shared-from` tag.
+ */
+export async function getSharedWithMe(userId: string): Promise<SharedWithMeResult> {
+  const userPubkey = await getUserPubkey(userId);
+  const userPrivkey = await getUserPrivkeyHex(userId);
+
+  // Query all kind 30078 events — we'll filter by #p tag in memory
+  // since queryEvents doesn't support tag-based filtering.
+  const allEvents = await queryEvents({
+    kinds: [LOCKER_ENTRY_KIND],
+    limit: 500,
+  });
+
+  // Filter for events with #p tag matching this user
+  const sharedEvents = allEvents.filter((event) =>
+    event.tags.some((tag) => tag[0] === "p" && tag[1] === userPubkey),
+  );
+
+  const entries: LockerEntry[] = [];
+  const sharedFrom: Record<string, string> = {};
+
+  for (const event of sharedEvents) {
+    try {
+      // Get sender pubkey from the event's pubkey field (who signed it)
+      const senderPubkey = event.pubkey;
+
+      // Decrypt — the content was encrypted to our pubkey by the sender
+      const plaintext = nip44Decrypt(event.content, userPrivkey, senderPubkey);
+      const entry = deserializeLockerEntry(plaintext);
+      entries.push(entry);
+
+      // Track who shared it (using the shared-from tag or event pubkey)
+      const sharedFromTag = event.tags.find((t) => t[0] === "shared-from");
+      sharedFrom[entry.id] = sharedFromTag ? sharedFromTag[1] : senderPubkey;
+    } catch (err) {
+      console.warn(`[locker:share] Failed to decrypt shared entry from event ${event.id}:`, err);
+    }
+  }
+
+  return { entries, sharedFrom };
+}
+
+/**
+ * Revoke (delete) a previously shared locker entry.
+ *
+ * Only the sender (creator of the share event) can revoke.
+ * Publishes a NIP-09 deletion event for the share.
+ */
+export async function revokeShare(
+  userId: string,
+  shareId: string,
+): Promise<DeleteResult> {
+  const senderPubkey = await getUserPubkey(userId);
+
+  // Find the share event
+  const events = await queryEvents({
+    kinds: [LOCKER_ENTRY_KIND],
+    authors: [senderPubkey],
+    limit: 500,
+  });
+
+  const shareEvent = events.find((event) =>
+    event.tags.some((tag) => tag[0] === "d" && tag[1] === shareId) &&
+    event.tags.some((tag) => tag[0] === "shared-from"),
+  );
+
+  if (!shareEvent) {
+    throw new NotFoundError("Shared locker entry");
+  }
+
+  // Publish NIP-09 deletion event
+  const deletionEvent = await signEventForUser(userId, {
+    kind: 5,
+    tags: [["e", shareEvent.id]],
+    content: "Locker share revoked",
+  });
+
+  await storeEvent(deletionEvent);
 
   return { success: true };
 }

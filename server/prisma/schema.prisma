@@ -285,6 +285,7 @@ model LockerFile {
   entryId     String    @unique @map("entry_id")
   filename    String
   size        BigInt
+  sha256      String?   @map("sha256")
   infoHash    String    @map("info_hash")
   torrentPath String    @map("torrent_path")
   filePath    String    @map("file_path")
@@ -294,6 +295,7 @@ model LockerFile {
 
   @@map("locker_files")
   @@index([userId])
+  @@index([sha256])
 }
 
 model LockerQuota {

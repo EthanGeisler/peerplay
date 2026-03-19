@@ -35,6 +35,7 @@ interface TransmissionTorrent {
   uploadedEver: number;
   addedDate: number;
   name: string;
+  downloadDir: string;
 }
 
 interface TransmissionResponse {
@@ -97,7 +98,7 @@ async function getTransmissionTorrents(): Promise<TransmissionTorrent[]> {
     body: JSON.stringify({
       method: "torrent-get",
       arguments: {
-        fields: ["hashString", "uploadedEver", "addedDate", "name"],
+        fields: ["hashString", "uploadedEver", "addedDate", "name", "downloadDir"],
       },
     }),
   });
@@ -149,6 +150,38 @@ async function getDeveloperPubkeyForTorrent(
   });
 
   return torrent?.version?.game?.developer?.user?.nostrPubkey ?? null;
+}
+
+// ─── Locker Lookups ──────────────────────────────────────────────────
+
+const LOCKER_DIR = process.env.LOCKER_DIR || "./data/locker";
+
+/**
+ * Look up the owner's pubkey for a locker torrent by infoHash.
+ * Chain: LockerFile → User → nostrPubkey
+ */
+async function getLockerOwnerPubkeyForTorrent(
+  infoHash: string,
+): Promise<string | null> {
+  const lockerFile = await db.lockerFile.findFirst({
+    where: { infoHash, deletedAt: null },
+    select: {
+      user: {
+        select: {
+          nostrPubkey: true,
+        },
+      },
+    },
+  });
+
+  return lockerFile?.user?.nostrPubkey ?? null;
+}
+
+/**
+ * Check if a torrent is a locker torrent based on its download directory.
+ */
+function isLockerTorrent(torrent: TransmissionTorrent): boolean {
+  return torrent.downloadDir.includes(LOCKER_DIR);
 }
 
 // ─── Main ───────────────────────────────────────────────────────────
@@ -215,24 +248,35 @@ async function main() {
     const durationSeconds = nowSeconds - addedDate;
 
     try {
-      // Look up developer pubkey for this torrent
-      const developerPubkey = await getDeveloperPubkeyForTorrent(infoHash);
-      if (!developerPubkey) {
+      // Look up the target pubkey — different path for marketplace vs locker torrents
+      let targetPubkey: string | null = null;
+      let torrentType = "marketplace";
+
+      if (isLockerTorrent(torrent)) {
+        torrentType = "locker";
+        targetPubkey = await getLockerOwnerPubkeyForTorrent(infoHash);
+      } else {
+        targetPubkey = await getDeveloperPubkeyForTorrent(infoHash);
+      }
+
+      if (!targetPubkey) {
         console.log(
-          `  SKIP ${torrent.name} (${infoHash.slice(0, 8)}...): no developer pubkey found in DB`,
+          `  SKIP ${torrent.name} (${infoHash.slice(0, 8)}...) [${torrentType}]: no target pubkey found in DB`,
         );
         skipped++;
         continue;
       }
 
       // Self-attestation guard (shouldn't happen, but be safe)
-      if (pubkeyHex.toLowerCase() === developerPubkey.toLowerCase()) {
+      if (pubkeyHex.toLowerCase() === targetPubkey.toLowerCase()) {
         console.log(
-          `  SKIP ${torrent.name} (${infoHash.slice(0, 8)}...): seed box pubkey matches developer (self-attestation)`,
+          `  SKIP ${torrent.name} (${infoHash.slice(0, 8)}...) [${torrentType}]: seed box pubkey matches target (self-attestation)`,
         );
         skipped++;
         continue;
       }
+
+      const developerPubkey = targetPubkey;
 
       // Build the attestation event
       const content = JSON.stringify({

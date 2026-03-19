@@ -1,5 +1,5 @@
 /**
- * Locker REST routes — upload, list, delete, and torrent retrieval.
+ * Locker REST routes — upload, list, delete, sharing, and torrent retrieval.
  *
  * All routes are authenticated (JWT middleware).
  *
@@ -8,6 +8,10 @@
  * - GET /entries — list user's locker entries (decrypted)
  * - DELETE /entries/:entryId — delete a locker entry (NIP-09)
  * - GET /entries/:entryId/torrent — download .torrent file
+ * - POST /share — share an entry with another user
+ * - GET /shared-with-me — get entries shared with current user
+ * - DELETE /share/:shareId — revoke a shared entry
+ * - GET /health — public health check (Transmission + storage stats)
  */
 
 import fs from "node:fs";
@@ -17,6 +21,7 @@ import multer from "multer";
 import { authenticate, ValidationError } from "@boilerdeck/shared";
 import { getLockerConfig } from "./config.js";
 import * as lockerService from "./service.js";
+import * as seedManager from "./seedManager.js";
 
 export const lockerRouter = Router();
 
@@ -139,6 +144,129 @@ lockerRouter.get(
         `attachment; filename="${entryId}.torrent"`,
       );
       res.send(torrentBuffer);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ─── POST /share ────────────────────────────────────────────────────
+
+lockerRouter.post(
+  "/share",
+  authenticate,
+  async (req, res, next) => {
+    try {
+      const { entryId, recipientPubkey } = req.body as {
+        entryId?: string;
+        recipientPubkey?: string;
+      };
+
+      if (!entryId || typeof entryId !== "string") {
+        throw new ValidationError("entryId is required");
+      }
+      if (
+        !recipientPubkey ||
+        typeof recipientPubkey !== "string" ||
+        recipientPubkey.length !== 64 ||
+        !/^[0-9a-f]{64}$/i.test(recipientPubkey)
+      ) {
+        throw new ValidationError(
+          "recipientPubkey must be a 64-char hex public key",
+        );
+      }
+
+      const result = await lockerService.shareEntry(
+        req.user!.sub,
+        entryId,
+        recipientPubkey,
+      );
+
+      res.status(201).json(result);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ─── GET /shared-with-me ────────────────────────────────────────────
+
+lockerRouter.get(
+  "/shared-with-me",
+  authenticate,
+  async (req, res, next) => {
+    try {
+      const result = await lockerService.getSharedWithMe(req.user!.sub);
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ─── DELETE /share/:shareId ─────────────────────────────────────────
+
+lockerRouter.delete(
+  "/share/:shareId",
+  authenticate,
+  async (req, res, next) => {
+    try {
+      const shareId = req.params.shareId as string;
+      const result = await lockerService.revokeShare(req.user!.sub, shareId);
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ─── GET /health ─────────────────────────────────────────────────────
+
+/**
+ * Public health check endpoint — no auth required.
+ * Reports Transmission connection status, storage stats, and torrent counts.
+ * No sensitive data exposed (no user info, no file paths).
+ */
+lockerRouter.get(
+  "/health",
+  async (_req, res, next) => {
+    try {
+      let transmissionOk = false;
+      let torrentStats: { active: number; paused: number; total: number; totalSize: number } | null = null;
+
+      try {
+        torrentStats = await seedManager.getLockerTorrentStats();
+        transmissionOk = true;
+      } catch {
+        // Transmission not reachable — report as unhealthy
+      }
+
+      let storageStats: { totalBytes: number; lockerBytes: number; availableBytes: number } | null = null;
+      try {
+        storageStats = await seedManager.getStorageStats();
+      } catch {
+        // Non-fatal
+      }
+
+      res.json({
+        status: transmissionOk ? "ok" : "degraded",
+        transmission: {
+          connected: transmissionOk,
+          ...(torrentStats && {
+            activeTorrents: torrentStats.active,
+            pausedTorrents: torrentStats.paused,
+            totalTorrents: torrentStats.total,
+            totalTorrentSizeBytes: torrentStats.totalSize,
+          }),
+        },
+        storage: storageStats
+          ? {
+              lockerUsedBytes: storageStats.lockerBytes,
+              diskTotalBytes: storageStats.totalBytes,
+              diskAvailableBytes: storageStats.availableBytes,
+            }
+          : null,
+      });
     } catch (err) {
       next(err);
     }
