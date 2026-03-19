@@ -1,6 +1,7 @@
 # BoilerDeck Decentralization Plan
 
-> **Status:** Phase 1 COMPLETE, Phase 2 COMPLETE (11/11), Phase 3 COMPLETE (10/10), Phase 4 COMPLETE (9/9), Phase 5 COMPLETE (6/6)
+> **Status:** Phase 1 COMPLETE, Phase 2 COMPLETE (11/11), Phase 3 COMPLETE (10/10), Phase 4 COMPLETE (9/9), Phase 5 COMPLETE (6/6), Phase 9 COMPLETE (13/13)
+> **Phase 9 (Data Locker):** Personal encrypted file storage — Nostr events (kind 30078) + BitTorrent + NIP-44. Full plan in `DATA_LOCKER_PLAN.md`, handoffs in `docs/handoff/9.1.md`–`9.13.md`, summary in `docs/handoff/phase-9-summary.md`.
 > **Guiding principle:** Centralized UX, decentralized plumbing. The gateway is a convenience layer, not a chokepoint.
 > **Reviewed by:** Grok (2026-03-17) — critical curve fix (secp256k1), identity immutability, password change flow, self-custody registration path applied.
 
