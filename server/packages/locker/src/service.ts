@@ -20,6 +20,7 @@ import {
   UnauthorizedError,
   type SignedEvent,
 } from "@boilerdeck/shared";
+import { fanOutEvent } from "@boilerdeck/relay";
 import {
   LOCKER_ENTRY_KIND,
   serializeLockerEntry,
@@ -474,13 +475,20 @@ export async function deleteEntry(
   }
 
   // Publish a kind 5 (NIP-09) deletion event referencing the locker entry
+  // Include both "e" (event ID) and "a" (addressable) tags so clients can
+  // map the deletion back to the entryId without querying the relay.
   const deletionEvent = await signEventForUser(userId, {
     kind: 5,
-    tags: [["e", targetEvent.id]],
+    tags: [
+      ["e", targetEvent.id],
+      ["a", `30078:${pubkey}:${entryId}`],
+    ],
     content: "Locker entry deleted",
   });
 
   await storeEvent(deletionEvent);
+  // Fan out to all connected WebSocket clients so other instances see the delete
+  await fanOutEvent(deletionEvent);
 
   // Remove torrent from Transmission (non-fatal)
   if (infoHash) {

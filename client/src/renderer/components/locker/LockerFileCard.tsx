@@ -361,6 +361,26 @@ export function LockerFileCard({
           <span style={gridStyles.badge(badge.color)}>{badge.text}</span>
           <span style={listStyles.size as React.CSSProperties}>{formatSize(entry.size)}</span>
           <span style={listStyles.date as React.CSSProperties}>{formatDate(entry.createdAt)}</span>
+          {(entry.downloadStatus === "downloaded" || entry.downloadStatus === "seeding") && entry.localPath && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onShowInFolder(entry.localPath!); }}
+              title="Open file location"
+              style={{
+                padding: "4px 10px",
+                borderRadius: 4,
+                border: "1px solid #0f3460",
+                backgroundColor: "transparent",
+                color: "#888",
+                fontSize: 11,
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#0f3460"; e.currentTarget.style.color = "#fff"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "#888"; }}
+            >
+              Open Location
+            </button>
+          )}
         </div>
         {renderContextMenu()}
       </>
@@ -390,6 +410,27 @@ export function LockerFileCard({
           <div style={{ marginTop: 4 }}>
             <EncryptionBadge isSelfCustody={isSelfCustody} />
           </div>
+          {(entry.downloadStatus === "downloaded" || entry.downloadStatus === "seeding") && entry.localPath && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onShowInFolder(entry.localPath!); }}
+              title="Open file location"
+              style={{
+                marginTop: 6,
+                padding: "4px 10px",
+                borderRadius: 4,
+                border: "1px solid #0f3460",
+                backgroundColor: "transparent",
+                color: "#888",
+                fontSize: 11,
+                cursor: "pointer",
+                width: "100%",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#0f3460"; e.currentTarget.style.color = "#fff"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "#888"; }}
+            >
+              Open Location
+            </button>
+          )}
           {entry.downloadStatus === "downloading" && (
             <div style={gridStyles.progressBar}>
               <div style={{

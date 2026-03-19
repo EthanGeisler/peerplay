@@ -60,6 +60,7 @@ function toSignedEvent(row: PrismaEvent): SignedEvent {
  * - Duplicate event ID → returns "DUPLICATE"
  * - Replaceable kind with older created_at → returns "DUPLICATE" (keeps newer)
  * - Replaceable kind with newer created_at → replaces old, returns "REPLACED"
+ * - Kind 5 (NIP-09 deletion) → deletes referenced events authored by the same pubkey
  */
 export async function storeEvent(event: SignedEvent): Promise<StoreResult> {
   // Verify signature and ID integrity
@@ -76,8 +77,73 @@ export async function storeEvent(event: SignedEvent): Promise<StoreResult> {
     return storeReplaceableEvent(event, dTag!);
   }
 
-  // Regular event — just insert
-  return insertEvent(event, dTag);
+  // Regular event — insert first
+  const result = await insertEvent(event, dTag);
+
+  // NIP-09: kind 5 deletion events — remove referenced events from DB
+  if (event.kind === 5 && result === "STORED") {
+    await processNip09Deletion(event);
+  }
+
+  return result;
+}
+
+/**
+ * Process a NIP-09 deletion event: delete all referenced events from the DB.
+ *
+ * Per NIP-09, only events authored by the same pubkey as the deletion event
+ * are eligible for deletion. Both "e" tags (event ID) and "a" tags
+ * (addressable event coordinates) are processed.
+ */
+async function processNip09Deletion(event: SignedEvent): Promise<void> {
+  const eventIdsToDelete: string[] = [];
+
+  for (const tag of event.tags) {
+    if (tag[0] === "e" && tag[1]) {
+      eventIdsToDelete.push(tag[1]);
+    }
+
+    // "a" tags reference addressable (parameterized replaceable) events:
+    // format: "kind:pubkey:d-tag"
+    if (tag[0] === "a" && tag[1]) {
+      const parts = tag[1].split(":");
+      if (parts.length >= 3) {
+        const kind = parseInt(parts[0], 10);
+        const pubkey = parts[1];
+        const dTagValue = parts.slice(2).join(":"); // d-tag may contain colons
+        if (!isNaN(kind) && pubkey === event.pubkey) {
+          // Find the event by its addressable coordinates
+          const found = await db.event.findUnique({
+            where: { pubkey_kind_dTag: { pubkey, kind, dTag: dTagValue } },
+            select: { id: true },
+          });
+          if (found) {
+            eventIdsToDelete.push(found.id);
+          }
+        }
+      }
+    }
+  }
+
+  if (eventIdsToDelete.length === 0) return;
+
+  // Only delete events authored by the same pubkey (NIP-09 rule)
+  // Unlink any listings referencing these events first
+  await db.listing.updateMany({
+    where: { eventId: { in: eventIdsToDelete } },
+    data: { eventId: null },
+  });
+
+  const deleted = await db.event.deleteMany({
+    where: {
+      id: { in: eventIdsToDelete },
+      pubkey: event.pubkey, // NIP-09: can only delete your own events
+    },
+  });
+
+  if (deleted.count > 0) {
+    console.log(`[event-store] NIP-09: deleted ${deleted.count} event(s) referenced by kind 5 event ${event.id}`);
+  }
 }
 
 async function insertEvent(

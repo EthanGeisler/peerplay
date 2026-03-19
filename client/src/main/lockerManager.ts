@@ -1113,9 +1113,13 @@ export async function getEntries(): Promise<ListResult> {
 
 /**
  * Delete a locker entry by its entry ID.
+ * Calls the server API (which publishes NIP-09 deletion + fans out)
+ * and immediately removes from local index so re-sync won't resurrect it.
  */
 export async function deleteEntry(entryId: string): Promise<void> {
   await apiRequest<{ success: true }>("DELETE", `/locker/entries/${entryId}`);
+  // Remove from local index immediately so the entry doesn't reappear on next sync
+  lockerStore.removeEntry(entryId);
 }
 
 /**
@@ -1412,6 +1416,13 @@ function processDeleteEvent(event: {
 }
 
 /**
+ * Track entry IDs that have been deleted via kind 5 events.
+ * Prevents re-adding entries during sync if the kind 30078 event
+ * arrives before the kind 5 deletion in the same batch.
+ */
+const deletedEntryIds = new Set<string>();
+
+/**
  * Create the WebSocket connection for locker sync.
  */
 function createSyncConnection(): void {
@@ -1463,6 +1474,14 @@ function createSyncConnection(): void {
         };
 
         if (event.kind === 30078) {
+          // Extract entryId from d-tag to check against deletions
+          const dTag = event.tags.find((t) => t[0] === "d")?.[1];
+          if (dTag && deletedEntryIds.has(dTag)) {
+            // This entry was deleted — skip re-adding it
+            console.log(`[locker-sync] Skipping deleted entry: ${dTag}`);
+            return;
+          }
+
           const entry = await processLockerEvent(event);
           if (entry) {
             emitSyncUpdate([entry]);
@@ -1479,6 +1498,7 @@ function createSyncConnection(): void {
         } else if (event.kind === 5) {
           const deletedEntryId = processDeleteEvent(event);
           if (deletedEntryId) {
+            deletedEntryIds.add(deletedEntryId);
             emitSyncUpdate(lockerStore.getAllEntries());
           }
         }
