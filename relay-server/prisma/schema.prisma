@@ -1,0 +1,56 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ContentType {
+  GAME
+  VIDEO
+  SOFTWARE
+  AUDIO
+  OTHER
+}
+
+model Event {
+  id         String   @id
+  pubkey     String
+  createdAt  Int      @map("created_at_unix")
+  kind       Int
+  tags       Json
+  content    String
+  sig        String
+  dTag       String?  @map("d_tag")
+  receivedAt DateTime @default(now()) @map("received_at")
+
+  @@unique([pubkey, kind, dTag])
+  @@index([kind])
+  @@index([pubkey])
+  @@index([createdAt])
+  @@map("events")
+}
+
+model FederatedListing {
+  id            String      @id @default(uuid())
+  relayUrl      String      @map("relay_url")
+  remoteId      String      @map("remote_id")
+  slug          String
+  title         String
+  description   String      @default("")
+  creatorPubkey String?     @map("creator_pubkey")
+  signature     String?
+  contentType   ContentType @default(GAME) @map("content_type")
+  metadata      Json        @default("{}")
+  priceCents    Int         @default(0) @map("price_cents")
+  coverImageUrl String?     @map("cover_image_url")
+  importedAt    DateTime    @default(now()) @map("imported_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  @@unique([relayUrl, remoteId])
+  @@index([slug])
+  @@index([creatorPubkey])
+  @@map("federated_listings")
+}
