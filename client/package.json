@@ -92,7 +92,7 @@
         "AppImage",
         "deb"
       ],
-      "icon": "resources/icon.ico",
+      "icon": "resources/icon.png",
       "category": "Game",
       "desktop": {
         "Name": "BoilerDeck",
