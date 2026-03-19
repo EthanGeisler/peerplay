@@ -604,6 +604,33 @@ function setupIpcHandlers(): void {
     return { success: true };
   });
 
+  // --- Locker Offline & Resilience ---
+  ipcMain.handle("locker:get-upload-queue", () => {
+    return lockerManager.getUploadQueue();
+  });
+
+  ipcMain.handle("locker:retry-queue", async () => {
+    return lockerManager.retryQueue();
+  });
+
+  ipcMain.handle("locker:clear-queue-item", (_event, id: string) => {
+    lockerManager.clearQueueItem(id);
+    return { success: true };
+  });
+
+  ipcMain.handle("locker:export-index", async () => {
+    return lockerManager.exportIndex();
+  });
+
+  ipcMain.handle("locker:set-additional-relays", (_event, relays: string[]) => {
+    lockerManager.setAdditionalRelays(relays);
+    return { success: true };
+  });
+
+  ipcMain.handle("locker:get-connection-status", () => {
+    return lockerManager.getConnectionStatus();
+  });
+
   // --- Media (video/audio playback) ---
   const MEDIA_EXTS = new Set([".mp4", ".webm", ".mkv", ".mp3", ".wav", ".ogg", ".flac"]);
 

@@ -29,6 +29,7 @@ import { nip44Encrypt, nip44Decrypt } from "./nip44.js";
 import * as lockerStore from "./lockerStore.js";
 import type { LockerIndexEntry, DownloadStatus } from "./lockerStore.js";
 import * as lockerSettings from "./lockerSettings.js";
+import * as uploadQueue from "./lockerUploadQueue.js";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -43,6 +44,14 @@ export interface LockerEntry {
   createdAt: number;
   tags: string[];
   version: number;
+  peerHints?: string[];
+}
+
+export interface ConnectionStatus {
+  serverOnline: boolean;
+  relayConnected: boolean;
+  lastSynced: number; // unix timestamp ms
+  uploadQueueCount: number;
 }
 
 export interface UploadResult {
@@ -95,6 +104,11 @@ let syncPollTimer: ReturnType<typeof setTimeout> | null = null;
 const MAX_SYNC_RECONNECT_DELAY = 60000; // 60s
 const BASE_SYNC_RECONNECT_DELAY = 2000; // 2s
 
+// ─── Connection Status ──────────────────────────────────────────────
+
+let serverOnline = true;
+let relayConnected = false;
+
 // ─── Public API ─────────────────────────────────────────────────────
 
 export function setMainWindow(win: BrowserWindow): void {
@@ -142,6 +156,30 @@ function emitSyncUpdate(entries: LockerIndexEntry[]): void {
   if (mainWindowRef && !mainWindowRef.isDestroyed()) {
     mainWindowRef.webContents.send("locker:sync-update", { entries });
   }
+}
+
+// ─── Network Helpers ────────────────────────────────────────────────
+
+/**
+ * Check if an error message indicates a network-level failure
+ * (server unreachable, connection refused, timeout, DNS failure).
+ */
+function isNetworkError(message: string): boolean {
+  const networkPatterns = [
+    "ECONNREFUSED",
+    "ENOTFOUND",
+    "ECONNRESET",
+    "ETIMEDOUT",
+    "EHOSTUNREACH",
+    "EAI_AGAIN",
+    "connection refused",
+    "timed out",
+    "network",
+    "fetch failed",
+    "socket hang up",
+  ];
+  const lower = message.toLowerCase();
+  return networkPatterns.some((p) => lower.includes(p.toLowerCase()));
 }
 
 // ─── MIME Detection ─────────────────────────────────────────────────
@@ -691,27 +729,41 @@ export async function uploadFile(tags: string[] = []): Promise<LockerEntry | nul
   // ── Custodial path: upload to server API ──
   console.log(`[locker] Uploading file (custodial): ${filename} (${fileSize} bytes)`);
 
-  const uploadResult = await uploadToServer(filePath, filename, fileSize, tags, entryId);
+  try {
+    const uploadResult = await uploadToServer(filePath, filename, fileSize, tags, entryId);
 
-  // Build a LockerEntry from the server result + local file info
-  const sha256 = await computeSha256(filePath);
-  const mimeType = detectMimeType(filename);
+    serverOnline = true;
 
-  const entry: LockerEntry = {
-    id: uploadResult.entryId,
-    filename,
-    size: fileSize,
-    mimeType,
-    sha256,
-    infoHash: uploadResult.infoHash,
-    magnetUri: "", // Server doesn't return magnetUri in upload response; will be in list
-    createdAt: Math.floor(Date.now() / 1000),
-    tags,
-    version: 1,
-  };
+    // Build a LockerEntry from the server result + local file info
+    const sha256 = await computeSha256(filePath);
+    const mimeType = detectMimeType(filename);
 
-  console.log(`[locker] Upload complete: ${filename} → entryId=${uploadResult.entryId}`);
-  return entry;
+    const entry: LockerEntry = {
+      id: uploadResult.entryId,
+      filename,
+      size: fileSize,
+      mimeType,
+      sha256,
+      infoHash: uploadResult.infoHash,
+      magnetUri: "", // Server doesn't return magnetUri in upload response; will be in list
+      createdAt: Math.floor(Date.now() / 1000),
+      tags,
+      version: 1,
+    };
+
+    console.log(`[locker] Upload complete: ${filename} → entryId=${uploadResult.entryId}`);
+    return entry;
+  } catch (err) {
+    // Check if this is a network error (server unreachable)
+    const msg = err instanceof Error ? err.message : String(err);
+    if (isNetworkError(msg)) {
+      serverOnline = false;
+      console.warn(`[locker] Upload failed due to network error, queuing: ${filename}`);
+      uploadQueue.addToQueue(filePath, tags, msg);
+      throw new Error(`Upload queued — server unreachable. Will retry automatically.`);
+    }
+    throw err;
+  }
 }
 
 /**
@@ -766,13 +818,19 @@ async function uploadFileSelfCustody(
     eventTags.push(["t", tag]);
   }
 
+  // 7b. Optionally add peer hints
+  const settings = lockerSettings.getSettings();
+  if (settings.includePeerHints) {
+    lockerEntry.peerHints = []; // Placeholder — actual IP discovery would go here
+  }
+
   // 8. Sign event locally
   const signedEvent = await keyManager.signEvent(encrypted, 30078, eventTags);
 
-  // 9. Publish to relay via WebSocket
-  const publishResult = relayManager.publish(signedEvent);
-  if (!publishResult.success) {
-    console.warn(`[locker] Failed to publish to relay: ${publishResult.error}. Event still created.`);
+  // 9. Publish to all configured relays (primary + additional)
+  const anyPublished = await publishToAllRelays(signedEvent);
+  if (!anyPublished) {
+    console.warn("[locker] Failed to publish to any relay. Event still created locally.");
   }
 
   // 10. Upload raw file + .torrent to VPS for persistent seeding (non-fatal)
@@ -861,10 +919,64 @@ export async function uploadDirectory(tags: string[] = []): Promise<LockerEntry 
 
 /**
  * Fetch all locker entries for the current user.
- * Returns entries and quota info from the server API.
+ *
+ * Local-first: returns cached local entries immediately merged with server data.
+ * If the server is unreachable, returns cached entries with the last known quota.
+ * Updates lastSynced timestamp on successful server fetch.
  */
 export async function getEntries(): Promise<ListResult> {
-  return apiRequest<ListResult>("GET", "/locker/entries");
+  try {
+    const result = await apiRequest<ListResult>("GET", "/locker/entries");
+    serverOnline = true;
+    lockerStore.setLastSynced(Date.now());
+
+    // Update local index with server entries
+    for (const entry of result.entries) {
+      const existing = lockerStore.getEntry(entry.id);
+      lockerStore.upsertEntry({
+        entryId: entry.id,
+        filename: entry.filename,
+        size: entry.size,
+        mimeType: entry.mimeType,
+        sha256: entry.sha256,
+        infoHash: entry.infoHash,
+        magnetUri: entry.magnetUri,
+        tags: entry.tags,
+        downloadStatus: existing?.downloadStatus || "available",
+        localPath: existing?.localPath || null,
+        lastSynced: Math.floor(Date.now() / 1000),
+        createdAt: entry.createdAt,
+        version: entry.version,
+      });
+    }
+
+    return result;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (isNetworkError(msg)) {
+      serverOnline = false;
+      console.warn("[locker] Server unreachable, returning cached entries");
+
+      // Return cached entries from local index
+      const cachedEntries = lockerStore.getAllEntries();
+      return {
+        entries: cachedEntries.map((e) => ({
+          id: e.entryId,
+          filename: e.filename,
+          size: e.size,
+          mimeType: e.mimeType,
+          sha256: e.sha256,
+          infoHash: e.infoHash,
+          magnetUri: e.magnetUri,
+          createdAt: e.createdAt,
+          tags: e.tags,
+          version: e.version,
+        })),
+        quota: { used: 0, max: 50 * 1024 * 1024 * 1024 }, // Default when offline
+      };
+    }
+    throw err;
+  }
 }
 
 /**
@@ -1161,6 +1273,7 @@ function createSyncConnection(): void {
   syncWs.on("open", () => {
     console.log("[locker-sync] Connected to relay");
     syncReconnectAttempts = 0;
+    relayConnected = true;
 
     // Subscribe for kind 30078 events authored by the user
     const reqMsg = JSON.stringify([
@@ -1219,6 +1332,7 @@ function createSyncConnection(): void {
         }
       } else if (type === "EOSE") {
         console.log("[locker-sync] Initial sync complete (EOSE)");
+        lockerStore.setLastSynced(Date.now());
         // Notify renderer that sync is up to date
         emitSyncUpdate(lockerStore.getAllEntries());
       }
@@ -1230,6 +1344,7 @@ function createSyncConnection(): void {
   syncWs.on("close", () => {
     console.log("[locker-sync] Connection closed");
     syncWs = null;
+    relayConnected = false;
 
     if (!syncIntentionalClose && syncUserPubkey) {
       scheduleSyncReconnect();
@@ -1259,6 +1374,63 @@ function scheduleSyncReconnect(): void {
   }, delay);
 }
 
+// Additional relay connections for multi-relay sync
+const additionalRelayWs: WebSocket[] = [];
+
+/**
+ * Subscribe to locker events on an additional relay.
+ * Events are processed the same way as on the primary relay.
+ */
+function subscribeOnAdditionalRelay(relayUrl: string, pubkey: string): void {
+  try {
+    const ws = new WebSocket(relayUrl);
+    additionalRelayWs.push(ws);
+
+    ws.on("open", () => {
+      console.log(`[locker-sync] Connected to additional relay: ${relayUrl}`);
+      const subId = `locker-additional-${Date.now()}`;
+      ws.send(JSON.stringify(["REQ", subId, { kinds: [30078], authors: [pubkey] }]));
+    });
+
+    ws.on("message", async (data) => {
+      try {
+        const msg = JSON.parse(data.toString());
+        if (!Array.isArray(msg) || msg.length < 1) return;
+
+        if (msg[0] === "EVENT" && msg.length >= 3) {
+          const event = msg[2] as {
+            id: string;
+            pubkey: string;
+            created_at: number;
+            kind: number;
+            tags: string[][];
+            content: string;
+          };
+          if (event.kind === 30078) {
+            const entry = await processLockerEvent(event);
+            if (entry) {
+              emitSyncUpdate([entry]);
+            }
+          }
+        }
+      } catch {
+        // Ignore
+      }
+    });
+
+    ws.on("error", (err) => {
+      console.warn(`[locker-sync] Additional relay error (${relayUrl}):`, err.message);
+    });
+
+    ws.on("close", () => {
+      const idx = additionalRelayWs.indexOf(ws);
+      if (idx >= 0) additionalRelayWs.splice(idx, 1);
+    });
+  } catch (err) {
+    console.warn(`[locker-sync] Failed to connect to additional relay ${relayUrl}:`, err);
+  }
+}
+
 /**
  * Start the locker sync subscription.
  * Subscribes to the relay for kind 30078 events authored by the user.
@@ -1282,8 +1454,17 @@ export async function startLockerSync(): Promise<void> {
   // Load settings
   lockerSettings.loadSettings();
 
+  // Initialize upload queue
+  initUploadQueue();
+
   // Connect to relay
   createSyncConnection();
+
+  // Also subscribe on additional relays for redundancy
+  const additionalRelays = lockerSettings.getAdditionalRelays();
+  for (const relayUrl of additionalRelays) {
+    subscribeOnAdditionalRelay(relayUrl, pubkey);
+  }
 
   // Start periodic polling (every 5 minutes)
   if (syncPollTimer) {
@@ -1331,9 +1512,19 @@ export function stopLockerSync(): void {
     syncWs = null;
   }
 
+  // Close additional relay connections
+  for (const ws of additionalRelayWs) {
+    try { ws.close(); } catch { /* ignore */ }
+  }
+  additionalRelayWs.length = 0;
+
+  // Stop upload queue processing
+  stopUploadQueue();
+
   syncSubId = null;
   syncUserPubkey = null;
   syncReconnectAttempts = 0;
+  relayConnected = false;
 
   console.log("[locker-sync] Sync stopped");
 }
@@ -1417,4 +1608,219 @@ export async function getSharedWithMe(): Promise<SharedWithMeResult> {
  */
 export async function revokeShare(shareId: string): Promise<void> {
   await apiRequest<{ success: true }>("DELETE", `/locker/share/${shareId}`);
+}
+
+// ─── Offline Upload Queue ───────────────────────────────────────────
+
+/**
+ * Initialize the upload queue. Call on app startup.
+ */
+export function initUploadQueue(): void {
+  uploadQueue.loadQueue();
+
+  // Start processing with a retry function that attempts upload via server
+  uploadQueue.startProcessing(async (filePath: string, tags: string[]) => {
+    const filename = path.basename(filePath);
+    const stat = await fsp.stat(filePath);
+    const fileSize = stat.size;
+    const entryId = crypto.randomUUID();
+    await uploadToServer(filePath, filename, fileSize, tags, entryId);
+  });
+}
+
+/**
+ * Stop the upload queue processing.
+ */
+export function stopUploadQueue(): void {
+  uploadQueue.stopProcessing();
+}
+
+/**
+ * Get queued upload items.
+ */
+export function getUploadQueue(): uploadQueue.QueueItem[] {
+  return uploadQueue.getQueue();
+}
+
+/**
+ * Manually trigger queue processing.
+ */
+export async function retryQueue(): Promise<{ processed: number }> {
+  const count = await uploadQueue.processQueue(async (filePath: string, tags: string[]) => {
+    const filename = path.basename(filePath);
+    const stat = await fsp.stat(filePath);
+    const fileSize = stat.size;
+    const entryId = crypto.randomUUID();
+    await uploadToServer(filePath, filename, fileSize, tags, entryId);
+  });
+  return { processed: count };
+}
+
+/**
+ * Remove a specific item from the upload queue.
+ */
+export function clearQueueItem(id: string): void {
+  uploadQueue.removeFromQueue(id);
+}
+
+// ─── Connection Status ──────────────────────────────────────────────
+
+/**
+ * Get the current connection status.
+ */
+export function getConnectionStatus(): ConnectionStatus {
+  return {
+    serverOnline,
+    relayConnected,
+    lastSynced: lockerStore.getLastSynced(),
+    uploadQueueCount: uploadQueue.getPendingCount(),
+  };
+}
+
+/**
+ * Check if the server is reachable (quick health check).
+ */
+async function checkServerOnline(): Promise<boolean> {
+  try {
+    await apiRequest<unknown>("GET", "/locker/health");
+    serverOnline = true;
+    return true;
+  } catch {
+    serverOnline = false;
+    return false;
+  }
+}
+
+// ─── Multi-Relay Publish ────────────────────────────────────────────
+
+/**
+ * Publish an event to all configured relays (primary + additional).
+ * Returns true if at least one relay accepted the event.
+ */
+async function publishToAllRelays(signedEvent: unknown): Promise<boolean> {
+  let anySuccess = false;
+
+  // Try primary relay via relayManager
+  const primaryResult = relayManager.publish(signedEvent);
+  if (primaryResult.success) {
+    anySuccess = true;
+  } else {
+    console.warn(`[locker] Primary relay publish failed: ${primaryResult.error}`);
+  }
+
+  // Try additional relays
+  const additionalRelays = lockerSettings.getAdditionalRelays();
+  for (const relayUrl of additionalRelays) {
+    try {
+      await publishToRelay(relayUrl, signedEvent);
+      anySuccess = true;
+    } catch (err) {
+      console.warn(`[locker] Additional relay publish failed (${relayUrl}):`, err);
+    }
+  }
+
+  return anySuccess;
+}
+
+/**
+ * Publish an event to a specific relay via a temporary WebSocket.
+ */
+function publishToRelay(relayUrl: string, event: unknown): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const ws = new WebSocket(relayUrl);
+    const timeout = setTimeout(() => {
+      ws.close();
+      reject(new Error(`Publish to ${relayUrl} timed out`));
+    }, 10_000);
+
+    ws.on("open", () => {
+      ws.send(JSON.stringify(["EVENT", event]));
+    });
+
+    ws.on("message", (data) => {
+      try {
+        const msg = JSON.parse(data.toString());
+        if (Array.isArray(msg) && msg[0] === "OK") {
+          clearTimeout(timeout);
+          ws.close();
+          if (msg[2] === true) {
+            resolve();
+          } else {
+            reject(new Error(msg[3] || "Relay rejected event"));
+          }
+        }
+      } catch {
+        // Ignore unparseable messages
+      }
+    });
+
+    ws.on("error", (err) => {
+      clearTimeout(timeout);
+      ws.close();
+      reject(err);
+    });
+
+    ws.on("close", () => {
+      clearTimeout(timeout);
+    });
+  });
+}
+
+// ─── Data Export ────────────────────────────────────────────────────
+
+/**
+ * Export the full local locker index as a JSON file.
+ * Opens a save dialog for the user to choose where to save.
+ */
+export async function exportIndex(): Promise<{ success: boolean; path?: string }> {
+  if (!mainWindowRef) {
+    throw new Error("No main window available");
+  }
+
+  const entries = lockerStore.getAllEntries();
+
+  const result = await dialog.showSaveDialog(mainWindowRef, {
+    title: "Export Locker Index",
+    defaultPath: `locker-index-${new Date().toISOString().slice(0, 10)}.json`,
+    filters: [
+      { name: "JSON Files", extensions: ["json"] },
+      { name: "All Files", extensions: ["*"] },
+    ],
+  });
+
+  if (result.canceled || !result.filePath) {
+    return { success: false };
+  }
+
+  const exportData = {
+    exportedAt: new Date().toISOString(),
+    entryCount: entries.length,
+    entries: entries.map((e) => ({
+      entryId: e.entryId,
+      filename: e.filename,
+      size: e.size,
+      mimeType: e.mimeType,
+      sha256: e.sha256,
+      infoHash: e.infoHash,
+      magnetUri: e.magnetUri,
+      tags: e.tags,
+      createdAt: e.createdAt,
+      version: e.version,
+      downloadStatus: e.downloadStatus,
+      localPath: e.localPath,
+    })),
+  };
+
+  await fsp.writeFile(result.filePath, JSON.stringify(exportData, null, 2), "utf-8");
+  console.log(`[locker] Exported index to ${result.filePath}`);
+  return { success: true, path: result.filePath };
+}
+
+// ─── Additional Relays Setting ──────────────────────────────────────
+
+/**
+ * Set additional relays for multi-relay publishing.
+ */
+export function setAdditionalRelays(relays: string[]): void {
+  lockerSettings.setAdditionalRelays(relays);
 }

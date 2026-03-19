@@ -236,6 +236,26 @@ declare global {
           }>;
         }) => void) => void;
         removeSyncUpdateListener: () => void;
+        getUploadQueue: () => Promise<Array<{
+          id: string;
+          filePath: string;
+          tags: string[];
+          addedAt: number;
+          retryCount: number;
+          lastError: string | null;
+          lastRetryAt: number | null;
+          permanentlyFailed: boolean;
+        }>>;
+        retryQueue: () => Promise<{ processed: number }>;
+        clearQueueItem: (id: string) => Promise<{ success: boolean }>;
+        exportIndex: () => Promise<{ success: boolean; path?: string }>;
+        setAdditionalRelays: (relays: string[]) => Promise<{ success: boolean }>;
+        getConnectionStatus: () => Promise<{
+          serverOnline: boolean;
+          relayConnected: boolean;
+          lastSynced: number;
+          uploadQueueCount: number;
+        }>;
       };
       shell: {
         openExternal: (url: string) => Promise<void>;

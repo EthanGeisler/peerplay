@@ -40,7 +40,7 @@ export interface LockerQuota {
   max: number;
 }
 
-interface UploadQueueItem {
+interface RendererUploadQueueItem {
   id: string;
   filename: string;
   percent: number;
@@ -60,9 +60,27 @@ export interface SharedEntry {
   senderPubkey: string;
 }
 
+export interface ConnectionStatus {
+  serverOnline: boolean;
+  relayConnected: boolean;
+  lastSynced: number;
+  uploadQueueCount: number;
+}
+
+export interface UploadQueueItem {
+  id: string;
+  filePath: string;
+  tags: string[];
+  addedAt: number;
+  retryCount: number;
+  lastError: string | null;
+  lastRetryAt: number | null;
+  permanentlyFailed: boolean;
+}
+
 interface LockerState {
   entries: LockerIndexEntry[];
-  uploadQueue: UploadQueueItem[];
+  uploadQueue: RendererUploadQueueItem[];
   downloadQueue: DownloadQueueItem[];
   quota: LockerQuota;
   viewMode: ViewMode;
@@ -74,6 +92,9 @@ interface LockerState {
   error: string | null;
   sharedWithMe: SharedEntry[];
   sharedWithMeLoading: boolean;
+  connectionStatus: ConnectionStatus;
+  offlineUploadQueue: UploadQueueItem[];
+  dismissedBanners: Set<string>;
 
   fetchEntries: () => Promise<void>;
   uploadFile: (tags?: string[]) => Promise<void>;
@@ -93,6 +114,13 @@ interface LockerState {
   updateDownloadProgress: (data: { entryId: string; percent: number; bytesDownloaded: number; bytesTotal: number }) => void;
   handleSyncUpdate: (entries: LockerIndexEntry[]) => void;
   clearError: () => void;
+  fetchConnectionStatus: () => Promise<void>;
+  fetchOfflineQueue: () => Promise<void>;
+  retryQueue: () => Promise<void>;
+  clearQueueItem: (id: string) => Promise<void>;
+  exportIndex: () => Promise<void>;
+  dismissBanner: (key: string) => void;
+  resetBanners: () => void;
 }
 
 function mergeEntries(
@@ -154,6 +182,9 @@ export const useLockerStore = create<LockerState>((set, get) => ({
   error: null,
   sharedWithMe: [],
   sharedWithMeLoading: false,
+  connectionStatus: { serverOnline: true, relayConnected: false, lastSynced: 0, uploadQueueCount: 0 },
+  offlineUploadQueue: [],
+  dismissedBanners: new Set<string>(),
 
   fetchEntries: async () => {
     set({ isLoading: true, error: null });
@@ -358,4 +389,65 @@ export const useLockerStore = create<LockerState>((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
+
+  fetchConnectionStatus: async () => {
+    try {
+      const status = await window.boilerdeck.locker.getConnectionStatus();
+      set({ connectionStatus: status });
+    } catch {
+      // Silently fail
+    }
+  },
+
+  fetchOfflineQueue: async () => {
+    try {
+      const items = await window.boilerdeck.locker.getUploadQueue();
+      set({ offlineUploadQueue: items });
+    } catch {
+      // Silently fail
+    }
+  },
+
+  retryQueue: async () => {
+    try {
+      await window.boilerdeck.locker.retryQueue();
+      // Refresh queue and entries after retry
+      await get().fetchOfflineQueue();
+      await get().fetchEntries();
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : "Retry failed" });
+    }
+  },
+
+  clearQueueItem: async (id) => {
+    try {
+      await window.boilerdeck.locker.clearQueueItem(id);
+      set((s) => ({
+        offlineUploadQueue: s.offlineUploadQueue.filter((item) => item.id !== id),
+      }));
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : "Failed to clear queue item" });
+    }
+  },
+
+  exportIndex: async () => {
+    try {
+      const result = await window.boilerdeck.locker.exportIndex();
+      if (!result.success) {
+        // User cancelled — not an error
+      }
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : "Export failed" });
+    }
+  },
+
+  dismissBanner: (key) => {
+    set((s) => {
+      const next = new Set(s.dismissedBanners);
+      next.add(key);
+      return { dismissedBanners: next };
+    });
+  },
+
+  resetBanners: () => set({ dismissedBanners: new Set<string>() }),
 }));

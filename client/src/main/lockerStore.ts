@@ -33,6 +33,7 @@ export interface LockerIndexEntry {
 
 let indexPath: string | null = null;
 let entries: LockerIndexEntry[] = [];
+let lastSyncedTimestamp = 0; // unix timestamp ms of last successful server sync
 
 function getIndexPath(): string {
   if (!indexPath) {
@@ -135,4 +136,18 @@ export function setDownloadStatus(
  */
 export function getAllEntries(): LockerIndexEntry[] {
   return [...entries];
+}
+
+/**
+ * Set the last synced timestamp (ms).
+ */
+export function setLastSynced(timestampMs: number): void {
+  lastSyncedTimestamp = timestampMs;
+}
+
+/**
+ * Get the last synced timestamp (ms).
+ */
+export function getLastSynced(): number {
+  return lastSyncedTimestamp;
 }

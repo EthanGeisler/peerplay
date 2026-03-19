@@ -34,6 +34,8 @@ export interface LockerEntry {
   tags: string[];
   /** Entry version number — incremented on updates. */
   version: number;
+  /** Optional peer hints for P2P fallback — array of "ip:port" strings. */
+  peerHints?: string[];
 }
 
 // ─── Validation ─────────────────────────────────────────────────────
@@ -105,6 +107,14 @@ export function validateLockerEntry(entry: unknown): entry is LockerEntry {
   if (!Array.isArray(e.tags)) return false;
   for (const tag of e.tags) {
     if (typeof tag !== "string") return false;
+  }
+
+  // Optional peerHints
+  if (e.peerHints !== undefined) {
+    if (!Array.isArray(e.peerHints)) return false;
+    for (const hint of e.peerHints) {
+      if (typeof hint !== "string") return false;
+    }
   }
 
   return true;

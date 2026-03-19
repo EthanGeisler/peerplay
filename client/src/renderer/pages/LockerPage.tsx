@@ -79,7 +79,48 @@ const styles = {
     color: active ? "#e94560" : "#888",
     cursor: "pointer",
   }) as React.CSSProperties,
+  statusBanner: {
+    backgroundColor: "#d2992222",
+    border: "1px solid #d29922",
+    borderRadius: 4,
+    padding: "8px 14px",
+    marginBottom: 8,
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    fontSize: 13,
+    color: "#d29922",
+  } as React.CSSProperties,
+  statusBannerDismiss: {
+    background: "none",
+    border: "none",
+    color: "#d29922",
+    cursor: "pointer",
+    fontSize: 14,
+    fontWeight: 700,
+    padding: "0 4px",
+    opacity: 0.7,
+  } as React.CSSProperties,
+  lastSyncedText: {
+    fontSize: 11,
+    color: "#666",
+    textAlign: "right",
+    marginBottom: 8,
+  } as React.CSSProperties,
 };
+
+function formatLastSynced(timestampMs: number): string {
+  if (timestampMs === 0) return "never";
+  const diffMs = Date.now() - timestampMs;
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 60) return "just now";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} minute${diffMin !== 1 ? "s" : ""} ago`;
+  const diffHrs = Math.floor(diffMin / 60);
+  if (diffHrs < 24) return `${diffHrs} hour${diffHrs !== 1 ? "s" : ""} ago`;
+  const diffDays = Math.floor(diffHrs / 24);
+  return `${diffDays} day${diffDays !== 1 ? "s" : ""} ago`;
+}
 
 function sortEntries(entries: LockerIndexEntry[], field: SortField, dir: "asc" | "desc"): LockerIndexEntry[] {
   const sorted = [...entries].sort((a, b) => {
@@ -134,6 +175,14 @@ export function LockerPage() {
   const handleSyncUpdate = useLockerStore((s) => s.handleSyncUpdate);
   const clearError = useLockerStore((s) => s.clearError);
 
+  const connectionStatus = useLockerStore((s) => s.connectionStatus);
+  const dismissedBanners = useLockerStore((s) => s.dismissedBanners);
+  const fetchConnectionStatus = useLockerStore((s) => s.fetchConnectionStatus);
+  const fetchOfflineQueue = useLockerStore((s) => s.fetchOfflineQueue);
+  const retryQueue = useLockerStore((s) => s.retryQueue);
+  const exportIndex = useLockerStore((s) => s.exportIndex);
+  const dismissBanner = useLockerStore((s) => s.dismissBanner);
+
   const [activeTab, setActiveTab] = useState<"my-files" | "shared">("my-files");
   const [shareDialogEntryId, setShareDialogEntryId] = useState<string | null>(null);
   const [shareRecipient, setShareRecipient] = useState("");
@@ -160,6 +209,20 @@ export function LockerPage() {
       }).catch(() => {});
     }
   }, [user]);
+
+  // Poll connection status and offline queue periodically
+  useEffect(() => {
+    if (!user) return;
+    fetchConnectionStatus();
+    fetchOfflineQueue();
+
+    const interval = setInterval(() => {
+      fetchConnectionStatus();
+      fetchOfflineQueue();
+    }, 30_000); // every 30 seconds
+
+    return () => clearInterval(interval);
+  }, [user, fetchConnectionStatus, fetchOfflineQueue]);
 
   // Start sync and attach progress listeners
   useEffect(() => {
@@ -435,21 +498,89 @@ export function LockerPage() {
           </div>
         )}
 
+        {/* Status banners */}
+        {activeTab === "my-files" && !connectionStatus.serverOnline && !dismissedBanners.has("offline") && (
+          <div style={styles.statusBanner}>
+            <span>Offline — showing cached entries</span>
+            <button onClick={() => dismissBanner("offline")} style={styles.statusBannerDismiss}>x</button>
+          </div>
+        )}
+        {activeTab === "my-files" && connectionStatus.uploadQueueCount > 0 && !dismissedBanners.has("queue") && (
+          <div style={styles.statusBanner}>
+            <span>
+              {connectionStatus.uploadQueueCount} upload{connectionStatus.uploadQueueCount !== 1 ? "s" : ""} queued — will retry when online
+            </span>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <button
+                onClick={() => retryQueue()}
+                style={{
+                  padding: "3px 10px",
+                  fontSize: 12,
+                  border: "1px solid #d29922",
+                  borderRadius: 3,
+                  backgroundColor: "transparent",
+                  color: "#d29922",
+                  cursor: "pointer",
+                }}
+              >
+                Retry Now
+              </button>
+              <button onClick={() => dismissBanner("queue")} style={styles.statusBannerDismiss}>x</button>
+            </div>
+          </div>
+        )}
+        {activeTab === "my-files" && !connectionStatus.relayConnected && connectionStatus.lastSynced > 0 && !dismissedBanners.has("relay") && (
+          <div style={styles.statusBanner}>
+            <span>Relay disconnected — showing cached entries</span>
+            <button onClick={() => dismissBanner("relay")} style={styles.statusBannerDismiss}>x</button>
+          </div>
+        )}
+        {activeTab === "my-files" && connectionStatus.lastSynced > 0 && (
+          <div style={styles.lastSyncedText as React.CSSProperties}>
+            Last synced: {formatLastSynced(connectionStatus.lastSynced)}
+          </div>
+        )}
+
         {activeTab === "my-files" && <LockerQuotaBar quota={quota} />}
 
-        {activeTab === "my-files" && <LockerToolbar
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          sortField={sortField}
-          sortDir={sortDir}
-          onSortFieldChange={setSortField}
-          onSortDirChange={setSortDir}
-          onUploadFile={() => uploadFile()}
-          onUploadDirectory={() => uploadDirectory()}
-          isLoading={isLoading}
-        />}
+        {activeTab === "my-files" && (
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <LockerToolbar
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+                viewMode={viewMode}
+                onViewModeChange={setViewMode}
+                sortField={sortField}
+                sortDir={sortDir}
+                onSortFieldChange={setSortField}
+                onSortDirChange={setSortDir}
+                onUploadFile={() => uploadFile()}
+                onUploadDirectory={() => uploadDirectory()}
+                isLoading={isLoading}
+              />
+            </div>
+            <button
+              onClick={() => exportIndex()}
+              title="Export locker index as JSON backup"
+              style={{
+                padding: "6px 12px",
+                fontSize: 12,
+                border: "1px solid #0f3460",
+                borderRadius: 4,
+                backgroundColor: "transparent",
+                color: "#888",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                marginTop: 2,
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#0f3460"; e.currentTarget.style.color = "#fff"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "#888"; }}
+            >
+              Export Index
+            </button>
+          </div>
+        )}
 
         {/* Tag filter chips */}
         {activeTab === "my-files" && allTags.length > 0 && (

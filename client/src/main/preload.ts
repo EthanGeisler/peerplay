@@ -330,6 +330,30 @@ contextBridge.exposeInMainWorld("boilerdeck", {
     removeSyncUpdateListener: (): void => {
       ipcRenderer.removeAllListeners("locker:sync-update");
     },
+    getUploadQueue: (): Promise<Array<{
+      id: string;
+      filePath: string;
+      tags: string[];
+      addedAt: number;
+      retryCount: number;
+      lastError: string | null;
+      lastRetryAt: number | null;
+      permanentlyFailed: boolean;
+    }>> => ipcRenderer.invoke("locker:get-upload-queue"),
+    retryQueue: (): Promise<{ processed: number }> =>
+      ipcRenderer.invoke("locker:retry-queue"),
+    clearQueueItem: (id: string): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke("locker:clear-queue-item", id),
+    exportIndex: (): Promise<{ success: boolean; path?: string }> =>
+      ipcRenderer.invoke("locker:export-index"),
+    setAdditionalRelays: (relays: string[]): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke("locker:set-additional-relays", relays),
+    getConnectionStatus: (): Promise<{
+      serverOnline: boolean;
+      relayConnected: boolean;
+      lastSynced: number;
+      uploadQueueCount: number;
+    }> => ipcRenderer.invoke("locker:get-connection-status"),
   },
 
   shell: {
@@ -625,6 +649,26 @@ declare global {
           }>;
         }) => void) => void;
         removeSyncUpdateListener: () => void;
+        getUploadQueue: () => Promise<Array<{
+          id: string;
+          filePath: string;
+          tags: string[];
+          addedAt: number;
+          retryCount: number;
+          lastError: string | null;
+          lastRetryAt: number | null;
+          permanentlyFailed: boolean;
+        }>>;
+        retryQueue: () => Promise<{ processed: number }>;
+        clearQueueItem: (id: string) => Promise<{ success: boolean }>;
+        exportIndex: () => Promise<{ success: boolean; path?: string }>;
+        setAdditionalRelays: (relays: string[]) => Promise<{ success: boolean }>;
+        getConnectionStatus: () => Promise<{
+          serverOnline: boolean;
+          relayConnected: boolean;
+          lastSynced: number;
+          uploadQueueCount: number;
+        }>;
       };
       shell: {
         openExternal: (url: string) => Promise<void>;
