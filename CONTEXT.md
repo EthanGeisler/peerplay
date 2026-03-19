@@ -490,13 +490,15 @@ git tag v0.x.x && git push origin v0.x.x
 The version in `client/package.json` (`"version": "0.2.0"`) controls the installer filename and auto-update version comparison. The git tag should match (e.g., `v0.2.0`). Bump both together.
 
 ### Current Release
-- **v0.3.1** — https://github.com/EthanGeisler/peerplay/releases/tag/v0.3.1
-- Published 2026-03-19, built via CI (GitHub Actions on `v0.3.1` tag push)
-- NSIS installer (~91MB) + portable exe + blockmap (delta updates)
+- **v0.4.0** — https://github.com/EthanGeisler/peerplay/releases/tag/v0.4.0
+- Published 2026-03-19, built via CI (GitHub Actions on `v0.4.0` tag push)
+- NSIS installer (~95MB) + portable exe + blockmap (delta updates)
 - Not code-signed (SmartScreen warning expected)
-- Includes: Phase 6 Privacy Layer (Tor/SOCKS5 proxy support, privacy settings UI, .onion endpoint support) + asar module resolution fix
-- **v0.3.0** — BURNED (runtime crash from ESM-only `socks-proxy-agent@9` inside asar). Do not distribute. Users who installed v0.3.0 must manually download v0.3.1.
-- **v0.2.1** — superseded, auto-update prompts users to v0.3.1
+- Includes: Phase 9 Data Locker (encrypted file storage, NIP-44 encryption, sharing, offline queue, batch operations, keyboard shortcuts)
+- VPS download: `https://boilerdeck.com/downloads/BoilerDeck%20Setup%200.4.0.exe`
+- **v0.3.1** — superseded, auto-update prompts users to v0.4.0
+- **v0.3.0** — BURNED (runtime crash from ESM-only `socks-proxy-agent@9` inside asar). Do not distribute.
+- **v0.2.1** — superseded
 - **v0.2.0** — superseded
 - **v0.1.0** — superseded
 
