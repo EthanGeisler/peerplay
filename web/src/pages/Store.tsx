@@ -91,7 +91,7 @@ export function Store() {
       {/* Download CTA */}
       {!isSearching && (
         <a
-          href="/downloads/BoilerDeck%20Setup%200.3.1.exe"
+          href="/downloads/BoilerDeck%20Setup%200.5.0.exe"
           download
           style={{
             display: "flex",
@@ -123,7 +123,7 @@ export function Store() {
               Get the BoilerDeck Desktop Client
             </div>
             <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-              Download games via BitTorrent. Available for Windows.
+              Download games via BitTorrent. Available for Windows and Linux.
             </div>
           </div>
           <div

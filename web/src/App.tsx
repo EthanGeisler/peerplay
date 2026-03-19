@@ -119,7 +119,7 @@ export function App() {
 
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <a
-            href="/downloads/BoilerDeck%20Setup%200.3.1.exe"
+            href="/downloads/BoilerDeck%20Setup%200.5.0.exe"
             download
             style={{
               display: "flex",

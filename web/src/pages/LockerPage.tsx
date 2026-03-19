@@ -324,7 +324,7 @@ function FileRow({
           </button>
         )}
         <a
-          href="/downloads/BoilerDeck%20Setup%200.3.1.exe"
+          href="/downloads/BoilerDeck%20Setup%200.5.0.exe"
           download
           title="Download with BoilerDeck Desktop"
           style={{
@@ -510,7 +510,7 @@ function FileCard({
           </button>
         )}
         <a
-          href="/downloads/BoilerDeck%20Setup%200.3.1.exe"
+          href="/downloads/BoilerDeck%20Setup%200.5.0.exe"
           download
           style={{
             flex: 1,
@@ -956,7 +956,7 @@ export function LockerPage() {
           Upload files from the BoilerDeck Desktop app
         </span>
         <a
-          href="/downloads/BoilerDeck%20Setup%200.3.1.exe"
+          href="/downloads/BoilerDeck%20Setup%200.5.0.exe"
           download
           style={{
             padding: "6px 14px",
@@ -1044,7 +1044,7 @@ export function LockerPage() {
             personal storage.
           </p>
           <a
-            href="/downloads/BoilerDeck%20Setup%200.3.1.exe"
+            href="/downloads/BoilerDeck%20Setup%200.5.0.exe"
             download
             style={{
               display: "inline-block",
