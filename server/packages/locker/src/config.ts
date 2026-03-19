@@ -6,6 +6,8 @@
  * env vars to the global config (which would require them everywhere).
  */
 
+import path from "node:path";
+
 export interface LockerConfig {
   /** Directory for locker file storage. Default: ./data/locker/ */
   LOCKER_DIR: string;
@@ -29,7 +31,7 @@ let _config: LockerConfig | null = null;
 export function getLockerConfig(): LockerConfig {
   if (!_config) {
     _config = {
-      LOCKER_DIR: process.env.LOCKER_DIR || "./data/locker",
+      LOCKER_DIR: path.resolve(process.env.LOCKER_DIR || "./data/locker"),
       LOCKER_MAX_FILE_SIZE: process.env.LOCKER_MAX_FILE_SIZE
         ? parseInt(process.env.LOCKER_MAX_FILE_SIZE, 10)
         : DEFAULT_MAX_FILE_SIZE,
