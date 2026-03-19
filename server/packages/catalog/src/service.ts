@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { db, NotFoundError, ForbiddenError, ValidationError } from "@boilerdeck/shared";
+import { db, NotFoundError, ForbiddenError, ValidationError, redis } from "@boilerdeck/shared";
 import type { ContentType, Prisma } from "@prisma/client";
 
 function slugify(title: string): string {
@@ -153,7 +153,7 @@ export async function getListingBySlug(slug: string) {
   };
 }
 
-export async function createListing(developerId: string, input: CreateListingInput) {
+export async function createListing(developerId: string, input: CreateListingInput, creatorPublicKey?: string | null) {
   const slug = slugify(input.title);
 
   const game = await db.listing.create({
@@ -167,6 +167,7 @@ export async function createListing(developerId: string, input: CreateListingInp
       savePaths: input.savePaths ?? [],
       contentType: input.contentType ?? "GAME",
       metadata: input.metadata ?? {},
+      ...(creatorPublicKey ? { creatorPublicKey } : {}),
     },
   });
 
@@ -343,7 +344,7 @@ export async function getDeveloperListing(gameId: string, developerId: string) {
   };
 }
 
-export async function publishListing(gameId: string, developerId: string) {
+export async function publishListing(gameId: string, developerId: string, userId?: string) {
   const game = await db.listing.findUnique({
     where: { id: gameId },
     include: {
@@ -351,7 +352,9 @@ export async function publishListing(gameId: string, developerId: string) {
         where: { status: "READY" },
         take: 1,
       },
-      developer: true,
+      developer: {
+        include: { user: { select: { nostrPubkey: true, custodyMode: true } } },
+      },
     },
   });
 
@@ -369,12 +372,89 @@ export async function publishListing(gameId: string, developerId: string) {
     );
   }
 
+  // Build update data — always set status to PUBLISHED
+  const updateData: Record<string, unknown> = { status: "PUBLISHED" };
+
+  // Set creatorPublicKey if not already set
+  const pubkey = game.developer.user?.nostrPubkey ?? null;
+  if (pubkey && !game.creatorPublicKey) {
+    updateData.creatorPublicKey = pubkey;
+  }
+
+  // Try to generate a Schnorr signature for the listing
+  if (userId && pubkey && game.developer.user?.custodyMode !== "SELF_CUSTODY") {
+    try {
+      const sig = await signListingData(userId, {
+        title: game.title,
+        slug: game.slug,
+        description: game.description,
+        priceCents: game.priceCents,
+        contentType: game.contentType,
+      });
+      if (sig) {
+        updateData.signature = sig;
+      }
+    } catch {
+      // Signing failure is non-fatal — listing is still published without signature
+    }
+  }
+
   const updated = await db.listing.update({
     where: { id: gameId },
-    data: { status: "PUBLISHED" },
+    data: updateData,
   });
 
   return updated;
+}
+
+/**
+ * Sign listing data using the user's cached signing key from Redis.
+ * Returns the hex signature string, or null if signing is not possible.
+ */
+async function signListingData(
+  userId: string,
+  data: { title: string; slug: string; description: string; priceCents: number; contentType: string },
+): Promise<string | null> {
+  const { schnorr } = await import("@noble/curves/secp256k1.js");
+  const { sha256 } = await import("@noble/hashes/sha2.js");
+  const { hexToBytes, bytesToHex } = await import("@noble/hashes/utils.js");
+
+  // Load cached signing key from Redis
+  const cached = await redis.get(`signing_key:${userId}`);
+  if (!cached) return null;
+
+  // Decrypt the cached key (format: nonce:tag:ciphertext, encrypted with SIGNING_CACHE_KEY)
+  const signingCacheKey = process.env.SIGNING_CACHE_KEY;
+  if (!signingCacheKey) return null;
+
+  const parts = cached.split(":");
+  if (parts.length !== 3) return null;
+
+  const nonce = Buffer.from(parts[0], "hex");
+  const tag = Buffer.from(parts[1], "hex");
+  const ciphertext = Buffer.from(parts[2], "hex");
+  const key = Buffer.from(signingCacheKey, "hex");
+
+  const decipher = crypto.createDecipheriv("aes-256-gcm", key, nonce);
+  decipher.setAuthTag(tag);
+
+  const privateKey = new Uint8Array(
+    Buffer.concat([decipher.update(ciphertext), decipher.final()]),
+  );
+
+  // Sign: canonical JSON → SHA-256 → Schnorr
+  const canonical = JSON.stringify({
+    title: data.title,
+    slug: data.slug,
+    description: data.description,
+    priceCents: data.priceCents,
+    contentType: data.contentType,
+  });
+  const messageBytes = new TextEncoder().encode(canonical);
+  const messageHash = sha256(messageBytes);
+  const signature = schnorr.sign(messageHash, privateKey);
+
+  return bytesToHex(signature);
 }
 
 export async function unpublishListing(gameId: string, developerId: string) {

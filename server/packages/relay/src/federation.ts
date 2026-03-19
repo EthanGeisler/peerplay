@@ -182,6 +182,53 @@ export function isImported(eventId: string): boolean {
 }
 
 /**
+ * Forward a signed listing to all connected federated relays via their REST API.
+ * Posts to <relayHttpUrl>/api/relay/listings with the signed listing data.
+ * Non-blocking — errors are logged but don't propagate.
+ */
+export function federateListingOutbound(listing: {
+  title: string;
+  slug: string;
+  description: string;
+  priceCents: number;
+  contentType: string;
+  creatorPublicKey: string;
+  signature: string;
+  id?: string;
+}): void {
+  for (const [, relay] of relays) {
+    const httpBase = wsUrlToHttpBase(relay.url);
+    const url = `${httpBase}/api/relay/listings`;
+
+    fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        listing: {
+          id: listing.id,
+          title: listing.title,
+          slug: listing.slug,
+          description: listing.description,
+          priceCents: listing.priceCents,
+          contentType: listing.contentType,
+        },
+        signature: listing.signature,
+        creatorPublicKey: listing.creatorPublicKey,
+      }),
+      signal: AbortSignal.timeout(15000),
+    }).then((res) => {
+      if (!res.ok) {
+        console.warn(`[federation] Listing POST to ${url} returned ${res.status}`);
+      } else {
+        console.log(`[federation] Federated listing ${listing.slug} to ${relay.url}`);
+      }
+    }).catch((err) => {
+      console.warn(`[federation] Failed to POST listing to ${url}:`, err);
+    });
+  }
+}
+
+/**
  * Shut down all federation connections.
  */
 export function shutdownFederation(): void {

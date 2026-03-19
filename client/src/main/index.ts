@@ -219,6 +219,43 @@ function setupIpcHandlers(): void {
     return signedEvent;
   });
 
+  // --- Listing signing (local Schnorr signature for listing data) ---
+  ipcMain.handle("listings:sign", async (_event, data: {
+    title: string;
+    slug: string;
+    description: string;
+    priceCents: number;
+    contentType: string;
+  }) => {
+    if (!keyManager.hasKey()) {
+      throw new Error("NO_KEY");
+    }
+
+    const { schnorr } = await import("@noble/curves/secp256k1.js");
+    const { sha256 } = await import("@noble/hashes/sha2.js");
+    const { hexToBytes, bytesToHex } = await import("@noble/hashes/utils.js");
+
+    const privkeyHex = keyManager.getPrivateKeyHex();
+    const privateKey = hexToBytes(privkeyHex);
+    const publicKey = schnorr.getPublicKey(privateKey);
+
+    const canonical = JSON.stringify({
+      title: data.title,
+      slug: data.slug,
+      description: data.description,
+      priceCents: data.priceCents,
+      contentType: data.contentType,
+    });
+    const messageBytes = new TextEncoder().encode(canonical);
+    const messageHash = sha256(messageBytes);
+    const signature = schnorr.sign(messageHash, privateKey);
+
+    return {
+      signature: bytesToHex(signature),
+      creatorPublicKey: bytesToHex(publicKey),
+    };
+  });
+
   // --- Relay key caching (for server-managed keys fetched by renderer) ---
   ipcMain.handle("events:cache-relay-keys", (_event, keys: { pubkey: string; privkey: string }) => {
     storeSet("relayPrivkey", keys.privkey);

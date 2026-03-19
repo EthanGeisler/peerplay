@@ -85,7 +85,44 @@ export function DevGameDetail() {
   const handlePublish = async () => {
     setActionLoading(true);
     try {
-      await apiFetch(`/developer/games/${id}/publish`, { method: "PATCH" });
+      const published = await apiFetch<DevGameData>(`/developer/games/${id}/publish`, { method: "PATCH" });
+
+      // Secondary path: sign locally if user has a local key (non-blocking)
+      if (window.boilerdeck?.listings?.sign && published) {
+        try {
+          const hasKey = await window.boilerdeck.crypto.hasKey();
+          if (hasKey) {
+            const { signature, creatorPublicKey } = await window.boilerdeck.listings.sign({
+              title: published.title,
+              slug: published.slug,
+              description: published.description,
+              priceCents: published.priceCents,
+              contentType: published.contentType ?? "GAME",
+            });
+            // Submit signed listing to relay
+            await apiFetch("/relay/listings", {
+              method: "POST",
+              body: JSON.stringify({
+                listing: {
+                  id: published.id,
+                  title: published.title,
+                  slug: published.slug,
+                  description: published.description,
+                  priceCents: published.priceCents,
+                  contentType: published.contentType ?? "GAME",
+                },
+                signature,
+                creatorPublicKey,
+              }),
+            });
+            console.log("[publish] Local signature submitted to relay");
+          }
+        } catch (signErr) {
+          // Local signing is non-fatal — server-side signing is the primary path
+          console.warn("[publish] Local signing failed (non-fatal):", signErr);
+        }
+      }
+
       loadGame();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to publish");

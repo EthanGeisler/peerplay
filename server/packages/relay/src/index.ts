@@ -24,6 +24,7 @@ export {
   getFederationStatus,
   getExternalRelayUrls,
   isImported,
+  federateListingOutbound,
   addRelay,
   removeRelay,
   pollRelayListings,

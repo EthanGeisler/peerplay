@@ -42,6 +42,15 @@ declare global {
         }) => Promise<unknown>;
         cacheRelayKeys: (keys: { pubkey: string; privkey: string }) => Promise<{ success: boolean }>;
       };
+      listings: {
+        sign: (data: {
+          title: string;
+          slug: string;
+          description: string;
+          priceCents: number;
+          contentType: string;
+        }) => Promise<{ signature: string; creatorPublicKey: string }>;
+      };
       relays: {
         list: () => Promise<Array<{ url: string; name: string; isDefault: boolean; enabled: boolean }>>;
         add: (url: string) => Promise<Array<{ url: string; name: string; isDefault: boolean; enabled: boolean }>>;

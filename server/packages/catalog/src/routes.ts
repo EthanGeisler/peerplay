@@ -6,6 +6,7 @@ import { z } from "zod";
 import multer from "multer";
 import { authenticate, requireRole, ValidationError, NotFoundError, getConfig, storeEvent, EVENT_KIND_GAME_LISTING, EVENT_KIND_GAME_VERSION, db, handleZodError } from "@boilerdeck/shared";
 import { signEventForUser } from "@boilerdeck/auth";
+import { federateListingOutbound } from "@boilerdeck/relay";
 import * as catalogService from "./service.js";
 import * as uploadService from "./upload.js";
 
@@ -207,7 +208,7 @@ catalogRouter.patch(
   async (req, res, next) => {
     try {
       const developer = await catalogService.getDeveloperByUserId(req.user!.sub);
-      let game = await catalogService.publishGame(String(req.params.id), developer.id);
+      let game = await catalogService.publishGame(String(req.params.id), developer.id, req.user!.sub);
 
       // Sign and store a kind 30001 event with PUBLISHED status (non-fatal)
       try {
@@ -230,6 +231,24 @@ catalogRouter.patch(
         }
       } catch {
         // Signing failure is non-fatal
+      }
+
+      // Federate signed listing to external relays (non-fatal)
+      try {
+        if (game.creatorPublicKey && game.signature) {
+          federateListingOutbound({
+            id: game.id,
+            title: game.title,
+            slug: game.slug,
+            description: game.description,
+            priceCents: game.priceCents,
+            contentType: game.contentType,
+            creatorPublicKey: game.creatorPublicKey,
+            signature: game.signature,
+          });
+        }
+      } catch {
+        // Federation failure is non-fatal
       }
 
       res.json(game);
@@ -323,7 +342,9 @@ catalogRouter.post(
         handleZodError(err);
       }
       const developer = await catalogService.getDeveloperByUserId(req.user!.sub);
-      let listing = await catalogService.createListing(developer.id, input);
+      // Look up user's nostrPubkey to set as creatorPublicKey
+      const user = await db.user.findUnique({ where: { id: req.user!.sub }, select: { nostrPubkey: true } });
+      let listing = await catalogService.createListing(developer.id, input, user?.nostrPubkey);
 
       // Sign and store a kind 30001 event (non-blocking on failure)
       try {
@@ -410,7 +431,7 @@ catalogRouter.patch(
   async (req, res, next) => {
     try {
       const developer = await catalogService.getDeveloperByUserId(req.user!.sub);
-      let listing = await catalogService.publishListing(String(req.params.id), developer.id);
+      let listing = await catalogService.publishListing(String(req.params.id), developer.id, req.user!.sub);
 
       try {
         const event = await signEventForUser(req.user!.sub, {
@@ -433,6 +454,24 @@ catalogRouter.patch(
         }
       } catch {
         // Signing failure is non-fatal
+      }
+
+      // Federate signed listing to external relays (non-fatal)
+      try {
+        if (listing.creatorPublicKey && listing.signature) {
+          federateListingOutbound({
+            id: listing.id,
+            title: listing.title,
+            slug: listing.slug,
+            description: listing.description,
+            priceCents: listing.priceCents,
+            contentType: listing.contentType,
+            creatorPublicKey: listing.creatorPublicKey,
+            signature: listing.signature,
+          });
+        }
+      } catch {
+        // Federation failure is non-fatal
       }
 
       res.json(listing);
@@ -689,7 +728,9 @@ catalogRouter.post(
         handleZodError(err);
       }
       const developer = await catalogService.getDeveloperByUserId(req.user!.sub);
-      let game = await catalogService.createGame(developer.id, input);
+      // Look up user's nostrPubkey to set as creatorPublicKey
+      const gameUser = await db.user.findUnique({ where: { id: req.user!.sub }, select: { nostrPubkey: true } });
+      let game = await catalogService.createGame(developer.id, input, gameUser?.nostrPubkey);
 
       // Sign and store a kind 30001 event for this game (non-blocking on failure)
       try {

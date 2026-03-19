@@ -135,6 +135,7 @@ export interface DevGameData {
   status: string;
   coverImageUrl: string | null;
   screenshots: string[];
+  contentType?: string;
   exePath: string | null;
   savePaths: string[];
   createdAt: string;

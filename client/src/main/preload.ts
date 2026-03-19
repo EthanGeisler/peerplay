@@ -67,6 +67,17 @@ contextBridge.exposeInMainWorld("boilerdeck", {
       ipcRenderer.invoke("events:cache-relay-keys", keys),
   },
 
+  listings: {
+    sign: (data: {
+      title: string;
+      slug: string;
+      description: string;
+      priceCents: number;
+      contentType: string;
+    }): Promise<{ signature: string; creatorPublicKey: string }> =>
+      ipcRenderer.invoke("listings:sign", data),
+  },
+
   relays: {
     list: (): Promise<Array<{ url: string; name: string; isDefault: boolean; enabled: boolean }>> =>
       ipcRenderer.invoke("relays:list"),
@@ -278,6 +289,15 @@ declare global {
           body: string;
         }) => Promise<unknown>;
         cacheRelayKeys: (keys: { pubkey: string; privkey: string }) => Promise<{ success: boolean }>;
+      };
+      listings: {
+        sign: (data: {
+          title: string;
+          slug: string;
+          description: string;
+          priceCents: number;
+          contentType: string;
+        }) => Promise<{ signature: string; creatorPublicKey: string }>;
       };
       relays: {
         list: () => Promise<Array<{ url: string; name: string; isDefault: boolean; enabled: boolean }>>;
