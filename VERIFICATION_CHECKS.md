@@ -916,3 +916,25 @@ These must remain true throughout the entire implementation:
 - [ ] `[AUTO]` **dTag consistency:** For all events with kind 30000-39999, `dTag` is never `null` (should be `""` if no d tag was provided). For kinds outside this range, `dTag` is `null`
 - [ ] `[AUTO]` **Event content size limit:** No event has `content` larger than a configured max (e.g., 64KB). Enforce on all ingestion paths (REST, WS, materialization)
 - [ ] `[AUTO]` **BigInt safety:** Event IDs (64-char hex) survive JSON serialization round-trips without truncation or precision loss. No code path parses them as numbers
+
+---
+
+## Phase 9: Data Locker
+
+### 9.13 — Testing, Polish & Documentation
+
+- [ ] `[AUTO]` Locker upload endpoint returns 401 without auth: `curl -s -o /dev/null -w '%{http_code}' -X POST https://boilerdeck.com/api/locker/upload` returns `401`
+- [ ] `[AUTO]` Locker entries endpoint returns 401 without auth: `curl -s -o /dev/null -w '%{http_code}' https://boilerdeck.com/api/locker/entries` returns `401`
+- [ ] `[AUTO]` Locker health endpoint returns status: `curl -s https://boilerdeck.com/api/locker/health | jq .status` returns `"ok"` or `"degraded"`
+- [ ] `[AUTO]` NIP-44 encryption round-trip works: `npx tsx --test server/packages/locker/src/__tests__/encryption.test.ts` passes
+- [ ] `[AUTO]` Integration tests pass: `npx tsx --test server/packages/locker/src/__tests__/integration.test.ts` passes
+- [ ] `[AUTO]` Locker service tests pass: `npx tsx --test server/packages/locker/src/__tests__/locker-service.test.ts` passes
+- [ ] `[CODE]` Prisma `LockerFile` model exists in `server/prisma/schema.prisma` with fields: id, userId, entryId, filename, size, sha256, infoHash, torrentPath, filePath, deletedAt
+- [ ] `[CODE]` Prisma `LockerQuota` model exists in `server/prisma/schema.prisma` with fields: id, userId, usedBytes, maxBytes
+- [ ] `[CODE]` `LOCKER_ENTRY_KIND` constant equals `30078` in `server/packages/shared/src/locker.ts`
+- [ ] `[CODE]` Locker routes mounted at `/api/locker` in `server/src/index.ts`
+- [ ] `[CODE]` LockerPage has keyboard shortcuts: Ctrl+U (upload), Delete (remove), Enter (open/download), Ctrl+A (select all), Escape (clear selection)
+- [ ] `[CODE]` LockerPage has batch action bar: appears when multiple entries selected, shows Download All and Delete All buttons
+- [ ] `[CODE]` `selectedEntryIds` state exists in `client/src/renderer/stores/lockerStore.ts`
+- [ ] `[AUTO]` `npx tsc --noEmit` passes in `server/` directory
+- [ ] `[AUTO]` `npx tsc --noEmit` passes in `client/` directory

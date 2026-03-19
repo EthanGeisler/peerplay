@@ -95,6 +95,7 @@ interface LockerState {
   connectionStatus: ConnectionStatus;
   offlineUploadQueue: UploadQueueItem[];
   dismissedBanners: Set<string>;
+  selectedEntryIds: string[];
 
   fetchEntries: () => Promise<void>;
   uploadFile: (tags?: string[]) => Promise<void>;
@@ -121,6 +122,13 @@ interface LockerState {
   exportIndex: () => Promise<void>;
   dismissBanner: (key: string) => void;
   resetBanners: () => void;
+  selectEntry: (entryId: string) => void;
+  toggleSelectEntry: (entryId: string) => void;
+  selectRange: (entryId: string, allVisibleIds: string[]) => void;
+  selectAll: (allVisibleIds: string[]) => void;
+  clearSelection: () => void;
+  batchDownload: () => Promise<void>;
+  batchDelete: () => Promise<void>;
 }
 
 function mergeEntries(
@@ -185,6 +193,7 @@ export const useLockerStore = create<LockerState>((set, get) => ({
   connectionStatus: { serverOnline: true, relayConnected: false, lastSynced: 0, uploadQueueCount: 0 },
   offlineUploadQueue: [],
   dismissedBanners: new Set<string>(),
+  selectedEntryIds: [],
 
   fetchEntries: async () => {
     set({ isLoading: true, error: null });
@@ -450,4 +459,54 @@ export const useLockerStore = create<LockerState>((set, get) => ({
   },
 
   resetBanners: () => set({ dismissedBanners: new Set<string>() }),
+
+  selectEntry: (entryId) => set({ selectedEntryIds: [entryId] }),
+
+  toggleSelectEntry: (entryId) => {
+    set((s) => {
+      const idx = s.selectedEntryIds.indexOf(entryId);
+      if (idx >= 0) {
+        return { selectedEntryIds: s.selectedEntryIds.filter((id) => id !== entryId) };
+      }
+      return { selectedEntryIds: [...s.selectedEntryIds, entryId] };
+    });
+  },
+
+  selectRange: (entryId, allVisibleIds) => {
+    set((s) => {
+      const lastSelected = s.selectedEntryIds[s.selectedEntryIds.length - 1];
+      if (!lastSelected) return { selectedEntryIds: [entryId] };
+
+      const startIdx = allVisibleIds.indexOf(lastSelected);
+      const endIdx = allVisibleIds.indexOf(entryId);
+      if (startIdx < 0 || endIdx < 0) return { selectedEntryIds: [entryId] };
+
+      const lo = Math.min(startIdx, endIdx);
+      const hi = Math.max(startIdx, endIdx);
+      const rangeIds = allVisibleIds.slice(lo, hi + 1);
+
+      // Merge with existing selection
+      const merged = new Set([...s.selectedEntryIds, ...rangeIds]);
+      return { selectedEntryIds: Array.from(merged) };
+    });
+  },
+
+  selectAll: (allVisibleIds) => set({ selectedEntryIds: [...allVisibleIds] }),
+
+  clearSelection: () => set({ selectedEntryIds: [] }),
+
+  batchDownload: async () => {
+    const { selectedEntryIds, downloadEntry } = get();
+    for (const entryId of selectedEntryIds) {
+      await downloadEntry(entryId);
+    }
+  },
+
+  batchDelete: async () => {
+    const { selectedEntryIds, deleteEntry } = get();
+    for (const entryId of selectedEntryIds) {
+      await deleteEntry(entryId);
+    }
+    set({ selectedEntryIds: [] });
+  },
 }));

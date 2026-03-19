@@ -49,12 +49,14 @@ interface LockerFileCardProps {
   viewMode: "grid" | "list";
   downloadPercent?: number;
   isSelfCustody?: boolean;
+  isSelected?: boolean;
   onDownload: (entryId: string) => void;
   onDelete: (entryId: string) => void;
   onOpen: (filePath: string) => void;
   onShowInFolder: (filePath: string) => void;
   onCopyInfoHash: (infoHash: string) => void;
   onShare?: (entryId: string) => void;
+  onClick?: (e: React.MouseEvent, entryId: string) => void;
 }
 
 const gridStyles = {
@@ -226,12 +228,14 @@ export function LockerFileCard({
   viewMode,
   downloadPercent,
   isSelfCustody = false,
+  isSelected = false,
   onDownload,
   onDelete,
   onOpen,
   onShowInFolder,
   onCopyInfoHash,
   onShare,
+  onClick,
 }: LockerFileCardProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -253,7 +257,13 @@ export function LockerFileCard({
     setContextMenu({ x: e.clientX, y: e.clientY });
   };
 
-  const handleClick = () => {
+  const handleClick = (e: React.MouseEvent) => {
+    // If onClick handler provided (for selection), delegate to it
+    if (onClick) {
+      onClick(e, entry.entryId);
+      return;
+    }
+    // Default behavior: open/download
     if (entry.downloadStatus === "downloaded" || entry.downloadStatus === "seeding") {
       if (entry.localPath) onOpen(entry.localPath);
     } else if (entry.downloadStatus === "available") {
@@ -332,15 +342,18 @@ export function LockerFileCard({
     );
   };
 
+  const selectedBorder = isSelected ? "#e94560" : "#0f3460";
+  const selectedBg = isSelected ? "#e9456015" : undefined;
+
   if (viewMode === "list") {
     return (
       <>
         <div
-          style={listStyles.row}
+          style={{ ...listStyles.row, borderColor: selectedBorder, backgroundColor: selectedBg || listStyles.row.backgroundColor }}
           onClick={handleClick}
           onContextMenu={handleContextMenu}
-          onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#e94560"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#0f3460"; }}
+          onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.borderColor = "#e94560"; }}
+          onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.borderColor = "#0f3460"; }}
         >
           <span style={listStyles.icon as React.CSSProperties}>{icon}</span>
           <span style={listStyles.filename as React.CSSProperties}>{entry.filename}</span>
@@ -358,11 +371,11 @@ export function LockerFileCard({
   return (
     <>
       <div
-        style={gridStyles.card}
+        style={{ ...gridStyles.card, borderColor: selectedBorder, backgroundColor: selectedBg || gridStyles.card.backgroundColor }}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
-        onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#e94560"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#0f3460"; }}
+        onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.borderColor = "#e94560"; }}
+        onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.borderColor = "#0f3460"; }}
       >
         <div style={gridStyles.iconArea}>{icon}</div>
         <div style={gridStyles.body}>

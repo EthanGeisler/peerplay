@@ -17,7 +17,7 @@ If any step fails, fix the issue and retry. Do not skip steps. Do not ask the us
 
 ## Project Structure
 - `server/` — Node.js + TypeScript backend monorepo (Express, Prisma, PostgreSQL)
-- `server/packages/` — Modular service packages (auth, catalog, license, payment, saves, torrent, shared, relay)
+- `server/packages/` — Modular service packages (auth, catalog, license, payment, saves, torrent, shared, relay, locker)
 - `server/prisma/` — Database schema and migrations
 - `shared-ui/` — Shared frontend package (`@boilerdeck/ui-shared`) — API client core (token refresh, apiFetch, ApiError)
 - `client/` — Electron + React desktop app (Vite, zustand, WebTorrent)
@@ -111,6 +111,19 @@ If any step fails, fix the issue and retry. Do not skip steps. Do not ask the us
 - **Dev mode: kill stale Electron processes** — `taskkill //F //IM electron.exe` before relaunching. Zombie processes hold WebTorrent file locks causing EBUSY.
 - **Game launch is direct** — `installedStore.launch()` spawns the exe immediately. No license verification or DRM checks at launch time.
 - **ESM-only packages in asar — MUST use dynamic import():** The main process compiles to CJS (`require()`). ESM-only npm packages (those with `"type": "module"` and only `"import"` in their `exports` map) work on a real filesystem via Node 22's `require(esm)`, but **crash inside Electron's asar** with "No 'exports' main defined". Fix: use `await import("package-name")` instead of static `import`. This applies to `socks-proxy-agent@9`, `agent-base@8`, and any future ESM-only dependency used in the main process. See `proxyManager.ts` for the pattern.
+
+## Locker Package Conventions (`server/packages/locker/`)
+- **Package:** `@boilerdeck/locker` — personal encrypted file storage (upload, list, delete, share, health)
+- **Routes:** Mounted at `/api/locker` — all routes except `/health` require JWT auth
+- **Encryption:** NIP-44 via `@boilerdeck/auth` (`nip44Encrypt`, `nip44Decrypt`). Content is self-encrypted (user's own pubkey). Sharing re-encrypts to recipient's pubkey.
+- **Event kind:** 30078 (NIP-78 application-specific data). Parameterized replaceable with `d`-tag = entry UUID.
+- **Quota:** DB-tracked via `LockerQuota` model. Default 50 GB per user. Check before upload, increment/decrement on upload/delete. Decrement floors at zero.
+- **Dedup:** SHA-256 content-addressed. `findDuplicate()` checks for existing file with same hash. Second upload reuses existing torrent (same infoHash).
+- **Storage:** Files at `LOCKER_DIR/<userId>/<entryId>/<filename>`. Torrent at `<entryId>.torrent` in same dir.
+- **Soft delete:** `deletedAt` timestamp on `LockerFile`. NIP-09 deletion event published. Cleanup via cron after retention period.
+- **Seed manager:** `seedManager.ts` queries Transmission RPC for locker torrent stats, pauses deleted, removes expired.
+- **Config:** `config.ts` reads `LOCKER_DIR`, `LOCKER_MAX_FILE_SIZE`, `LOCKER_QUOTA_GB`, `LOCKER_RETENTION_DAYS`, `LOCKER_MAX_STORAGE_GB` from env.
+- **Security:** See `docs/locker-security.md` for full threat model. Self-custody users' metadata is E2E encrypted. Custodial users trust the server.
 
 ## Deployment to VPS
 Everything runs on a single Hetzner VPS (`boilerdeck.com` / `204.168.133.38`). HTTPS via Let's Encrypt (auto-renews). Deploy process:

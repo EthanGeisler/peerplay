@@ -57,6 +57,7 @@ Fully functional REST API running on port **3001** (port 3000 is used by open-we
 | `payment` | **Real Stripe Checkout** — free games: atomic license grant; paid games: Stripe Checkout Session with Connect destination charges, platform fee (1%), webhook handlers for `checkout.session.completed`/`expired`/`account.updated`, idempotent payment+license creation, orphaned payment cleanup on Stripe failure | `src/service.ts`, `src/routes.ts` |
 | `torrent` | Torrent retrieval with license ownership check, **`createGameTorrent()` for generating .torrent files** (used by catalog upload pipeline), **`getLatestTorrentFile()` for raw .torrent bytes** (used by Electron client) | `src/service.ts`, `src/routes.ts`, `src/vendor.d.ts` |
 | `saves` | Cloud save upload/download — **scaffolded but not implemented** | `src/index.ts` |
+| `locker` | Data Locker — personal encrypted file storage (upload, list, delete, share, torrent, dedup, seed management, health) | `src/service.ts`, `src/routes.ts`, `src/storage.ts`, `src/dedup.ts`, `src/seedManager.ts` |
 
 **Database:** PostgreSQL 16 via Prisma ORM (`server/prisma/schema.prisma`)
 - 8 models: User, RefreshToken, Developer, Listing (@@map "games"), ListingVersion (@@map "game_versions"), Torrent, License, Payment, SaveFile
@@ -816,6 +817,54 @@ All 12 sub-tasks (7.1–7.12) implemented in a single commit (`e8284a3`), deploy
 **Dev-portal:** Removed dead "Games" nav link (pointed to `/games` which had no route — catch-all redirected to Dashboard). Dashboard already shows "Your Listings".
 
 See `docs/handoff/phase-7-summary.md` for full details. See `DECENTRALIZATION_PLAN.md` for Phase 8 specs.
+
+---
+
+## Data Locker (Phase 9 — Complete)
+
+Personal encrypted file storage using Nostr events (NIP-78, kind 30078) + BitTorrent distribution. Users upload files from any device, metadata is NIP-44 encrypted and published to the relay, and the VPS persistently seeds all files.
+
+### API Endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/api/locker/upload` | Yes | Multipart file upload to locker |
+| GET | `/api/locker/entries` | Yes | List user's locker entries (decrypted) |
+| DELETE | `/api/locker/entries/:entryId` | Yes | Delete a locker entry (NIP-09) |
+| GET | `/api/locker/entries/:entryId/torrent` | Yes | Download .torrent file for entry |
+| POST | `/api/locker/share` | Yes | Share entry with another user |
+| GET | `/api/locker/shared-with-me` | Yes | Get entries shared with current user |
+| DELETE | `/api/locker/share/:shareId` | Yes | Revoke a shared entry |
+| GET | `/api/locker/health` | No | Transmission + storage health check |
+
+### Prisma Models
+
+| Model | Table | Purpose |
+|-------|-------|---------|
+| `LockerFile` | `locker_files` | Tracks uploaded files — userId, entryId, filename, size, sha256, infoHash, torrentPath, filePath, deletedAt (soft delete) |
+| `LockerQuota` | `locker_quotas` | Per-user storage quota tracking — usedBytes, maxBytes (default 50 GB) |
+
+### Nostr Event (Kind 30078 — NIP-78)
+
+Locker entries are stored as parameterized replaceable events (NIP-33) with `d`-tag = entry UUID. Content is NIP-44 encrypted JSON of `LockerEntry` type. Tags: `["d", entryId]`, `["t", userTag]` for each user-defined tag. Sharing adds `["p", recipientPubkey]`, `["shared-from", senderPubkey]`, `["shared-entry", originalEntryId]`.
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `server/packages/shared/src/locker.ts` | `LockerEntry` type, validation, serialization, event tag helpers |
+| `server/packages/locker/src/service.ts` | Upload, list, delete, share, torrent retrieval orchestration |
+| `server/packages/locker/src/routes.ts` | Express REST routes |
+| `server/packages/locker/src/storage.ts` | File storage, quota management |
+| `server/packages/locker/src/dedup.ts` | SHA-256 content deduplication |
+| `server/packages/locker/src/seedManager.ts` | Transmission RPC management for locker torrents |
+| `server/packages/locker/src/config.ts` | Locker-specific env config |
+| `client/src/main/lockerManager.ts` | Client-side upload, download, sync, sharing, offline queue |
+| `client/src/main/lockerStore.ts` | Local locker index (JSON file) |
+| `client/src/renderer/stores/lockerStore.ts` | Zustand store for UI state |
+| `client/src/renderer/pages/LockerPage.tsx` | Desktop locker UI |
+| `web/src/pages/LockerPage.tsx` | Web storefront locker (read-only) |
+| `docs/locker-security.md` | Security model and threat analysis |
 
 ---
 

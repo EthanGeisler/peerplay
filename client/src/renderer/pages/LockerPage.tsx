@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../stores/authStore";
 import { useLockerStore } from "../stores/lockerStore";
@@ -183,15 +183,50 @@ export function LockerPage() {
   const exportIndex = useLockerStore((s) => s.exportIndex);
   const dismissBanner = useLockerStore((s) => s.dismissBanner);
 
+  const selectedEntryIds = useLockerStore((s) => s.selectedEntryIds);
+  const selectEntry = useLockerStore((s) => s.selectEntry);
+  const toggleSelectEntry = useLockerStore((s) => s.toggleSelectEntry);
+  const selectRange = useLockerStore((s) => s.selectRange);
+  const selectAll = useLockerStore((s) => s.selectAll);
+  const clearSelection = useLockerStore((s) => s.clearSelection);
+  const batchDownload = useLockerStore((s) => s.batchDownload);
+  const batchDelete = useLockerStore((s) => s.batchDelete);
+
   const [activeTab, setActiveTab] = useState<"my-files" | "shared">("my-files");
   const [shareDialogEntryId, setShareDialogEntryId] = useState<string | null>(null);
   const [shareRecipient, setShareRecipient] = useState("");
   const [shareLoading, setShareLoading] = useState(false);
   const [shareSuccess, setShareSuccess] = useState(false);
   const [isSelfCustody, setIsSelfCustody] = useState(false);
+  const [batchDeleteConfirmOpen, setBatchDeleteConfirmOpen] = useState(false);
 
   const listenersAttached = useRef(false);
   const syncStarted = useRef(false);
+
+  // Collect all unique tags (used by filter UI)
+  const allTags = useMemo(
+    () => Array.from(new Set(entries.flatMap((e) => e.tags))).sort(),
+    [entries],
+  );
+
+  // Filter entries (computed early so keyboard shortcuts can reference sorted)
+  const filtered = useMemo(() => {
+    let result = entries;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((e) => e.filename.toLowerCase().includes(q));
+    }
+    if (selectedTags.length > 0) {
+      result = result.filter((e) =>
+        selectedTags.every((tag) => e.tags.includes(tag)),
+      );
+    }
+    return result;
+  }, [entries, searchQuery, selectedTags]);
+
+  // Sort entries
+  const sorted = useMemo(() => sortEntries(filtered, sortField, sortDir), [filtered, sortField, sortDir]);
+  const visibleIds = useMemo(() => sorted.map((e) => e.entryId), [sorted]);
 
   // Fetch entries on mount when authenticated
   useEffect(() => {
@@ -263,6 +298,67 @@ export function LockerPage() {
     };
   }, [user]);
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    if (!user || activeTab !== "my-files") return;
+
+    const handler = (e: KeyboardEvent) => {
+      // Ignore shortcuts when typing in an input
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+      const isMod = e.ctrlKey || e.metaKey;
+
+      // Ctrl+U / Cmd+U — upload file
+      if (isMod && e.key === "u") {
+        e.preventDefault();
+        uploadFile();
+        return;
+      }
+
+      // Ctrl+A / Cmd+A — select all visible entries
+      if (isMod && e.key === "a") {
+        e.preventDefault();
+        selectAll(visibleIds);
+        return;
+      }
+
+      // Delete — delete selected entries
+      if (e.key === "Delete" && selectedEntryIds.length > 0) {
+        e.preventDefault();
+        if (selectedEntryIds.length === 1) {
+          deleteEntry(selectedEntryIds[0]);
+          clearSelection();
+        } else {
+          setBatchDeleteConfirmOpen(true);
+        }
+        return;
+      }
+
+      // Enter — download or open selected entry
+      if (e.key === "Enter" && selectedEntryIds.length === 1) {
+        e.preventDefault();
+        const entry = entries.find((en) => en.entryId === selectedEntryIds[0]);
+        if (!entry) return;
+        if (entry.downloadStatus === "downloaded" || entry.downloadStatus === "seeding") {
+          if (entry.localPath) handleOpen(entry.localPath);
+        } else if (entry.downloadStatus === "available") {
+          downloadEntry(entry.entryId);
+        }
+        return;
+      }
+
+      // Escape — clear selection
+      if (e.key === "Escape") {
+        clearSelection();
+        return;
+      }
+    };
+
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [user, activeTab, visibleIds, selectedEntryIds, entries, uploadFile, selectAll, deleteEntry, downloadEntry, clearSelection]);
+
   const handleOpen = useCallback((filePath: string) => {
     window.boilerdeck.locker.openFile(filePath).catch(() => {});
   }, []);
@@ -317,29 +413,26 @@ export function LockerPage() {
     );
   }
 
-  // Collect all unique tags
-  const allTags = Array.from(new Set(entries.flatMap((e) => e.tags))).sort();
-
-  // Filter entries
-  let filtered = entries;
-  if (searchQuery) {
-    const q = searchQuery.toLowerCase();
-    filtered = filtered.filter((e) => e.filename.toLowerCase().includes(q));
-  }
-  if (selectedTags.length > 0) {
-    filtered = filtered.filter((e) =>
-      selectedTags.every((tag) => e.tags.includes(tag)),
-    );
-  }
-
-  // Sort entries
-  const sorted = sortEntries(filtered, sortField, sortDir);
-
   // Build download percent map
   const downloadPercentMap = new Map<string, number>();
   for (const d of downloadQueue) {
     downloadPercentMap.set(d.entryId, d.percent);
   }
+
+  const handleCardClick = useCallback((e: React.MouseEvent, entryId: string) => {
+    if (e.shiftKey) {
+      selectRange(entryId, visibleIds);
+    } else if (e.ctrlKey || e.metaKey) {
+      toggleSelectEntry(entryId);
+    } else {
+      selectEntry(entryId);
+    }
+  }, [visibleIds, selectEntry, toggleSelectEntry, selectRange]);
+
+  const handleBatchDeleteConfirm = useCallback(async () => {
+    setBatchDeleteConfirmOpen(false);
+    await batchDelete();
+  }, [batchDelete]);
 
   const shareDialogEntry = shareDialogEntryId
     ? entries.find((e) => e.entryId === shareDialogEntryId)
@@ -671,6 +764,133 @@ export function LockerPage() {
         )}
 
         {/* File grid / list */}
+        {/* Batch action bar */}
+        {activeTab === "my-files" && selectedEntryIds.length > 1 && (
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            padding: "8px 14px",
+            marginBottom: 12,
+            backgroundColor: "#16213e",
+            border: "1px solid #e94560",
+            borderRadius: 4,
+            fontSize: 13,
+            color: "#e0e0e0",
+          }}>
+            <span style={{ fontWeight: 600 }}>{selectedEntryIds.length} selected</span>
+            <button
+              onClick={() => batchDownload()}
+              style={{
+                padding: "5px 14px",
+                borderRadius: 4,
+                border: "none",
+                backgroundColor: "#e94560",
+                color: "#fff",
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Download All
+            </button>
+            <button
+              onClick={() => setBatchDeleteConfirmOpen(true)}
+              style={{
+                padding: "5px 14px",
+                borderRadius: 4,
+                border: "1px solid #e94560",
+                backgroundColor: "transparent",
+                color: "#e94560",
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Delete All
+            </button>
+            <button
+              onClick={() => clearSelection()}
+              style={{
+                padding: "5px 14px",
+                borderRadius: 4,
+                border: "1px solid #0f3460",
+                backgroundColor: "transparent",
+                color: "#888",
+                fontSize: 12,
+                cursor: "pointer",
+                marginLeft: "auto",
+              }}
+            >
+              Clear Selection
+            </button>
+          </div>
+        )}
+
+        {/* Batch delete confirmation dialog */}
+        {batchDeleteConfirmOpen && (
+          <div style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0,0,0,0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 300,
+          }} onClick={() => setBatchDeleteConfirmOpen(false)}>
+            <div
+              style={{
+                backgroundColor: "#16213e",
+                border: "1px solid #0f3460",
+                borderRadius: 8,
+                padding: 24,
+                width: 380,
+                maxWidth: "90%",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12, color: "#fff" }}>
+                Delete {selectedEntryIds.length} files?
+              </h3>
+              <p style={{ fontSize: 13, color: "#888", marginBottom: 20 }}>
+                This will delete {selectedEntryIds.length} selected files from your locker. This action cannot be undone.
+              </p>
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <button
+                  onClick={() => setBatchDeleteConfirmOpen(false)}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: 4,
+                    border: "1px solid #0f3460",
+                    backgroundColor: "transparent",
+                    color: "#888",
+                    fontSize: 13,
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleBatchDeleteConfirm}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: 4,
+                    border: "none",
+                    backgroundColor: "#e94560",
+                    color: "#fff",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Delete All
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* File grid / list */}
         {activeTab === "my-files" && sorted.length > 0 && (
           viewMode === "grid" ? (
             <div style={styles.grid}>
@@ -681,12 +901,14 @@ export function LockerPage() {
                   viewMode="grid"
                   downloadPercent={downloadPercentMap.get(entry.entryId)}
                   isSelfCustody={isSelfCustody}
+                  isSelected={selectedEntryIds.includes(entry.entryId)}
                   onDownload={downloadEntry}
                   onDelete={deleteEntry}
                   onOpen={handleOpen}
                   onShowInFolder={handleShowInFolder}
                   onCopyInfoHash={handleCopyInfoHash}
                   onShare={handleShareClick}
+                  onClick={handleCardClick}
                 />
               ))}
             </div>
@@ -699,12 +921,14 @@ export function LockerPage() {
                   viewMode="list"
                   downloadPercent={downloadPercentMap.get(entry.entryId)}
                   isSelfCustody={isSelfCustody}
+                  isSelected={selectedEntryIds.includes(entry.entryId)}
                   onDownload={downloadEntry}
                   onDelete={deleteEntry}
                   onOpen={handleOpen}
                   onShowInFolder={handleShowInFolder}
                   onCopyInfoHash={handleCopyInfoHash}
                   onShare={handleShareClick}
+                  onClick={handleCardClick}
                 />
               ))}
             </div>
