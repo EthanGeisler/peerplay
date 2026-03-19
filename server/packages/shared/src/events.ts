@@ -12,6 +12,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 
 export const EVENT_KIND_GAME_LISTING = 30001;
 export const EVENT_KIND_GAME_VERSION = 30002;
+export const EVENT_KIND_LOCKER_ENTRY = 30078;
 export const EVENT_KIND_REVIEW = 31337;
 export const EVENT_KIND_ATTESTATION = 31338;
 

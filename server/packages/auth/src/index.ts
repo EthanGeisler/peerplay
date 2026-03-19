@@ -16,3 +16,4 @@ export {
   privkeyToNsec,
 } from "./crypto.js";
 export { signEventForUser } from "./signing.js";
+export { nip44Encrypt, nip44Decrypt, getConversationKey } from "./nip44.js";

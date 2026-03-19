@@ -16,6 +16,7 @@
     "@boilerdeck/auth": "*",
     "@boilerdeck/catalog": "*",
     "@boilerdeck/license": "*",
+    "@boilerdeck/locker": "*",
     "@boilerdeck/payment": "*",
     "@boilerdeck/saves": "*",
     "@boilerdeck/shared": "*",

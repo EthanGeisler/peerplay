@@ -30,6 +30,7 @@ export {
   normalizeDTag,
   EVENT_KIND_GAME_LISTING,
   EVENT_KIND_GAME_VERSION,
+  EVENT_KIND_LOCKER_ENTRY,
   EVENT_KIND_REVIEW,
   EVENT_KIND_ATTESTATION,
 } from "./events.js";
@@ -42,3 +43,11 @@ export {
 export type { StoreResult, EventFilter } from "./eventStore.js";
 export { eventRouter } from "./eventRoutes.js";
 export { materializeEvent } from "./eventMaterializer.js";
+export {
+  LOCKER_ENTRY_KIND,
+  serializeLockerEntry,
+  deserializeLockerEntry,
+  validateLockerEntry,
+  buildLockerEventTags,
+} from "./locker.js";
+export type { LockerEntry } from "./locker.js";

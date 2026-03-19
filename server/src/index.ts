@@ -11,6 +11,7 @@ import { licenseRouter } from "@boilerdeck/license";
 import { paymentRouter } from "@boilerdeck/payment";
 import { torrentRouter } from "@boilerdeck/torrent";
 import { relayRouter, nip11Router, attachRelayWebSocket, initFederation } from "@boilerdeck/relay";
+import { lockerRouter } from "@boilerdeck/locker";
 
 const config = getConfig();
 const app = express();
@@ -68,6 +69,7 @@ app.use("/api", licenseRouter);
 app.use("/api", paymentRouter);
 app.use("/api", torrentRouter);
 app.use("/api", relayRouter);
+app.use("/api/locker", lockerRouter);
 
 // NIP-11: handle GET /relay with Accept: application/nostr+json (must be before error handler)
 app.use(nip11Router);
