@@ -112,6 +112,46 @@ If any step fails, fix the issue and retry. Do not skip steps. Do not ask the us
 - **Game launch is direct** — `installedStore.launch()` spawns the exe immediately. No license verification or DRM checks at launch time.
 - **ESM-only packages in asar — MUST use dynamic import():** The main process compiles to CJS (`require()`). ESM-only npm packages (those with `"type": "module"` and only `"import"` in their `exports` map) work on a real filesystem via Node 22's `require(esm)`, but **crash inside Electron's asar** with "No 'exports' main defined". Fix: use `await import("package-name")` instead of static `import`. This applies to `socks-proxy-agent@9`, `agent-base@8`, and any future ESM-only dependency used in the main process. See `proxyManager.ts` for the pattern.
 
+### Electron Dev Workflow — CRITICAL
+**After modifying ANY file in `client/src/main/` (including `preload.ts`), you MUST recompile before launching Electron:**
+```bash
+cd client && npx tsc -p tsconfig.main.json
+```
+The renderer (React) hot-reloads via Vite automatically, but the main process and preload are compiled TypeScript — changes won't take effect until recompiled. The compiled output lives at `client/dist/main/`. Vite's `--noEmit` type-check does NOT produce this output. **This is the #1 source of "it works in source but crashes at runtime" bugs.**
+
+**Full local dev launch (from project root):**
+```bash
+# Option 1: Use the batch file (kills stale processes, starts Vite, waits, launches Electron)
+./dev-client.bat
+
+# Option 2: Manual (if you need to recompile first)
+taskkill //F //IM electron.exe 2>/dev/null          # kill zombies
+cd client && npx tsc -p tsconfig.main.json           # recompile main process
+cd .. && npm run dev:client                           # start Vite (terminal 1)
+cd client && ../node_modules/.bin/electron .          # launch Electron (terminal 2)
+```
+**Note:** `dev-client.bat` does NOT recompile the main process. If you changed main process files, run `tsc` manually first.
+
+### Electron IPC Safety Rules
+- **All async IPC handlers MUST have try/catch.** Unhandled rejections in the main process surface as Electron error dialogs that crash the user experience. Pattern:
+  ```typescript
+  ipcMain.handle("channel:name", async (_event, args) => {
+    try {
+      return await doWork(args);
+    } catch (err) {
+      console.error("[channel] error:", err);
+      throw err; // or return { success: false }
+    }
+  });
+  ```
+- **React StrictMode double-fires effects.** Any IPC call triggered from a `useEffect` will run twice in dev: mount → cleanup → mount. If the IPC starts a stateful resource (WebSocket, sync connection), the `start` function must call `stop` first to be idempotent. Cleanup functions must handle "not yet initialized" gracefully (try/catch around `.close()`).
+- **WebTorrent operations need scaled timeouts + settled guards.** Hashing a 1GB file takes ~30s. Use `30_000 + Math.ceil(fileSize / (1024*1024*1024)) * 30_000` for timeouts. Always use a `let settled = false` flag to prevent timeout/ready race conditions that cause "client already destroyed" errors.
+
+### Electron Self-Custody Locker Rules
+- **Self-custody uploads bypass the server API entirely.** The flow is: hash file → create torrent locally → encrypt metadata (NIP-44) → sign Nostr event → publish to relay → (optional) upload raw file to VPS for seeding.
+- **Always save to local index immediately** (`lockerStore.upsertEntry()` + `emitSyncUpdate()`) after creating an entry. Do NOT rely on the relay round-trip to persist entries — the relay may be down or slow. The local index is the source of truth for the UI.
+- **File data is never encrypted.** Only the LockerEntry metadata JSON (filename, infoHash, tags, etc.) is NIP-44 encrypted. The file itself is stored/seeded as-is via BitTorrent.
+
 ## Locker Package Conventions (`server/packages/locker/`)
 - **Package:** `@boilerdeck/locker` — personal encrypted file storage (upload, list, delete, share, health)
 - **Routes:** Mounted at `/api/locker` — all routes except `/health` require JWT auth

@@ -189,7 +189,7 @@ Full desktop client: browse store, purchase games (Stripe Checkout in system bro
 | File | Purpose |
 |------|---------|
 | `index.ts` | Electron app lifecycle, all IPC handler registration, torrent client init/destroy, auto-updater setup (check/download/progress/error events forwarded to renderer) |
-| `preload.ts` | `contextBridge.exposeInMainWorld("boilerdeck", {...})` — sections: platform, updater, store, shell, dialog, games, downloads |
+| `preload.ts` | `contextBridge.exposeInMainWorld("boilerdeck", {...})` — sections: platform, updater, store, crypto, events, relay, privacy, tor, api, shell, dialog, games, downloads, locker, listings |
 | `store.ts` | JSON file persistence at `app.getPath("userData")/boilerdeck-config.json`. Keys: refreshToken, installDir, installedGames, settings |
 | `torrentManager.ts` | WebTorrent singleton. `startDownload()` prefers .torrent buffer over magnet. Broadcasts progress every 1s via `mainWindow.webContents.send("downloads:progress-update")`. Sends `downloads:complete` with gameId/title/infoHash/downloadPath on torrent done. |
 | `gameLauncher.ts` | `child_process.spawn(exe, [], { detached: true, stdio: "ignore" })` + `child.unref()`. Tracks running games in a Map. `uninstallGame()` uses `fs.promises.rm(path, { recursive: true, force: true })`. |
@@ -443,6 +443,10 @@ All have cover images uploaded. All are free ($0).
 49. **`@rollup/rollup-linux-x64-gnu` missing on VPS** — Windows-generated `package-lock.json` won't include Linux Rollup binding. If Vite build fails on VPS: `npm install @rollup/rollup-linux-x64-gnu`.
 50. **RELAY_ADMIN_PRIVKEY angle brackets** — Env var templates use `<paste hex here>`. Zod regex `/^[0-9a-f]{64}$/` rejects angle brackets, crashing the server. Always strip angle brackets from pasted values.
 51. **Bio section hidden when empty** — Profile page must always show the bio section, with italic "No bio yet." placeholder when no kind 0 profile event exists. Using `{bio && <p>...}` hides the section entirely.
+52. **Compiled preload.js can go stale** — The Electron main process (`client/dist/main/`) is compiled from TypeScript via `tsc -p tsconfig.main.json`. Vite only hot-reloads the renderer (React). If you modify `preload.ts` or any `client/src/main/` file, the compiled output won't update until you manually recompile. Symptoms: `window.boilerdeck.X.Y is not a function` errors at runtime despite correct source code. **Always recompile after main process changes.**
+53. **Locker sync WebSocket race (StrictMode)** — React StrictMode double-fires effects, causing `startLockerSync()` to be called twice in rapid succession (mount → cleanup → mount). The second `startLockerSync` must call `stopLockerSync` first, and `stopLockerSync` must wrap `ws.close()` in try/catch since the WebSocket may still be in CONNECTING state (readyState 0). Without this, Electron shows a "WebSocket is not open" error dialog.
+54. **WebTorrent torrent creation timeout scales with file size** — `createTorrentFromFile()` hashes the entire file to compute piece hashes. A 1.4GB file takes ~45s. Flat timeouts (e.g., 30s) cause "client already destroyed" errors when the timeout fires, destroys the client, and then the `ready` event tries to use it. Fix: scale timeout by file size and use a `settled` boolean guard to prevent the race.
+55. **Self-custody locker uploads must save to local index immediately** — `uploadFileSelfCustody()` must call `lockerStore.upsertEntry()` + `emitSyncUpdate()` right after creating the entry. Without this, the entry only appears if the relay round-trip succeeds (publish event → sync subscription picks it up), which often fails if the relay is disconnected. The local index is the source of truth for the UI.
 
 ---
 
@@ -822,9 +826,11 @@ See `docs/handoff/phase-7-summary.md` for full details. See `DECENTRALIZATION_PL
 
 ---
 
-## Data Locker (Phase 9 — Complete)
+## Data Locker (Phase 9 — Complete, client bugs fixed 2026-03-19)
 
 Personal encrypted file storage using Nostr events (NIP-78, kind 30078) + BitTorrent distribution. Users upload files from any device, metadata is NIP-44 encrypted and published to the relay, and the VPS persistently seeds all files.
+
+**Bugs fixed (2026-03-19, PR #2):** Stale compiled preload missing locker IPC channels; WebSocket race condition on tab open (StrictMode double-fire); WebTorrent timeout on large files; self-custody uploads not persisting to local index. See gotchas #52-55 for details. Electron Client Verification checks added to VERIFICATION_CHECKS.md.
 
 ### API Endpoints
 
