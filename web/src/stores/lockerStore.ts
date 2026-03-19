@@ -27,6 +27,11 @@ export type SortDir = "asc" | "desc";
 
 // ─── Store ───────────────────────────────────────────────────────
 
+export interface SharedEntry {
+  entry: LockerEntry;
+  senderPubkey: string;
+}
+
 interface LockerState {
   entries: LockerEntry[];
   quota: LockerQuota | null;
@@ -36,8 +41,13 @@ interface LockerState {
   searchQuery: string;
   sortField: SortField;
   sortDir: SortDir;
+  sharedWithMe: SharedEntry[];
+  sharedWithMeLoading: boolean;
 
   fetchEntries: () => Promise<void>;
+  shareEntry: (entryId: string, recipientPubkey: string) => Promise<void>;
+  fetchSharedWithMe: () => Promise<void>;
+  revokeShare: (shareId: string) => Promise<void>;
   setViewMode: (mode: ViewMode) => void;
   setSearchQuery: (query: string) => void;
   setSortField: (field: SortField) => void;
@@ -54,6 +64,8 @@ export const useLockerStore = create<LockerState>((set) => ({
   searchQuery: "",
   sortField: "date",
   sortDir: "desc",
+  sharedWithMe: [],
+  sharedWithMeLoading: false,
 
   fetchEntries: async () => {
     set({ isLoading: true, error: null });
@@ -72,6 +84,47 @@ export const useLockerStore = create<LockerState>((set) => ({
         return;
       }
       set({ isLoading: false, error: (err as Error).message });
+    }
+  },
+
+  shareEntry: async (entryId, recipientPubkey) => {
+    try {
+      await apiFetch("/locker/share", {
+        method: "POST",
+        body: JSON.stringify({ entryId, recipientPubkey }),
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (err) {
+      set({ error: (err as Error).message });
+    }
+  },
+
+  fetchSharedWithMe: async () => {
+    set({ sharedWithMeLoading: true });
+    try {
+      const data = await apiFetch<{
+        entries: LockerEntry[];
+        sharedFrom: Record<string, string>;
+      }>("/locker/shared-with-me");
+      const shared: SharedEntry[] = (Array.isArray(data.entries) ? data.entries : []).map((entry) => ({
+        entry,
+        senderPubkey: data.sharedFrom[entry.id] || "unknown",
+      }));
+      set({ sharedWithMe: shared, sharedWithMeLoading: false });
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        set({ sharedWithMe: [], sharedWithMeLoading: false });
+        return;
+      }
+      set({ sharedWithMeLoading: false, error: (err as Error).message });
+    }
+  },
+
+  revokeShare: async (shareId) => {
+    try {
+      await apiFetch(`/locker/share/${shareId}`, { method: "DELETE" });
+    } catch (err) {
+      set({ error: (err as Error).message });
     }
   },
 

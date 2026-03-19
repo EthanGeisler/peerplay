@@ -1379,3 +1379,42 @@ export async function openFile(filePath: string): Promise<string> {
 export function showInFolder(filePath: string): void {
   shell.showItemInFolder(filePath);
 }
+
+// ─── Sharing ─────────────────────────────────────────────────────────
+
+export interface ShareResult {
+  shareId: string;
+  eventId: string;
+}
+
+export interface SharedWithMeResult {
+  entries: LockerEntry[];
+  sharedFrom: Record<string, string>; // entryId -> senderPubkey
+}
+
+/**
+ * Share a locker entry with another user by their pubkey.
+ */
+export async function shareEntry(
+  entryId: string,
+  recipientPubkey: string,
+): Promise<ShareResult> {
+  return apiRequest<ShareResult>("POST", "/locker/share", {
+    entryId,
+    recipientPubkey,
+  });
+}
+
+/**
+ * Get locker entries shared with the current user.
+ */
+export async function getSharedWithMe(): Promise<SharedWithMeResult> {
+  return apiRequest<SharedWithMeResult>("GET", "/locker/shared-with-me");
+}
+
+/**
+ * Revoke a previously shared locker entry.
+ */
+export async function revokeShare(shareId: string): Promise<void> {
+  await apiRequest<{ success: true }>("DELETE", `/locker/share/${shareId}`);
+}

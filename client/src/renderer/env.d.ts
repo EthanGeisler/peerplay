@@ -187,6 +187,23 @@ declare global {
         setDownloadPath: (newPath: string) => Promise<{ success: boolean }>;
         openFile: (filePath: string) => Promise<{ success: boolean; error?: string }>;
         showInFolder: (filePath: string) => Promise<{ success: boolean }>;
+        shareEntry: (accessToken: string, entryId: string, recipientPubkey: string) => Promise<{ shareId: string; eventId: string }>;
+        getSharedWithMe: (accessToken: string) => Promise<{
+          entries: Array<{
+            id: string;
+            filename: string;
+            size: number;
+            mimeType: string;
+            sha256: string;
+            infoHash: string;
+            magnetUri: string;
+            createdAt: number;
+            tags: string[];
+            version: number;
+          }>;
+          sharedFrom: Record<string, string>;
+        }>;
+        revokeShare: (accessToken: string, shareId: string) => Promise<{ success: boolean }>;
         onUploadProgress: (callback: (data: {
           entryId: string;
           percent: number;

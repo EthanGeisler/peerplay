@@ -55,6 +55,11 @@ interface DownloadQueueItem {
   bytesTotal: number;
 }
 
+export interface SharedEntry {
+  entry: LockerEntry;
+  senderPubkey: string;
+}
+
 interface LockerState {
   entries: LockerIndexEntry[];
   uploadQueue: UploadQueueItem[];
@@ -67,12 +72,17 @@ interface LockerState {
   sortDir: SortDir;
   isLoading: boolean;
   error: string | null;
+  sharedWithMe: SharedEntry[];
+  sharedWithMeLoading: boolean;
 
   fetchEntries: () => Promise<void>;
   uploadFile: (tags?: string[]) => Promise<void>;
   uploadDirectory: (tags?: string[]) => Promise<void>;
   downloadEntry: (entryId: string) => Promise<void>;
   deleteEntry: (entryId: string) => Promise<void>;
+  shareEntry: (entryId: string, recipientPubkey: string) => Promise<void>;
+  fetchSharedWithMe: () => Promise<void>;
+  revokeShare: (shareId: string) => Promise<void>;
   setViewMode: (mode: ViewMode) => void;
   setSearchQuery: (query: string) => void;
   setSelectedTags: (tags: string[]) => void;
@@ -142,6 +152,8 @@ export const useLockerStore = create<LockerState>((set, get) => ({
   sortDir: "desc",
   isLoading: false,
   error: null,
+  sharedWithMe: [],
+  sharedWithMeLoading: false,
 
   fetchEntries: async () => {
     set({ isLoading: true, error: null });
@@ -299,6 +311,50 @@ export const useLockerStore = create<LockerState>((set, get) => ({
 
   handleSyncUpdate: (entries) => {
     set({ entries });
+  },
+
+  shareEntry: async (entryId, recipientPubkey) => {
+    const token = getAccessToken();
+    if (!token) {
+      set({ error: "Not authenticated" });
+      return;
+    }
+    try {
+      await window.boilerdeck.locker.shareEntry(token, entryId, recipientPubkey);
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : "Share failed" });
+    }
+  },
+
+  fetchSharedWithMe: async () => {
+    const token = getAccessToken();
+    if (!token) return;
+    set({ sharedWithMeLoading: true });
+    try {
+      const result = await window.boilerdeck.locker.getSharedWithMe(token);
+      const shared: SharedEntry[] = (Array.isArray(result.entries) ? result.entries : []).map((entry) => ({
+        entry,
+        senderPubkey: result.sharedFrom[entry.id] || "unknown",
+      }));
+      set({ sharedWithMe: shared, sharedWithMeLoading: false });
+    } catch (err) {
+      set({ sharedWithMeLoading: false, error: err instanceof Error ? err.message : "Failed to load shared entries" });
+    }
+  },
+
+  revokeShare: async (shareId) => {
+    const token = getAccessToken();
+    if (!token) {
+      set({ error: "Not authenticated" });
+      return;
+    }
+    try {
+      await window.boilerdeck.locker.revokeShare(token, shareId);
+      // Remove from local state — shareId isn't directly stored, so re-fetch
+      await get().fetchSharedWithMe();
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : "Revoke failed" });
+    }
   },
 
   clearError: () => set({ error: null }),

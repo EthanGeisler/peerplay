@@ -48,11 +48,13 @@ interface LockerFileCardProps {
   entry: LockerIndexEntry;
   viewMode: "grid" | "list";
   downloadPercent?: number;
+  isSelfCustody?: boolean;
   onDownload: (entryId: string) => void;
   onDelete: (entryId: string) => void;
   onOpen: (filePath: string) => void;
   onShowInFolder: (filePath: string) => void;
   onCopyInfoHash: (infoHash: string) => void;
+  onShare?: (entryId: string) => void;
 }
 
 const gridStyles = {
@@ -189,15 +191,47 @@ const contextMenuStyles = {
   } as React.CSSProperties,
 };
 
+function EncryptionBadge({ isSelfCustody }: { isSelfCustody: boolean }) {
+  const label = isSelfCustody ? "End-to-end encrypted" : "Server-managed encryption";
+  const color = isSelfCustody ? "#3fb950" : "#d29922";
+  return (
+    <span
+      title={
+        isSelfCustody
+          ? "Your metadata is encrypted with your local key. The server cannot read filenames, tags, or file associations."
+          : "Your metadata is encrypted but the server manages your key. For stronger privacy, enable self-custody in Settings."
+      }
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        fontSize: 10,
+        fontWeight: 600,
+        color,
+        padding: "2px 6px",
+        backgroundColor: `${color}18`,
+        borderRadius: 3,
+        cursor: "help",
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span style={{ fontSize: 11 }}>[E]</span>
+      {label}
+    </span>
+  );
+}
+
 export function LockerFileCard({
   entry,
   viewMode,
   downloadPercent,
+  isSelfCustody = false,
   onDownload,
   onDelete,
   onOpen,
   onShowInFolder,
   onCopyInfoHash,
+  onShare,
 }: LockerFileCardProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -275,6 +309,16 @@ export function LockerFileCard({
         >
           Copy Info Hash
         </button>
+        {onShare && (
+          <button
+            style={contextMenuStyles.item as React.CSSProperties}
+            onClick={() => { setContextMenu(null); onShare(entry.entryId); }}
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#0f3460"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
+          >
+            Share
+          </button>
+        )}
         <div style={contextMenuStyles.separator} />
         <button
           style={{ ...contextMenuStyles.item, ...contextMenuStyles.itemDanger } as React.CSSProperties}
@@ -300,6 +344,7 @@ export function LockerFileCard({
         >
           <span style={listStyles.icon as React.CSSProperties}>{icon}</span>
           <span style={listStyles.filename as React.CSSProperties}>{entry.filename}</span>
+          <EncryptionBadge isSelfCustody={isSelfCustody} />
           <span style={gridStyles.badge(badge.color)}>{badge.text}</span>
           <span style={listStyles.size as React.CSSProperties}>{formatSize(entry.size)}</span>
           <span style={listStyles.date as React.CSSProperties}>{formatDate(entry.createdAt)}</span>
@@ -328,6 +373,9 @@ export function LockerFileCard({
           </div>
           <div style={{ ...gridStyles.meta, marginTop: 4 }}>
             <span>{formatDate(entry.createdAt)}</span>
+          </div>
+          <div style={{ marginTop: 4 }}>
+            <EncryptionBadge isSelfCustody={isSelfCustody} />
           </div>
           {entry.downloadStatus === "downloading" && (
             <div style={gridStyles.progressBar}>

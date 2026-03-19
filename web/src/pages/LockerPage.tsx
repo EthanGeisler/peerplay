@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../stores/authStore";
 import {
@@ -7,6 +7,7 @@ import {
   type LockerQuota,
   type ViewMode,
   type SortField,
+  type SharedEntry,
 } from "../stores/lockerStore";
 
 // ─── Helpers ─────────────────────────────────────────────────────
@@ -68,6 +69,31 @@ function getMimeColor(icon: string): string {
   }
 }
 
+// ─── Encryption Badge ─────────────────────────────────────────────
+
+function EncryptionBadge() {
+  return (
+    <span
+      title="Your metadata is encrypted but the server manages your key. For stronger privacy, use the BoilerDeck Desktop app with self-custody keys."
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        fontSize: 11,
+        fontWeight: 600,
+        color: "#d29922",
+        padding: "2px 8px",
+        backgroundColor: "rgba(210, 153, 34, 0.1)",
+        borderRadius: 4,
+        cursor: "help",
+        whiteSpace: "nowrap",
+      }}
+    >
+      [E] Server-managed encryption
+    </span>
+  );
+}
+
 // ─── Quota Bar ───────────────────────────────────────────────────
 
 function QuotaBar({ quota }: { quota: LockerQuota }) {
@@ -118,9 +144,11 @@ function QuotaBar({ quota }: { quota: LockerQuota }) {
 function FileRow({
   entry,
   onCopyMagnet,
+  onShare,
 }: {
   entry: LockerEntry;
   onCopyMagnet: (uri: string) => void;
+  onShare?: (entryId: string) => void;
 }) {
   const icon = getMimeIcon(entry.mimeType);
   const iconColor = getMimeColor(icon);
@@ -176,6 +204,9 @@ function FileRow({
       >
         {entry.filename}
       </span>
+
+      {/* Encryption badge */}
+      <EncryptionBadge />
 
       {/* Tags */}
       {entry.tags.length > 0 && (
@@ -267,6 +298,31 @@ function FileRow({
         >
           Magnet
         </button>
+        {onShare && (
+          <button
+            onClick={() => onShare(entry.id)}
+            title="Share with another user"
+            style={{
+              padding: "6px 12px",
+              borderRadius: "var(--radius)",
+              backgroundColor: "var(--bg-tertiary)",
+              color: "var(--text-secondary)",
+              fontSize: 12,
+              fontWeight: 500,
+              transition: "all 0.15s",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "var(--bg-hover)";
+              e.currentTarget.style.color = "var(--text-primary)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "var(--bg-tertiary)";
+              e.currentTarget.style.color = "var(--text-secondary)";
+            }}
+          >
+            Share
+          </button>
+        )}
         <a
           href="/downloads/BoilerDeck%20Setup%200.3.1.exe"
           download
@@ -298,9 +354,11 @@ function FileRow({
 function FileCard({
   entry,
   onCopyMagnet,
+  onShare,
 }: {
   entry: LockerEntry;
   onCopyMagnet: (uri: string) => void;
+  onShare?: (entryId: string) => void;
 }) {
   const icon = getMimeIcon(entry.mimeType);
   const iconColor = getMimeColor(icon);
@@ -376,6 +434,11 @@ function FileCard({
         <span>{formatDate(entry.createdAt)}</span>
       </div>
 
+      {/* Encryption badge */}
+      <div style={{ display: "flex", justifyContent: "center" }}>
+        <EncryptionBadge />
+      </div>
+
       {/* Tags */}
       {entry.tags.length > 0 && (
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
@@ -397,7 +460,7 @@ function FileCard({
       )}
 
       {/* Actions */}
-      <div style={{ display: "flex", gap: 6, marginTop: "auto" }}>
+      <div style={{ display: "flex", gap: 6, marginTop: "auto", flexWrap: "wrap" }}>
         <button
           onClick={() => onCopyMagnet(entry.magnetUri)}
           style={{
@@ -421,6 +484,31 @@ function FileCard({
         >
           Magnet
         </button>
+        {onShare && (
+          <button
+            onClick={() => onShare(entry.id)}
+            style={{
+              flex: 1,
+              padding: "6px 0",
+              borderRadius: "var(--radius)",
+              backgroundColor: "var(--bg-tertiary)",
+              color: "var(--text-secondary)",
+              fontSize: 12,
+              fontWeight: 500,
+              transition: "all 0.15s",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "var(--bg-hover)";
+              e.currentTarget.style.color = "var(--text-primary)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "var(--bg-tertiary)";
+              e.currentTarget.style.color = "var(--text-secondary)";
+            }}
+          >
+            Share
+          </button>
+        )}
         <a
           href="/downloads/BoilerDeck%20Setup%200.3.1.exe"
           download
@@ -595,7 +683,11 @@ export function LockerPage() {
     searchQuery,
     sortField,
     sortDir,
+    sharedWithMe,
+    sharedWithMeLoading,
     fetchEntries,
+    shareEntry,
+    fetchSharedWithMe,
     setViewMode,
     setSearchQuery,
     setSortField,
@@ -604,10 +696,30 @@ export function LockerPage() {
   } = useLockerStore();
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"my-files" | "shared">("my-files");
+  const [shareDialogEntryId, setShareDialogEntryId] = useState<string | null>(null);
+  const [shareRecipient, setShareRecipient] = useState("");
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareSuccess, setShareSuccess] = useState(false);
 
   useEffect(() => {
-    if (user) fetchEntries();
-  }, [user, fetchEntries]);
+    if (user) {
+      fetchEntries();
+      fetchSharedWithMe();
+    }
+  }, [user, fetchEntries, fetchSharedWithMe]);
+
+  const handleShareConfirm = useCallback(async () => {
+    if (!shareDialogEntryId || !shareRecipient) return;
+    setShareLoading(true);
+    await shareEntry(shareDialogEntryId, shareRecipient);
+    setShareLoading(false);
+    setShareSuccess(true);
+    setTimeout(() => {
+      setShareDialogEntryId(null);
+      setShareSuccess(false);
+    }, 1500);
+  }, [shareDialogEntryId, shareRecipient, shareEntry]);
 
   // ── Auth gate ──
 
@@ -687,14 +799,146 @@ export function LockerPage() {
     });
   }
 
+  const shareDialogEntry = shareDialogEntryId
+    ? entries.find((e) => e.id === shareDialogEntryId)
+    : null;
+
   return (
     <div>
       <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>
         Data Locker
       </h2>
 
-      {/* Upload banner */}
-      <div
+      {/* Tab switcher */}
+      <div style={{ display: "flex", gap: 0, marginBottom: 20, borderBottom: "1px solid var(--border)" }}>
+        <button
+          onClick={() => setActiveTab("my-files")}
+          style={{
+            padding: "10px 20px",
+            fontSize: 14,
+            fontWeight: activeTab === "my-files" ? 600 : 400,
+            color: activeTab === "my-files" ? "var(--accent)" : "var(--text-muted)",
+            backgroundColor: "transparent",
+            border: "none",
+            borderBottom: activeTab === "my-files" ? "2px solid var(--accent)" : "2px solid transparent",
+            cursor: "pointer",
+            marginBottom: -1,
+          }}
+        >
+          My Files
+        </button>
+        <button
+          onClick={() => { setActiveTab("shared"); fetchSharedWithMe(); }}
+          style={{
+            padding: "10px 20px",
+            fontSize: 14,
+            fontWeight: activeTab === "shared" ? 600 : 400,
+            color: activeTab === "shared" ? "var(--accent)" : "var(--text-muted)",
+            backgroundColor: "transparent",
+            border: "none",
+            borderBottom: activeTab === "shared" ? "2px solid var(--accent)" : "2px solid transparent",
+            cursor: "pointer",
+            marginBottom: -1,
+          }}
+        >
+          Shared with me{sharedWithMe.length > 0 ? ` (${sharedWithMe.length})` : ""}
+        </button>
+      </div>
+
+      {/* Share dialog overlay */}
+      {shareDialogEntryId && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          backgroundColor: "rgba(0,0,0,0.6)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 300,
+        }} onClick={() => setShareDialogEntryId(null)}>
+          <div
+            style={{
+              backgroundColor: "var(--bg-card)",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius-lg)",
+              padding: 24,
+              width: 420,
+              maxWidth: "90%",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>
+              Share File
+            </h3>
+            {shareDialogEntry && (
+              <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16 }}>
+                Sharing: {shareDialogEntry.filename}
+              </p>
+            )}
+            <label style={{ fontSize: 13, color: "var(--text-secondary)", display: "block", marginBottom: 6 }}>
+              Recipient Public Key (64-char hex)
+            </label>
+            <input
+              type="text"
+              value={shareRecipient}
+              onChange={(e) => setShareRecipient(e.target.value)}
+              placeholder="Recipient's nostr pubkey (hex)"
+              style={{
+                width: "100%",
+                padding: "8px 12px",
+                borderRadius: "var(--radius)",
+                border: "1px solid var(--border)",
+                backgroundColor: "var(--bg-tertiary)",
+                color: "var(--text-primary)",
+                fontSize: 13,
+                marginBottom: 16,
+                boxSizing: "border-box",
+              }}
+            />
+            {shareSuccess && (
+              <p style={{ fontSize: 13, color: "var(--accent-green)", marginBottom: 12 }}>
+                Shared successfully!
+              </p>
+            )}
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setShareDialogEntryId(null)}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: "var(--radius)",
+                  border: "1px solid var(--border)",
+                  backgroundColor: "transparent",
+                  color: "var(--text-secondary)",
+                  fontSize: 13,
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleShareConfirm}
+                disabled={shareLoading || shareRecipient.length !== 64}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: "var(--radius)",
+                  border: "none",
+                  backgroundColor: shareRecipient.length === 64 ? "var(--accent)" : "var(--bg-tertiary)",
+                  color: "#fff",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: shareRecipient.length === 64 ? "pointer" : "not-allowed",
+                  opacity: shareLoading ? 0.6 : 1,
+                }}
+              >
+                {shareLoading ? "Sharing..." : "Share"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upload banner (my-files tab only) */}
+      {activeTab === "my-files" && <div
         style={{
           display: "flex",
           alignItems: "center",
@@ -730,10 +974,10 @@ export function LockerPage() {
         >
           Download Desktop App
         </a>
-      </div>
+      </div>}
 
       {/* Error */}
-      {error && (
+      {activeTab === "my-files" && error && (
         <div
           style={{
             padding: "10px 16px",
@@ -762,10 +1006,10 @@ export function LockerPage() {
       )}
 
       {/* Quota */}
-      {quota && <QuotaBar quota={quota} />}
+      {activeTab === "my-files" && quota && <QuotaBar quota={quota} />}
 
       {/* Toolbar */}
-      <LockerToolbar
+      {activeTab === "my-files" && <LockerToolbar
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         sortField={sortField}
@@ -774,10 +1018,10 @@ export function LockerPage() {
         onSortDirChange={setSortDir}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
-      />
+      />}
 
       {/* Empty state */}
-      {entries.length === 0 && (
+      {activeTab === "my-files" && entries.length === 0 && (
         <div style={{ textAlign: "center", padding: "60px 0" }}>
           <p
             style={{
@@ -822,7 +1066,7 @@ export function LockerPage() {
       )}
 
       {/* Search returned no results */}
-      {entries.length > 0 && sorted.length === 0 && (
+      {activeTab === "my-files" && entries.length > 0 && sorted.length === 0 && (
         <div
           style={{
             textAlign: "center",
@@ -835,13 +1079,14 @@ export function LockerPage() {
       )}
 
       {/* List view */}
-      {sorted.length > 0 && viewMode === "list" && (
+      {activeTab === "my-files" && sorted.length > 0 && viewMode === "list" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {sorted.map((entry) => (
             <div key={entry.id} style={{ position: "relative" }}>
               <FileRow
                 entry={entry}
                 onCopyMagnet={(uri) => handleCopyMagnet(uri, entry.id)}
+                onShare={(id) => { setShareDialogEntryId(id); setShareRecipient(""); setShareSuccess(false); }}
               />
               {copiedId === entry.id && (
                 <span
@@ -867,7 +1112,7 @@ export function LockerPage() {
       )}
 
       {/* Grid view */}
-      {sorted.length > 0 && viewMode === "grid" && (
+      {activeTab === "my-files" && sorted.length > 0 && viewMode === "grid" && (
         <div
           style={{
             display: "grid",
@@ -880,6 +1125,7 @@ export function LockerPage() {
               <FileCard
                 entry={entry}
                 onCopyMagnet={(uri) => handleCopyMagnet(uri, entry.id)}
+                onShare={(id) => { setShareDialogEntryId(id); setShareRecipient(""); setShareSuccess(false); }}
               />
               {copiedId === entry.id && (
                 <span
@@ -901,6 +1147,144 @@ export function LockerPage() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Shared with me tab */}
+      {activeTab === "shared" && (
+        <div>
+          {sharedWithMeLoading && (
+            <div
+              style={{
+                textAlign: "center",
+                padding: "60px 0",
+                color: "var(--text-secondary)",
+              }}
+            >
+              Loading shared files...
+            </div>
+          )}
+          {!sharedWithMeLoading && sharedWithMe.length === 0 && (
+            <div style={{ textAlign: "center", padding: "60px 0" }}>
+              <p style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>
+                No files shared with you
+              </p>
+              <p style={{ color: "var(--text-secondary)", maxWidth: 400, margin: "0 auto" }}>
+                When someone shares a file with you, it will appear here.
+              </p>
+            </div>
+          )}
+          {!sharedWithMeLoading && sharedWithMe.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {sharedWithMe.map(({ entry, senderPubkey }) => (
+                <div
+                  key={entry.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    backgroundColor: "var(--bg-card)",
+                    borderRadius: "var(--radius)",
+                    border: "1px solid var(--border)",
+                    padding: "10px 16px",
+                    transition: "border-color 0.15s",
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.borderColor = "var(--accent)")
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.borderColor = "var(--border)")
+                  }
+                >
+                  {/* MIME icon */}
+                  <span
+                    style={{
+                      fontFamily: "monospace",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: getMimeColor(getMimeIcon(entry.mimeType)),
+                      backgroundColor: `${getMimeColor(getMimeIcon(entry.mimeType))}22`,
+                      padding: "4px 8px",
+                      borderRadius: 4,
+                      minWidth: 40,
+                      textAlign: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {getMimeIcon(entry.mimeType)}
+                  </span>
+
+                  {/* Filename + sender */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 500,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {entry.filename}
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                      From: {senderPubkey.slice(0, 8)}...{senderPubkey.slice(-8)}
+                    </div>
+                  </div>
+
+                  {/* Size */}
+                  <span
+                    style={{
+                      fontSize: 13,
+                      color: "var(--text-secondary)",
+                      minWidth: 70,
+                      textAlign: "right",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {formatBytes(entry.size)}
+                  </span>
+
+                  {/* Date */}
+                  <span
+                    style={{
+                      fontSize: 13,
+                      color: "var(--text-muted)",
+                      minWidth: 90,
+                      textAlign: "right",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {formatDate(entry.createdAt)}
+                  </span>
+
+                  {/* Actions */}
+                  <button
+                    onClick={() => handleCopyMagnet(entry.magnetUri, entry.id)}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: "var(--radius)",
+                      backgroundColor: "var(--bg-tertiary)",
+                      color: "var(--text-secondary)",
+                      fontSize: 12,
+                      fontWeight: 500,
+                      transition: "all 0.15s",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = "var(--bg-hover)";
+                      e.currentTarget.style.color = "var(--text-primary)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = "var(--bg-tertiary)";
+                      e.currentTarget.style.color = "var(--text-secondary)";
+                    }}
+                  >
+                    Magnet
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

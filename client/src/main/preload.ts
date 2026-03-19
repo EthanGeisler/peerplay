@@ -267,6 +267,25 @@ contextBridge.exposeInMainWorld("boilerdeck", {
       ipcRenderer.invoke("locker:open-file", filePath),
     showInFolder: (filePath: string): Promise<{ success: boolean }> =>
       ipcRenderer.invoke("locker:show-in-folder", filePath),
+    shareEntry: (accessToken: string, entryId: string, recipientPubkey: string): Promise<{ shareId: string; eventId: string }> =>
+      ipcRenderer.invoke("locker:share-entry", accessToken, entryId, recipientPubkey),
+    getSharedWithMe: (accessToken: string): Promise<{
+      entries: Array<{
+        id: string;
+        filename: string;
+        size: number;
+        mimeType: string;
+        sha256: string;
+        infoHash: string;
+        magnetUri: string;
+        createdAt: number;
+        tags: string[];
+        version: number;
+      }>;
+      sharedFrom: Record<string, string>;
+    }> => ipcRenderer.invoke("locker:get-shared-with-me", accessToken),
+    revokeShare: (accessToken: string, shareId: string): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke("locker:revoke-share", accessToken, shareId),
     onUploadProgress: (callback: (data: {
       entryId: string;
       percent: number;
@@ -557,6 +576,23 @@ declare global {
         setDownloadPath: (newPath: string) => Promise<{ success: boolean }>;
         openFile: (filePath: string) => Promise<{ success: boolean; error?: string }>;
         showInFolder: (filePath: string) => Promise<{ success: boolean }>;
+        shareEntry: (accessToken: string, entryId: string, recipientPubkey: string) => Promise<{ shareId: string; eventId: string }>;
+        getSharedWithMe: (accessToken: string) => Promise<{
+          entries: Array<{
+            id: string;
+            filename: string;
+            size: number;
+            mimeType: string;
+            sha256: string;
+            infoHash: string;
+            magnetUri: string;
+            createdAt: number;
+            tags: string[];
+            version: number;
+          }>;
+          sharedFrom: Record<string, string>;
+        }>;
+        revokeShare: (accessToken: string, shareId: string) => Promise<{ success: boolean }>;
         onUploadProgress: (callback: (data: {
           entryId: string;
           percent: number;

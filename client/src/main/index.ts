@@ -587,6 +587,23 @@ function setupIpcHandlers(): void {
     return { success: true };
   });
 
+  // --- Locker Sharing ---
+  ipcMain.handle("locker:share-entry", async (_event, accessToken: string, entryId: string, recipientPubkey: string) => {
+    lockerManager.setAccessToken(accessToken);
+    return lockerManager.shareEntry(entryId, recipientPubkey);
+  });
+
+  ipcMain.handle("locker:get-shared-with-me", async (_event, accessToken: string) => {
+    lockerManager.setAccessToken(accessToken);
+    return lockerManager.getSharedWithMe();
+  });
+
+  ipcMain.handle("locker:revoke-share", async (_event, accessToken: string, shareId: string) => {
+    lockerManager.setAccessToken(accessToken);
+    await lockerManager.revokeShare(shareId);
+    return { success: true };
+  });
+
   // --- Media (video/audio playback) ---
   const MEDIA_EXTS = new Set([".mp4", ".webm", ".mkv", ".mp3", ".wav", ".ogg", ".flac"]);
 
