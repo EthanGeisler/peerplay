@@ -1197,7 +1197,7 @@ export async function downloadEntry(
     // Add VPS as direct peer since tracker discovery is unreliable
     torrent.on("infoHash", () => {
       console.log(`[locker:dl] Adding VPS peer 204.168.133.38:6881`);
-      torrent.addPeer("204.168.133.38:6881");
+      (torrent as any).addPeer("204.168.133.38:6881");
     });
 
     torrent.on("error", (err: Error) => {
@@ -1207,17 +1207,18 @@ export async function downloadEntry(
     });
 
     // Debug: log tracker and peer events
-    torrent.on("ready", () => {
-      console.log(`[locker:dl] Torrent ready: ${entryId}, files: ${torrent.files?.length}, length: ${torrent.length}`);
-      console.log(`[locker:dl] InfoHash: ${torrent.infoHash}`);
+    const t = torrent as any;
+    t.on("ready", () => {
+      console.log(`[locker:dl] Torrent ready: ${entryId}, files: ${t.files?.length}, length: ${t.length}`);
+      console.log(`[locker:dl] InfoHash: ${t.infoHash}`);
     });
-    torrent.on("wire", (wire: any) => {
+    t.on("wire", (wire: any) => {
       console.log(`[locker:dl] Connected to peer: ${wire.remoteAddress}:${wire.remotePort}`);
     });
-    torrent.on("noPeers", (announceType: string) => {
+    t.on("noPeers", (announceType: string) => {
       console.log(`[locker:dl] No peers from ${announceType} for ${entryId}`);
     });
-    torrent.on("warning", (warn: any) => {
+    t.on("warning", (warn: any) => {
       console.log(`[locker:dl] Warning: ${warn}`);
     });
 

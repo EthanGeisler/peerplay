@@ -170,7 +170,7 @@ export async function startDownload(opts: StartDownloadOpts): Promise<{ success:
 
     // Add VPS as direct peer since tracker discovery is unreliable
     torrent.on("infoHash", () => {
-      torrent.addPeer("204.168.133.38:6881");
+      (torrent as any).addPeer("204.168.133.38:6881");
     });
 
     torrent.on("ready", () => {
