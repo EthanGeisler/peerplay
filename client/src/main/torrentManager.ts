@@ -168,6 +168,11 @@ export async function startDownload(opts: StartDownloadOpts): Promise<{ success:
 
     const torrent = wt.add(source, { path: opts.downloadPath });
 
+    // Add VPS as direct peer since tracker discovery is unreliable
+    torrent.on("infoHash", () => {
+      torrent.addPeer("204.168.133.38:6881");
+    });
+
     torrent.on("ready", () => {
       activeDownloads.set(torrent.infoHash, {
         gameId: opts.gameId,

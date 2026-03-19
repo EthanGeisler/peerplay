@@ -847,6 +847,24 @@ export async function uploadFile(tags: string[] = []): Promise<LockerEntry | nul
       version: 1,
     };
 
+    // Save to local index as "downloaded" since the file exists locally
+    lockerStore.upsertEntry({
+      entryId: uploadResult.entryId,
+      filename,
+      size: fileSize,
+      mimeType,
+      sha256,
+      infoHash: uploadResult.infoHash,
+      magnetUri: "",
+      tags,
+      downloadStatus: "downloaded",
+      localPath: filePath,
+      lastSynced: Math.floor(Date.now() / 1000),
+      createdAt: entry.createdAt,
+      version: 1,
+    });
+    emitSyncUpdate(lockerStore.getAllEntries());
+
     console.log(`[locker] Upload complete: ${filename} → entryId=${uploadResult.entryId}`);
     return entry;
   } catch (err) {
@@ -1176,10 +1194,31 @@ export async function downloadEntry(
   return new Promise<string>((resolve, reject) => {
     const torrent = tempClient.add(torrentBuffer, { path: effectiveDownloadPath });
 
+    // Add VPS as direct peer since tracker discovery is unreliable
+    torrent.on("infoHash", () => {
+      console.log(`[locker:dl] Adding VPS peer 204.168.133.38:6881`);
+      torrent.addPeer("204.168.133.38:6881");
+    });
+
     torrent.on("error", (err: Error) => {
       tempClient.destroy();
       lockerStore.setDownloadStatus(entryId, "error");
       reject(new Error(`Torrent download error: ${err.message}`));
+    });
+
+    // Debug: log tracker and peer events
+    torrent.on("ready", () => {
+      console.log(`[locker:dl] Torrent ready: ${entryId}, files: ${torrent.files?.length}, length: ${torrent.length}`);
+      console.log(`[locker:dl] InfoHash: ${torrent.infoHash}`);
+    });
+    torrent.on("wire", (wire: any) => {
+      console.log(`[locker:dl] Connected to peer: ${wire.remoteAddress}:${wire.remotePort}`);
+    });
+    torrent.on("noPeers", (announceType: string) => {
+      console.log(`[locker:dl] No peers from ${announceType} for ${entryId}`);
+    });
+    torrent.on("warning", (warn: any) => {
+      console.log(`[locker:dl] Warning: ${warn}`);
     });
 
     // Progress updates
@@ -1187,6 +1226,7 @@ export async function downloadEntry(
       if (torrent.progress !== undefined) {
         const bytesDownloaded = torrent.downloaded || 0;
         const bytesTotal = torrent.length || 0;
+        console.log(`[locker:dl] Progress: ${entryId} ${Math.round(torrent.progress * 100)}% peers=${torrent.numPeers || 0}`);
         emitDownloadProgress({
           entryId,
           percent: Math.round(torrent.progress * 100),

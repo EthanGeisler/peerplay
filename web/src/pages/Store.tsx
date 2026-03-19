@@ -91,7 +91,7 @@ export function Store() {
       {/* Download CTA */}
       {!isSearching && (
         <a
-          href="/downloads/BoilerDeck%20Setup%200.5.1.exe"
+          href="/downloads/BoilerDeck%20Setup%200.5.2.exe"
           download
           style={{
             display: "flex",
