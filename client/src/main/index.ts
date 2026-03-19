@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, dialog, safeStorage } from "electron";
+import { app, BrowserWindow, ipcMain, shell, dialog } from "electron";
 import * as path from "path";
 import { autoUpdater } from "electron-updater";
 import { initStore, storeGet, storeSet, storeDelete, getDefaultInstallDir, isAllowedStoreKey, DEFAULT_PRIVACY_SETTINGS } from "./store.js";
@@ -8,6 +8,7 @@ import * as gameLauncher from "./gameLauncher.js";
 import * as relayManager from "./relayManager.js";
 import { testProxyConnection, getProxyAgent } from "./proxyManager.js";
 import * as torManagerModule from "./torManager.js";
+import * as keyManager from "./keyManager.js";
 import * as https from "node:https";
 import * as http from "node:http";
 import * as fsp from "node:fs/promises";
@@ -129,77 +130,32 @@ function setupIpcHandlers(): void {
     return torrentManager.getProgress();
   });
 
-  // --- Crypto (self-custody keypair generation) ---
+  // --- Crypto (self-custody keypair via keyManager) ---
   ipcMain.handle("crypto:generate-keypair", async () => {
-    const { generateMnemonic, mnemonicToSeedSync } = await import("@scure/bip39");
-    const { wordlist } = await import("@scure/bip39/wordlists/english.js");
-    const { HDKey } = await import("@scure/bip32");
-    const { bytesToHex } = await import("@noble/hashes/utils.js");
-
-    const mnemonic = generateMnemonic(wordlist);
-    const seed = mnemonicToSeedSync(mnemonic);
-    const hdkey = HDKey.fromMasterSeed(seed).derive("m/44'/1237'/0'/0/0");
-    const privateKey = hdkey.privateKey!;
-    const publicKey = hdkey.publicKey!.slice(1); // drop 02/03 prefix → 32-byte x-only
-
-    // Encrypt private key with safeStorage (OS-level encryption)
-    const privkeyHex = bytesToHex(privateKey);
-    const encrypted = safeStorage.encryptString(privkeyHex);
-    storeSet("selfCustodyKey", encrypted.toString("base64"));
-
-    return {
-      mnemonic,
-      pubkeyHex: bytesToHex(publicKey),
-    };
+    return keyManager.generateKeypair();
   });
 
   ipcMain.handle("crypto:import-mnemonic", async (_event, mnemonic: string) => {
-    const { mnemonicToSeedSync, validateMnemonic } = await import("@scure/bip39");
-    const { wordlist } = await import("@scure/bip39/wordlists/english.js");
-    const { HDKey } = await import("@scure/bip32");
-    const { bytesToHex } = await import("@noble/hashes/utils.js");
-
-    if (!validateMnemonic(mnemonic, wordlist)) {
-      throw new Error("Invalid recovery phrase. Please check your words and try again.");
-    }
-
-    const seed = mnemonicToSeedSync(mnemonic);
-    const hdkey = HDKey.fromMasterSeed(seed).derive("m/44'/1237'/0'/0/0");
-    const privateKey = hdkey.privateKey!;
-    const publicKey = hdkey.publicKey!.slice(1); // drop 02/03 prefix → 32-byte x-only
-
-    // Encrypt private key with safeStorage (OS-level encryption)
-    const privkeyHex = bytesToHex(privateKey);
-    const encrypted = safeStorage.encryptString(privkeyHex);
-    storeSet("selfCustodyKey", encrypted.toString("base64"));
-
-    return {
-      pubkeyHex: bytesToHex(publicKey),
-    };
+    return keyManager.importMnemonic(mnemonic);
   });
 
   ipcMain.handle("crypto:sign-challenge", async (_event, challengeHex: string) => {
-    const { schnorr } = await import("@noble/curves/secp256k1.js");
-    const { sha256 } = await import("@noble/hashes/sha2.js");
-    const { hexToBytes, bytesToHex } = await import("@noble/hashes/utils.js");
+    return keyManager.signChallenge(challengeHex);
+  });
 
-    // Retrieve and decrypt private key from store
-    const encryptedB64 = storeGet("selfCustodyKey") as string | null;
-    if (!encryptedB64) {
-      throw new Error("No self-custody key found. Register with client-side key generation first.");
-    }
-    const privkeyHex = safeStorage.decryptString(Buffer.from(encryptedB64, "base64"));
-    const privateKey = hexToBytes(privkeyHex);
+  // --- Key management (new channels) ---
+  ipcMain.handle("keys:get-public-key", async () => {
+    return keyManager.getPublicKey();
+  });
 
-    // Sign SHA-256(challenge bytes) with Schnorr
-    const challengeBytes = hexToBytes(challengeHex);
-    const messageHash = sha256(challengeBytes);
-    const signature = schnorr.sign(messageHash, privateKey);
+  ipcMain.handle("keys:has-key", () => {
+    return keyManager.hasKey();
+  });
 
-    return {
-      signature: bytesToHex(signature),
-      pubkeyHex: bytesToHex(schnorr.getPublicKey(privateKey)),
-    };
+  ipcMain.handle("keys:export-mnemonic", () => {
+    // Mnemonic is not stored — must be backed up at generation time.
+    // Custodial users can fetch their server-side encrypted mnemonic via API.
+    return keyManager.exportMnemonic();
   });
 
   // --- Events (local signing + relay publish) ---
@@ -209,56 +165,57 @@ function setupIpcHandlers(): void {
     title: string;
     body: string;
   }) => {
-    const { schnorr } = await import("@noble/curves/secp256k1.js");
-    const { sha256 } = await import("@noble/hashes/sha2.js");
-    const { hexToBytes, bytesToHex } = await import("@noble/hashes/utils.js");
+    // Try cached relay key first, then fall back to self-custody key
+    const relayPrivkey = storeGet("relayPrivkey") as string | null;
+    const relayPubkey = storeGet("relayPubkey") as string | null;
 
-    // 1. Get the user's private key — try cached key from store first, then fetch from server
-    let privkeyHex: string | null = storeGet("relayPrivkey") as string | null;
-    let pubkeyHex: string | null = storeGet("relayPubkey") as string | null;
+    if (relayPrivkey && relayPubkey) {
+      // Use server-managed cached key (signs directly, no keyManager)
+      const { schnorr } = await import("@noble/curves/secp256k1.js");
+      const { sha256 } = await import("@noble/hashes/sha2.js");
+      const { hexToBytes, bytesToHex } = await import("@noble/hashes/utils.js");
 
-    if (!privkeyHex) {
-      // Need to fetch from server via apiFetch — renderer must pass tokens through IPC
-      // Instead, we'll try the self-custody key first
-      const encryptedB64 = storeGet("selfCustodyKey") as string | null;
-      if (encryptedB64) {
-        privkeyHex = safeStorage.decryptString(Buffer.from(encryptedB64, "base64"));
-        pubkeyHex = bytesToHex(schnorr.getPublicKey(hexToBytes(privkeyHex)));
+      const privateKey = hexToBytes(relayPrivkey);
+      const content = JSON.stringify({
+        rating: opts.rating,
+        title: opts.title,
+        body: opts.body,
+      });
+      const tags: string[][] = [["d", opts.slug]];
+      const kind = 31337;
+      const created_at = Math.floor(Date.now() / 1000);
+
+      const serialized = JSON.stringify([0, relayPubkey, created_at, kind, tags, content]);
+      const idBytes = sha256(new TextEncoder().encode(serialized));
+      const id = bytesToHex(idBytes);
+      const sig = bytesToHex(schnorr.sign(idBytes, privateKey));
+
+      const signedEvent = { id, pubkey: relayPubkey, created_at, kind, tags, content, sig };
+
+      const result = relayManager.publish(signedEvent);
+      if (!result.success) {
+        throw new Error(result.error || "Failed to publish to relay");
       }
+      return signedEvent;
     }
 
-    if (!privkeyHex || !pubkeyHex) {
+    // Fall back to self-custody key via keyManager.signEvent()
+    if (!keyManager.hasKey()) {
       throw new Error("NO_KEY");
     }
 
-    const privateKey = hexToBytes(privkeyHex);
-
-    // 2. Build the kind 31337 event
     const content = JSON.stringify({
       rating: opts.rating,
       title: opts.title,
       body: opts.body,
     });
     const tags: string[][] = [["d", opts.slug]];
-    const kind = 31337;
-    const created_at = Math.floor(Date.now() / 1000);
+    const signedEvent = await keyManager.signEvent(content, 31337, tags);
 
-    // 3. Compute event ID (NIP-01: SHA-256 of [0, pubkey, created_at, kind, tags, content])
-    const serialized = JSON.stringify([0, pubkeyHex, created_at, kind, tags, content]);
-    const idBytes = sha256(new TextEncoder().encode(serialized));
-    const id = bytesToHex(idBytes);
-
-    // 4. Sign with Schnorr
-    const sig = bytesToHex(schnorr.sign(idBytes, privateKey));
-
-    const signedEvent = { id, pubkey: pubkeyHex, created_at, kind, tags, content, sig };
-
-    // 5. Publish via relay WebSocket
     const result = relayManager.publish(signedEvent);
     if (!result.success) {
       throw new Error(result.error || "Failed to publish to relay");
     }
-
     return signedEvent;
   });
 

@@ -29,6 +29,9 @@ declare global {
         generateKeypair: () => Promise<{ mnemonic: string; pubkeyHex: string }>;
         signChallenge: (challengeHex: string) => Promise<{ signature: string; pubkeyHex: string }>;
         importMnemonic: (mnemonic: string) => Promise<{ pubkeyHex: string }>;
+        getPublicKey: () => Promise<string | null>;
+        hasKey: () => Promise<boolean>;
+        exportMnemonic: () => Promise<null>;
       };
       events: {
         signAndPublishReview: (opts: {

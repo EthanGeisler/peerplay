@@ -48,6 +48,12 @@ contextBridge.exposeInMainWorld("boilerdeck", {
       ipcRenderer.invoke("crypto:sign-challenge", challengeHex),
     importMnemonic: (mnemonic: string): Promise<{ pubkeyHex: string }> =>
       ipcRenderer.invoke("crypto:import-mnemonic", mnemonic),
+    getPublicKey: (): Promise<string | null> =>
+      ipcRenderer.invoke("keys:get-public-key"),
+    hasKey: (): Promise<boolean> =>
+      ipcRenderer.invoke("keys:has-key"),
+    exportMnemonic: (): Promise<null> =>
+      ipcRenderer.invoke("keys:export-mnemonic"),
   },
 
   events: {
@@ -237,6 +243,9 @@ declare global {
         generateKeypair: () => Promise<{ mnemonic: string; pubkeyHex: string }>;
         signChallenge: (challengeHex: string) => Promise<{ signature: string; pubkeyHex: string }>;
         importMnemonic: (mnemonic: string) => Promise<{ pubkeyHex: string }>;
+        getPublicKey: () => Promise<string | null>;
+        hasKey: () => Promise<boolean>;
+        exportMnemonic: () => Promise<null>;
       };
       events: {
         signAndPublishReview: (opts: {
