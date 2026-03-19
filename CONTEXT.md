@@ -226,7 +226,7 @@ Full desktop client: browse store, purchase games (Stripe Checkout in system bro
 - Paid games: Opens Stripe Checkout URL in system browser via `shell.openExternal()`, then polls `fetchLicenses()` every 3s for up to 5 minutes
 
 **Build config:**
-- `electron-builder` in `client/package.json` — NSIS + portable targets, `asarUnpack` for `webtorrent`/`utp-native` (native deps)
+- `electron-builder` in `client/package.json` — Windows: NSIS + portable; Linux: AppImage + deb. `asarUnpack` for `webtorrent`/`utp-native` (native deps)
 - `vite.config.ts` has `base: "./"` for `file://` protocol
 - `tsconfig.main.json` has `composite: true` (required because it's referenced by root tsconfig)
 
@@ -456,14 +456,18 @@ All have cover images uploaded. All are free ($0).
 ```bash
 cd /c/Users/eface/peerplay/client
 npm run build:electron          # Vite build (renderer) + tsc (main process)
-../node_modules/.bin/electron-builder          # NSIS installer + portable exe → client/release/
+../node_modules/.bin/electron-builder          # Windows: NSIS installer + portable exe → client/release/
+../node_modules/.bin/electron-builder --linux  # Linux: AppImage + deb → client/release/
 ../node_modules/.bin/electron-builder --dir    # Unpacked build only (fast, for testing)
 ```
 
 **Output files** (in `client/release/`):
-- `BoilerDeck Setup 0.1.0.exe` — NSIS installer (GUI wizard, directory picker)
-- `BoilerDeck 0.1.0.exe` — Portable exe (no install needed)
-- `latest.yml` — electron-updater auto-update manifest
+- `BoilerDeck Setup 0.1.0.exe` — NSIS installer (GUI wizard, directory picker) [Windows]
+- `BoilerDeck 0.1.0.exe` — Portable exe (no install needed) [Windows]
+- `BoilerDeck-X.Y.Z.AppImage` — Self-contained portable binary [Linux]
+- `BoilerDeck_X.Y.Z_amd64.deb` — Debian/Ubuntu package [Linux]
+- `latest.yml` — electron-updater auto-update manifest (Windows)
+- `latest-linux.yml` — electron-updater auto-update manifest (Linux)
 - `win-unpacked/` — Unpacked app (for quick testing: `release/win-unpacked/BoilerDeck.exe`)
 
 **Important:** Run electron-builder via `../node_modules/.bin/electron-builder`, NOT `npx electron-builder` — npx may resolve a different (incompatible) version from the npm cache.
@@ -486,8 +490,8 @@ git tag v0.x.x && git push origin v0.x.x
 
 ### CI Workflow (`.github/workflows/build-client.yml`)
 - **Triggers:** tag push matching `v*`, or manual `workflow_dispatch`
-- **Runs on:** `windows-latest`
-- **Publishes:** `--publish onTagOrDraft` — only creates GitHub Release when triggered by a tag (not on manual dispatch)
+- **Jobs:** `build-windows` (`windows-latest`) + `build-linux` (`ubuntu-latest`) — run in parallel
+- **Publishes:** `--publish onTagOrDraft` — only creates GitHub Release when triggered by a tag (not on manual dispatch). Both jobs upload to the same release.
 - **Auth:** Uses built-in `GITHUB_TOKEN` (no custom secrets needed)
 
 ### Version Bumping
@@ -496,7 +500,8 @@ The version in `client/package.json` (`"version": "0.2.0"`) controls the install
 ### Current Release
 - **v0.4.0** — https://github.com/EthanGeisler/peerplay/releases/tag/v0.4.0
 - Published 2026-03-19, built via CI (GitHub Actions on `v0.4.0` tag push)
-- NSIS installer (~95MB) + portable exe + blockmap (delta updates)
+- Windows: NSIS installer (~95MB) + portable exe + blockmap (delta updates)
+- Linux: AppImage + deb (added post-v0.4.0, will be in next release)
 - Not code-signed (SmartScreen warning expected)
 - Includes: Phase 9 Data Locker (encrypted file storage, NIP-44 encryption, sharing, offline queue, batch operations, keyboard shortcuts)
 - VPS download: `https://boilerdeck.com/downloads/BoilerDeck%20Setup%200.4.0.exe`
@@ -917,7 +922,8 @@ Refer to the plan in `.claude/plans/twinkling-hugging-thunder.md` for the full r
 - [ ] Code signing certificate for Windows installer (removes SmartScreen warning)
 
 ### Long-term
-- [ ] Mac/Linux clients
+- [x] Linux client — AppImage + deb build targets, CI builds in parallel with Windows (2026-03-19). Game launching on Linux deferred (Windows .exe games won't run natively).
+- [ ] Mac client
 - [ ] Bitcoin Lightning payments
 - [ ] Developer analytics dashboard
 - [ ] Delta updates / patching

@@ -28,7 +28,7 @@ If any step fails, fix the issue and retry. Do not skip steps. Do not ask the us
 ## Development
 - **Server:** `npm run dev:server` from root (uses tsx watch)
 - **Client (Electron):** `npm run dev:client` from root (starts both Vite dev server on port 5173 and Electron main process)
-- **Client build:** `cd client && npm run build:electron` (Vite + tsc), then `../node_modules/.bin/electron-builder` (NSIS + portable → `client/release/`). Do NOT use `npx electron-builder` (resolves wrong version). See CONTEXT.md "Electron Build & Release Pipeline" for full details.
+- **Client build:** `cd client && npm run build:electron` (Vite + tsc), then `../node_modules/.bin/electron-builder` (Windows: NSIS + portable; Linux: AppImage + deb → `client/release/`). Do NOT use `npx electron-builder` (resolves wrong version). See CONTEXT.md "Electron Build & Release Pipeline" for full details.
 - **Client release:** Push a `v*` tag to trigger CI (`.github/workflows/build-client.yml`). **CI creates DRAFT releases** — you MUST publish with `gh release edit v0.x.x --draft=false` or auto-updater won't see it. See CONTEXT.md "Releasing a New Client Version" for full steps.
 - **Dev Portal:** `npm run dev:portal` from root (Vite on port 5174, proxies /api to localhost:3001)
 - **Web Storefront:** `npm run dev:web` from root (Vite on port 5173, proxies /api to localhost:3001)
