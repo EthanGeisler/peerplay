@@ -87,6 +87,19 @@
       "icon": "resources/icon.ico",
       "signAndEditExecutable": false
     },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "resources/icon.ico",
+      "category": "Game",
+      "desktop": {
+        "Name": "BoilerDeck",
+        "Comment": "Decentralized game distribution powered by BitTorrent",
+        "Categories": "Game;FileTransfer;"
+      }
+    },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true

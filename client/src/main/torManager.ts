@@ -1,7 +1,7 @@
 /**
  * torManager.ts — Manages the bundled Tor Expert Bundle process.
  *
- * Spawns tor.exe from extraResources, monitors bootstrap progress,
+ * Spawns the bundled tor binary from extraResources, monitors bootstrap progress,
  * and exposes start/stop/status APIs for the IPC layer.
  */
 
@@ -31,15 +31,17 @@ export function setMainWindow(win: BrowserWindow): void {
   mainWindow = win;
 }
 
-/** Resolve the path to tor.exe — production (extraResources) or dev fallback. */
+/** Resolve the path to the tor binary — production (extraResources) or dev fallback. */
 function getTorBinaryPath(): string {
+  const torBin = process.platform === "win32" ? "tor.exe" : "tor";
+
   if (app.isPackaged) {
     // In production the Tor Expert Bundle lives in resources/tor/
-    return path.join(process.resourcesPath, "tor", "tor.exe");
+    return path.join(process.resourcesPath, "tor", torBin);
   }
 
   // Dev fallback: look next to the client directory
-  const devPath = path.join(app.getAppPath(), "resources", "tor", "tor.exe");
+  const devPath = path.join(app.getAppPath(), "resources", "tor", torBin);
   return devPath;
 }
 
@@ -99,7 +101,7 @@ export async function startTor(): Promise<TorStatus> {
   if (!fs.existsSync(torBin)) {
     throw new Error(
       `Tor binary not found at ${torBin}. ` +
-      "Download the Tor Expert Bundle and place tor.exe + DLLs in client/resources/tor/."
+      "Download the Tor Expert Bundle and place the tor binary in client/resources/tor/."
     );
   }
 
