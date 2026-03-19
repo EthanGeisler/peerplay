@@ -358,3 +358,42 @@ You should receive listing events followed by an `EOSE` (end of stored events) m
 
 **Signature verification failures**
 - This means an event arrived with an invalid signature. The relay correctly rejects these. If you see many of these, the source relay may have a bug or be sending tampered data.
+
+## Future: APP_UPDATE Content Type
+
+This section describes a planned content type for distributing BoilerDeck client updates via the relay network. It is not yet implemented.
+
+### Concept
+
+An `APP_UPDATE` content type would allow the BoilerDeck developer to publish client installer updates as relay listings, using the same torrent-based distribution that powers game downloads. This closes the loop: the platform that distributes games via BitTorrent can also distribute itself via BitTorrent.
+
+### How it would work
+
+1. **Developer builds a new client release** (e.g., `BoilerDeck Setup 0.4.0.exe`) and generates a `.torrent` file for it using `scripts/create-installer-torrent.mjs`.
+2. **Developer publishes an APP_UPDATE listing** on the relay. The listing includes the version string, platform (Windows/Linux), the torrent info hash, and a changelog.
+3. **Connected clients subscribe** to APP_UPDATE events via the relay WebSocket. When a new APP_UPDATE event arrives for the client's platform, the client displays an update notification.
+4. **User accepts the update.** The client downloads the new installer via BitTorrent (using the info hash from the event), verifies integrity, and prompts the user to run it.
+5. **Peer seeding.** After downloading, the client can seed the installer torrent for a configurable period, helping distribute the update to other users.
+
+### Benefits
+
+- **Decentralized distribution** — No single download server needed. Updates propagate peer-to-peer.
+- **Censorship resistance** — Updates can reach users even if the main website is unreachable, as long as peers are seeding and relays are reachable.
+- **Integrity verification** — Torrent info hashes provide built-in integrity checks. The relay event signature proves the update was published by the developer.
+- **Bandwidth sharing** — Popular updates are faster to download because more peers are seeding.
+
+### Event structure (draft)
+
+```json
+{
+  "kind": 31339,
+  "content": "{\"version\":\"0.4.0\",\"platform\":\"windows\",\"changelog\":\"Bug fixes and performance improvements.\"}",
+  "tags": [
+    ["d", "boilerdeck-windows-0.4.0"],
+    ["t", "APP_UPDATE"],
+    ["i", "<info-hash>"]
+  ]
+}
+```
+
+This is a concept placeholder. Implementation details (kind number, tag structure, auto-update UX) will be finalized when this feature is built.
