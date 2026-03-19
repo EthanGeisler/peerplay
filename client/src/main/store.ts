@@ -49,6 +49,7 @@ interface StoreData {
   relayPubkey?: string;
   privacySettings?: PrivacySettings;
   relays?: RelayEntry[];
+  sovereignMode?: boolean;
 }
 
 interface InstalledGameEntry {
@@ -75,6 +76,7 @@ export const STORE_KEY_WHITELIST = new Set([
   "relayPubkey",
   "privacySettings",
   "relays",
+  "sovereignMode",
 ]);
 
 export function isAllowedStoreKey(key: string): boolean {

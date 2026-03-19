@@ -61,6 +61,10 @@ declare global {
         onNotice: (callback: (data: { message: string }) => void) => void;
         removeListeners: () => void;
       };
+      sovereignty: {
+        getMode: () => Promise<boolean>;
+        setMode: (enabled: boolean) => Promise<void>;
+      };
       privacy: {
         getSettings: () => Promise<{
           mode: "off" | "tor" | "socks5";

@@ -277,6 +277,16 @@ function setupIpcHandlers(): void {
     return testProxyConnection(settings);
   });
 
+  // --- Sovereign mode ---
+  ipcMain.handle("settings:get-sovereign-mode", () => {
+    return (storeGet("sovereignMode") as boolean | null) ?? false;
+  });
+
+  ipcMain.handle("settings:set-sovereign-mode", (_event, enabled: boolean) => {
+    storeSet("sovereignMode", enabled);
+    return { success: true };
+  });
+
   // --- Relay management (stored relay list) ---
   ipcMain.handle("relays:list", () => {
     let relays = storeGet("relays") as RelayEntry[] | null;

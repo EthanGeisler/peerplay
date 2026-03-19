@@ -111,6 +111,11 @@ contextBridge.exposeInMainWorld("boilerdeck", {
     },
   },
 
+  sovereignty: {
+    getMode: (): Promise<boolean> => ipcRenderer.invoke("settings:get-sovereign-mode"),
+    setMode: (enabled: boolean): Promise<void> => ipcRenderer.invoke("settings:set-sovereign-mode", enabled),
+  },
+
   privacy: {
     getSettings: (): Promise<{
       mode: "off" | "tor" | "socks5";
@@ -285,6 +290,10 @@ declare global {
         onOk: (callback: (data: { eventId: string; success: boolean; message: string }) => void) => void;
         onNotice: (callback: (data: { message: string }) => void) => void;
         removeListeners: () => void;
+      };
+      sovereignty: {
+        getMode: () => Promise<boolean>;
+        setMode: (enabled: boolean) => Promise<void>;
       };
       privacy: {
         getSettings: () => Promise<{

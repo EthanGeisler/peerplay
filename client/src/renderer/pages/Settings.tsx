@@ -226,10 +226,14 @@ export function Settings() {
   const [relayAddError, setRelayAddError] = useState<string | null>(null);
   const [relayAdding, setRelayAdding] = useState(false);
 
+  // Sovereign mode state
+  const [sovereignMode, setSovereignMode] = useState(false);
+
   useEffect(() => {
     window.boilerdeck.platform.getVersion().then(setVersion);
     window.boilerdeck.platform.getInstallDir().then(setInstallDir);
     window.boilerdeck.relays.list().then(setRelayList);
+    window.boilerdeck.sovereignty.getMode().then(setSovereignMode);
     window.boilerdeck.crypto.hasKey().then((has) => {
       setHasIdentity(has);
       if (has) {
@@ -957,6 +961,47 @@ export function Settings() {
         <div style={styles.infoBox}>
           Relays are servers that share listing data. The default BoilerDeck relay cannot be removed.
         </div>
+      </div>
+
+      {/* Sovereign Mode */}
+      <div style={styles.section}>
+        <div style={styles.sectionTitle}>Sovereign Mode</div>
+        <label style={styles.checkboxRow}>
+          <input
+            type="checkbox"
+            checked={sovereignMode}
+            onChange={async (e) => {
+              const enabled = e.target.checked;
+              setSovereignMode(enabled);
+              await window.boilerdeck.sovereignty.setMode(enabled);
+            }}
+          />
+          Enable Sovereign Mode
+        </label>
+        {!sovereignMode && (
+          <div style={styles.infoBox}>
+            All data comes from the BoilerDeck gateway. This is the standard experience.
+          </div>
+        )}
+        {sovereignMode && (
+          <>
+            <div style={styles.infoBox}>
+              Fetching listings from all enabled relays. The gateway is treated as just another relay.
+            </div>
+            <div style={{
+              marginTop: 12,
+              padding: "10px 14px",
+              backgroundColor: "#0d1b2a",
+              borderRadius: 4,
+              border: "1px solid #d29922",
+              fontSize: 12,
+              color: "#d29922",
+              lineHeight: 1.5,
+            }}>
+              Some features are unavailable in sovereign mode: payments, cloud saves, developer portal, and automatic updates. You can switch back at any time.
+            </div>
+          </>
+        )}
       </div>
 
       {/* App Info */}
