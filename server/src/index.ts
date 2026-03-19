@@ -83,6 +83,8 @@ const server = app.listen(config.PORT, () => {
 attachRelayWebSocket(server);
 
 // Start federation with external relays (reads EXTERNAL_RELAYS env var)
-initFederation();
+initFederation().catch((err) => {
+  console.error("[federation] Init failed:", err);
+});
 
 export default app;

@@ -46,7 +46,7 @@ import type { SignedEvent } from "@boilerdeck/shared";
 import { signEventForUser } from "@boilerdeck/auth";
 import { storeEvent, getEvent, queryEvents, deleteEvent } from "./service.js";
 import { fanOutEvent } from "./ws.js";
-import { federateOutbound, getExternalRelayUrls } from "./federation.js";
+import { federateOutbound, getExternalRelayUrls, addRelay, removeRelay } from "./federation.js";
 import { KIND_PROFILE, KIND_TEXT_NOTE, KIND_REVIEW, KIND_FOLLOW_LIST, KIND_DELETION, KIND_ATTESTATION, validateEventKind } from "./kinds.js";
 import { validateAttestationAsync } from "./attestationValidation.js";
 import { getReputation } from "./reputation.js";
@@ -1491,6 +1491,104 @@ relayRouter.post("/relay/listings", async (req, res, next) => {
     next(err);
   }
 });
+
+// ── GET /admin/relays — list all relays (admin only) ─────────────────────────
+
+relayRouter.get(
+  "/admin/relays",
+  authenticate,
+  requireRole("ADMIN"),
+  async (_req, res, next) => {
+    try {
+      const relays = await db.relay.findMany({
+        orderBy: { createdAt: "desc" },
+      });
+      res.json({ relays });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ── POST /admin/relays — add a relay (admin only) ───────────────────────────
+
+relayRouter.post(
+  "/admin/relays",
+  authenticate,
+  requireRole("ADMIN"),
+  async (req, res, next) => {
+    try {
+      const { url, name, trustedByDefault } = req.body;
+
+      // Validate URL
+      if (!url || typeof url !== "string") {
+        throw new ValidationError("url is required");
+      }
+
+      // Validate URL format (must be ws:// or wss://)
+      try {
+        const parsed = new URL(url);
+        if (parsed.protocol !== "ws:" && parsed.protocol !== "wss:") {
+          throw new ValidationError("url must use ws:// or wss:// protocol");
+        }
+      } catch (err) {
+        if (err instanceof ValidationError) throw err;
+        throw new ValidationError("url must be a valid WebSocket URL (ws:// or wss://)");
+      }
+
+      const relay = await db.relay.upsert({
+        where: { url },
+        create: {
+          url,
+          name: typeof name === "string" ? name : new URL(url).hostname,
+          trustedByDefault: trustedByDefault === true,
+          status: "active",
+        },
+        update: {
+          name: typeof name === "string" ? name : undefined,
+          trustedByDefault: typeof trustedByDefault === "boolean" ? trustedByDefault : undefined,
+          status: "active",
+        },
+      });
+
+      // Add to in-memory federation if not already connected
+      addRelay(url);
+
+      res.status(201).json({ relay });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ── DELETE /admin/relays/:id — remove a relay (admin only) ──────────────────
+
+relayRouter.delete(
+  "/admin/relays/:id",
+  authenticate,
+  requireRole("ADMIN"),
+  async (req, res, next) => {
+    try {
+      const id = String(req.params.id);
+
+      // Find the relay first to get its URL
+      const relay = await db.relay.findUnique({ where: { id } });
+      if (!relay) {
+        throw new NotFoundError("Relay");
+      }
+
+      // Remove from DB
+      await db.relay.delete({ where: { id } });
+
+      // Disconnect from federation if connected
+      removeRelay(relay.url);
+
+      res.json({ deleted: true, id });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // ── Relay info helper ───────────────────────────────────────────────────────
 

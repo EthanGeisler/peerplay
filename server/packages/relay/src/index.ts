@@ -24,6 +24,10 @@ export {
   getFederationStatus,
   getExternalRelayUrls,
   isImported,
+  addRelay,
+  removeRelay,
+  pollRelayListings,
+  updateRelayStatus,
 } from "./federation.js";
 
 // Kind definitions and validation

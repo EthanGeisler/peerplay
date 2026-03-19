@@ -4,13 +4,17 @@
  * Outbound: Forwards locally-authored events to configured external relays.
  * Inbound: Subscribes to external relays for events matching local game slugs,
  *          imports them after signature verification.
+ * Listing-level: Periodically polls external relays' REST API for listing metadata,
+ *                imports into FederatedListing table with signature verification.
  *
  * Loop prevention: Events imported from external relays are NOT re-forwarded.
  * The `importedEventIds` set tracks which events came from federation.
  */
 
+import * as nodeCrypto from "node:crypto";
 import WebSocket from "ws";
-import { db, verifyEvent } from "@boilerdeck/shared";
+import { schnorr } from "@noble/curves/secp256k1.js";
+import { db, getConfig, verifyEvent } from "@boilerdeck/shared";
 import type { SignedEvent } from "@boilerdeck/shared";
 import { storeEvent } from "./service.js";
 import { fanOutEvent } from "./ws.js";
@@ -40,6 +44,8 @@ interface FederatedRelay {
   intentionalClose: boolean;
   /** Subscriptions sent on this connection (for inbound). */
   subscribed: boolean;
+  /** Listing poll timer handle. */
+  pollTimer: ReturnType<typeof setInterval> | null;
 }
 
 // ─── State ──────────────────────────────────────────────────────────
@@ -51,8 +57,11 @@ const relays = new Map<string, FederatedRelay>();
 /**
  * Initialize federation from the EXTERNAL_RELAYS environment variable.
  * Format: comma-separated WebSocket URLs (wss://relay1.example.com,wss://relay2.example.com)
+ *
+ * Also upserts each relay URL into the Relay DB table so admin API can manage them,
+ * and starts periodic listing polling via REST.
  */
-export function initFederation(): void {
+export async function initFederation(): Promise<void> {
   const envRelays = process.env.EXTERNAL_RELAYS;
   if (!envRelays) {
     console.log("[federation] No EXTERNAL_RELAYS configured — federation disabled");
@@ -65,20 +74,68 @@ export function initFederation(): void {
     return;
   }
 
+  // Upsert each relay into the Relay DB table
+  for (const url of urls) {
+    try {
+      await db.relay.upsert({
+        where: { url },
+        create: { url, name: new URL(url).hostname, status: "active" },
+        update: { status: "active" },
+      });
+    } catch (err) {
+      console.error(`[federation] Failed to upsert relay ${url} into DB:`, err);
+    }
+  }
+
   console.log(`[federation] Connecting to ${urls.length} external relay(s):`);
   for (const url of urls) {
     console.log(`  - ${url}`);
-    const relay: FederatedRelay = {
-      url,
-      ws: null,
-      reconnectTimer: null,
-      reconnectAttempts: 0,
-      intentionalClose: false,
-      subscribed: false,
-    };
-    relays.set(url, relay);
-    connectToRelay(relay);
+    addRelay(url);
   }
+}
+
+/**
+ * Add a relay to the in-memory federation map and start WebSocket + listing polling.
+ * No-op if the relay URL is already tracked.
+ */
+export function addRelay(url: string): void {
+  if (relays.has(url)) return;
+
+  const relay: FederatedRelay = {
+    url,
+    ws: null,
+    reconnectTimer: null,
+    reconnectAttempts: 0,
+    intentionalClose: false,
+    subscribed: false,
+    pollTimer: null,
+  };
+  relays.set(url, relay);
+  connectToRelay(relay);
+  startListingPoll(relay);
+}
+
+/**
+ * Remove a relay from the in-memory federation map and disconnect.
+ */
+export function removeRelay(url: string): void {
+  const relay = relays.get(url);
+  if (!relay) return;
+
+  relay.intentionalClose = true;
+  if (relay.reconnectTimer) {
+    clearTimeout(relay.reconnectTimer);
+    relay.reconnectTimer = null;
+  }
+  if (relay.pollTimer) {
+    clearInterval(relay.pollTimer);
+    relay.pollTimer = null;
+  }
+  if (relay.ws) {
+    relay.ws.close();
+    relay.ws = null;
+  }
+  relays.delete(url);
 }
 
 /**
@@ -134,6 +191,10 @@ export function shutdownFederation(): void {
       clearTimeout(relay.reconnectTimer);
       relay.reconnectTimer = null;
     }
+    if (relay.pollTimer) {
+      clearInterval(relay.pollTimer);
+      relay.pollTimer = null;
+    }
     if (relay.ws) {
       relay.ws.close();
       relay.ws = null;
@@ -160,6 +221,205 @@ export function getFederationStatus(): Array<{
  */
 export function getExternalRelayUrls(): string[] {
   return Array.from(relays.keys());
+}
+
+// ─── Listing-Level Federation (REST Polling) ────────────────────────
+
+/**
+ * Convert a WebSocket relay URL to an HTTP base URL for REST API calls.
+ * wss://example.com/relay -> https://example.com
+ * ws://example.com/relay  -> http://example.com
+ */
+function wsUrlToHttpBase(wsUrl: string): string {
+  return wsUrl
+    .replace(/^wss:\/\//, "https://")
+    .replace(/^ws:\/\//, "http://")
+    .replace(/\/relay\/?$/, "");
+}
+
+/**
+ * Start periodic listing polling for a relay via its REST API.
+ */
+function startListingPoll(relay: FederatedRelay): void {
+  const config = getConfig();
+  const intervalMs = config.FEDERATION_POLL_INTERVAL_MS;
+
+  // Do an immediate first poll
+  pollRelayListings(relay).catch((err) => {
+    console.error(`[federation] Initial listing poll failed for ${relay.url}:`, err);
+  });
+
+  // Schedule recurring polls
+  relay.pollTimer = setInterval(() => {
+    pollRelayListings(relay).catch((err) => {
+      console.error(`[federation] Listing poll failed for ${relay.url}:`, err);
+    });
+  }, intervalMs);
+
+  console.log(`[federation] Listing poll started for ${relay.url} (interval: ${intervalMs}ms)`);
+}
+
+/**
+ * Poll a relay's REST API for listings and import them into the FederatedListing table.
+ */
+export async function pollRelayListings(relay: FederatedRelay): Promise<void> {
+  const httpBase = wsUrlToHttpBase(relay.url);
+  const url = `${httpBase}/api/relay/listings?limit=100`;
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch (err) {
+    console.warn(`[federation] Failed to fetch listings from ${url}:`, err);
+    return;
+  }
+
+  if (!response.ok) {
+    console.warn(`[federation] Listings endpoint returned ${response.status} from ${url}`);
+    return;
+  }
+
+  let body: { listings?: unknown[] };
+  try {
+    body = await response.json() as { listings?: unknown[] };
+  } catch {
+    console.warn(`[federation] Invalid JSON from listings endpoint ${url}`);
+    return;
+  }
+
+  if (!body.listings || !Array.isArray(body.listings)) {
+    console.warn(`[federation] No listings array in response from ${url}`);
+    return;
+  }
+
+  let imported = 0;
+  for (const raw of body.listings) {
+    const listing = raw as Record<string, unknown>;
+    if (!listing || typeof listing !== "object") continue;
+
+    const id = String(listing.id ?? "");
+    const slug = String(listing.slug ?? "");
+    const title = String(listing.title ?? "");
+    if (!id || !slug || !title) continue;
+
+    const description = String(listing.description ?? "");
+    const priceCents = typeof listing.priceCents === "number" ? listing.priceCents : 0;
+    const contentType = String(listing.contentType ?? "GAME");
+    const creatorPubkey = listing.creatorPublicKey ? String(listing.creatorPublicKey) : null;
+    const signature = listing.signature ? String(listing.signature) : null;
+    const coverImageUrl = listing.coverImageUrl ? String(listing.coverImageUrl) : null;
+
+    // Verify Schnorr signature if both creatorPublicKey and signature are present
+    if (creatorPubkey && signature) {
+      const sigValid = verifyListingSignature({
+        title,
+        slug,
+        description,
+        priceCents,
+        contentType,
+        creatorPublicKey: creatorPubkey,
+        signature,
+      });
+      if (!sigValid) {
+        console.warn(`[federation] Rejected listing ${slug} from ${relay.url}: bad signature`);
+        continue;
+      }
+    }
+
+    // Validate contentType
+    const validContentTypes = ["GAME", "VIDEO", "SOFTWARE", "AUDIO", "OTHER"];
+    const safeContentType = validContentTypes.includes(contentType) ? contentType : "GAME";
+
+    try {
+      await db.federatedListing.upsert({
+        where: {
+          relayUrl_remoteId: { relayUrl: relay.url, remoteId: id },
+        },
+        create: {
+          relayUrl: relay.url,
+          remoteId: id,
+          slug,
+          title,
+          description,
+          creatorPubkey,
+          signature,
+          contentType: safeContentType as "GAME" | "VIDEO" | "SOFTWARE" | "AUDIO" | "OTHER",
+          priceCents,
+          coverImageUrl,
+        },
+        update: {
+          slug,
+          title,
+          description,
+          creatorPubkey,
+          signature,
+          contentType: safeContentType as "GAME" | "VIDEO" | "SOFTWARE" | "AUDIO" | "OTHER",
+          priceCents,
+          coverImageUrl,
+        },
+      });
+      imported++;
+    } catch (err) {
+      console.error(`[federation] Error upserting federated listing ${slug}:`, err);
+    }
+  }
+
+  // Update relay status in DB
+  await updateRelayStatus(relay.url, "active");
+
+  if (imported > 0) {
+    console.log(`[federation] Imported ${imported} listing(s) from ${relay.url}`);
+  }
+}
+
+/**
+ * Verify a Schnorr signature on listing data.
+ * Canonical format: JSON.stringify({ title, slug, description, priceCents, contentType })
+ */
+function verifyListingSignature(data: {
+  title: string;
+  slug: string;
+  description: string;
+  priceCents: number;
+  contentType: string;
+  creatorPublicKey: string;
+  signature: string;
+}): boolean {
+  try {
+    const canonicalData = JSON.stringify({
+      title: data.title,
+      slug: data.slug,
+      description: data.description,
+      priceCents: data.priceCents,
+      contentType: data.contentType,
+    });
+    const messageHash = Buffer.from(
+      nodeCrypto.createHash("sha256").update(canonicalData).digest(),
+    );
+    const sigBytes = Buffer.from(data.signature, "hex");
+    const pubkeyBytes = Buffer.from(data.creatorPublicKey, "hex");
+    return schnorr.verify(sigBytes, messageHash, pubkeyBytes);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Update a relay's lastSyncAt and status in the DB.
+ */
+export async function updateRelayStatus(url: string, status: string): Promise<void> {
+  try {
+    await db.relay.update({
+      where: { url },
+      data: { lastSyncAt: new Date(), status },
+    });
+  } catch {
+    // Relay may not exist in DB yet (e.g., added via admin API after init)
+    // Silently ignore — not critical
+  }
 }
 
 // ─── Connection Management ─────────────────────────────────────────
