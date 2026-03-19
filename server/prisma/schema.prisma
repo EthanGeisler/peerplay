@@ -118,11 +118,13 @@ model Listing {
   savePaths   String[]      @default([]) @map("save_paths")
   coverImageUrl String?     @map("cover_image_url")
   screenshots String[]      @default([])
-  contentType ContentType   @default(GAME) @map("content_type")
-  metadata    Json          @default("{}")
-  eventId     String?       @unique @map("event_id")
-  createdAt   DateTime      @default(now()) @map("created_at")
-  updatedAt   DateTime      @updatedAt @map("updated_at")
+  contentType      ContentType   @default(GAME) @map("content_type")
+  metadata         Json          @default("{}")
+  eventId          String?       @unique @map("event_id")
+  creatorPublicKey String?       @map("creator_public_key")
+  signature        String?
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
 
   developer   Developer     @relation(fields: [developerId], references: [id], onDelete: Cascade)
   event       Event?        @relation(fields: [eventId], references: [id])
@@ -238,4 +240,39 @@ model SaveFile {
 
   @@unique([userId, gameId, slot, filePath])
   @@map("save_files")
+}
+
+model Relay {
+  id               String    @id @default(uuid())
+  url              String    @unique
+  name             String    @default("")
+  lastSyncAt       DateTime? @map("last_sync_at")
+  status           String    @default("active")
+  trustedByDefault Boolean   @default(false) @map("trusted_by_default")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  @@map("relays")
+}
+
+model FederatedListing {
+  id              String      @id @default(uuid())
+  relayUrl        String      @map("relay_url")
+  remoteId        String      @map("remote_id")
+  slug            String
+  title           String
+  description     String      @default("")
+  creatorPubkey   String?     @map("creator_pubkey")
+  signature       String?
+  contentType     ContentType @default(GAME) @map("content_type")
+  metadata        Json        @default("{}")
+  priceCents      Int         @default(0) @map("price_cents")
+  coverImageUrl   String?     @map("cover_image_url")
+  importedAt      DateTime    @default(now()) @map("imported_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  @@unique([relayUrl, remoteId])
+  @@index([slug])
+  @@index([creatorPubkey])
+  @@map("federated_listings")
 }
