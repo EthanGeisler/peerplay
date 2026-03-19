@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Routes, Route, useNavigate, useLocation, Link } from "react-router-dom";
 import { Store } from "./pages/Store";
 import { GameDetail } from "./pages/GameDetail";
@@ -9,12 +9,20 @@ import { CheckoutSuccess } from "./pages/CheckoutSuccess";
 import { CheckoutCancel } from "./pages/CheckoutCancel";
 import { Profile } from "./pages/Profile";
 import { Social } from "./pages/Social";
+import { LockerPage } from "./pages/LockerPage";
 import { useAuthStore } from "./stores/authStore";
 
-const NAV_ITEMS = [
+const BASE_NAV_ITEMS = [
   { label: "Store", path: "/" },
   { label: "Library", path: "/library" },
   { label: "Social", path: "/social" },
+] as const;
+
+const AUTH_NAV_ITEMS = [
+  { label: "Locker", path: "/locker" },
+] as const;
+
+const TAIL_NAV_ITEMS = [
   { label: "About", path: "/about" },
 ] as const;
 
@@ -25,6 +33,12 @@ export function App() {
   const loading = useAuthStore((s) => s.loading);
   const logout = useAuthStore((s) => s.logout);
   const loadSession = useAuthStore((s) => s.loadSession);
+
+  const navItems = useMemo(() => [
+    ...BASE_NAV_ITEMS,
+    ...(user ? AUTH_NAV_ITEMS : []),
+    ...TAIL_NAV_ITEMS,
+  ], [user]);
 
   useEffect(() => {
     loadSession();
@@ -69,7 +83,7 @@ export function App() {
             BOILERDECK
           </Link>
           <nav style={{ display: "flex", gap: 4 }}>
-            {NAV_ITEMS.map((item) => {
+            {navItems.map((item) => {
               const isActive =
                 item.path === "/"
                   ? location.pathname === "/" || location.pathname === ""
@@ -194,6 +208,7 @@ export function App() {
           <Route path="/listing/:slug" element={<GameDetail />} />
           <Route path="/library" element={<Library />} />
           <Route path="/social" element={<Social />} />
+          <Route path="/locker" element={<LockerPage />} />
           <Route path="/about" element={<About />} />
           <Route path="/login" element={<Login />} />
           <Route path="/checkout/success" element={<CheckoutSuccess />} />
