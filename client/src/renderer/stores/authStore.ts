@@ -48,6 +48,9 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     setAccessToken(data.accessToken);
     await window.boilerdeck.store.set("refreshToken", data.refreshToken);
+    if (data.user.custodyMode) {
+      await window.boilerdeck.store.set("custodyMode", data.user.custodyMode);
+    }
     set({ user: data.user });
 
     if (data.user.role === "DEVELOPER" || data.user.role === "ADMIN") {
@@ -66,6 +69,9 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     setAccessToken(data.accessToken);
     await window.boilerdeck.store.set("refreshToken", data.refreshToken);
+    if (data.user.custodyMode) {
+      await window.boilerdeck.store.set("custodyMode", data.user.custodyMode);
+    }
     set({ user: data.user });
 
     return data.mnemonic;
@@ -84,6 +90,9 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     setAccessToken(data.accessToken);
     await window.boilerdeck.store.set("refreshToken", data.refreshToken);
+    if (data.user.custodyMode) {
+      await window.boilerdeck.store.set("custodyMode", data.user.custodyMode);
+    }
     set({ user: data.user });
 
     return mnemonic;
@@ -105,6 +114,9 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     setAccessToken(data.accessToken);
     await window.boilerdeck.store.set("refreshToken", data.refreshToken);
+    if (data.user.custodyMode) {
+      await window.boilerdeck.store.set("custodyMode", data.user.custodyMode);
+    }
     set({ user: data.user });
 
     if (data.user.role === "DEVELOPER" || data.user.role === "ADMIN") {
@@ -129,6 +141,9 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     setAccessToken(data.accessToken);
     await window.boilerdeck.store.set("refreshToken", data.refreshToken);
+    if (data.user.custodyMode) {
+      await window.boilerdeck.store.set("custodyMode", data.user.custodyMode);
+    }
     set({ user: data.user });
 
     return mnemonic;
@@ -151,6 +166,9 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     setAccessToken(data.accessToken);
     await window.boilerdeck.store.set("refreshToken", data.refreshToken);
+    if (data.user.custodyMode) {
+      await window.boilerdeck.store.set("custodyMode", data.user.custodyMode);
+    }
     set({ user: data.user });
   },
 
@@ -171,6 +189,9 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     setAccessToken(data.accessToken);
     await window.boilerdeck.store.set("refreshToken", data.refreshToken);
+    if (data.user.custodyMode) {
+      await window.boilerdeck.store.set("custodyMode", data.user.custodyMode);
+    }
     set({ user: data.user });
 
     if (data.user.role === "DEVELOPER" || data.user.role === "ADMIN") {
@@ -211,6 +232,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
     setAccessToken(null);
     await window.boilerdeck.store.delete("refreshToken");
+    await window.boilerdeck.store.delete("custodyMode");
     set({ user: null, developer: null });
   },
 
@@ -223,6 +245,9 @@ export const useAuthStore = create<AuthState>((set) => ({
         return;
       }
       const user = await apiFetch<ApiUser>("/auth/me");
+      if (user.custodyMode) {
+        await window.boilerdeck.store.set("custodyMode", user.custodyMode);
+      }
       set({ user, loading: false });
 
       if (user.role === "DEVELOPER" || user.role === "ADMIN") {

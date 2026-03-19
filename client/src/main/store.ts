@@ -50,6 +50,7 @@ interface StoreData {
   privacySettings?: PrivacySettings;
   relays?: RelayEntry[];
   sovereignMode?: boolean;
+  custodyMode?: string;
   cachedListings?: { listings: unknown[]; cachedAt: string };
 }
 
@@ -78,6 +79,7 @@ export const STORE_KEY_WHITELIST = new Set([
   "privacySettings",
   "relays",
   "sovereignMode",
+  "custodyMode",
   "cachedListings",
 ]);
 

@@ -816,7 +816,7 @@ export async function uploadFile(tags: string[] = []): Promise<LockerEntry | nul
   const entryId = crypto.randomUUID();
 
   // Check if this is a self-custody user
-  const isSelfCustody = keyManager.hasKey() && !storeGet("relayPrivkey");
+  const isSelfCustody = storeGet("custodyMode") === "SELF_CUSTODY";
 
   if (isSelfCustody) {
     return uploadFileSelfCustody(filePath, filename, fileSize, entryId, tags);
@@ -995,7 +995,7 @@ export async function uploadDirectory(tags: string[] = []): Promise<LockerEntry 
     const entryId = crypto.randomUUID();
 
     // Check if this is a self-custody user
-    const isSelfCustody = keyManager.hasKey() && !storeGet("relayPrivkey");
+    const isSelfCustody = storeGet("custodyMode") === "SELF_CUSTODY";
 
     let entry: LockerEntry | null;
     if (isSelfCustody) {
