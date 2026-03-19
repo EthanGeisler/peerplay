@@ -78,6 +78,7 @@ export function Store() {
   const games = useGameStore((s) => s.games);
   const loading = useGameStore((s) => s.loading);
   const fetchGames = useGameStore((s) => s.fetchGames);
+  const sovereignMode = useGameStore((s) => s.sovereignMode);
   const [activeFilter, setActiveFilter] = useState<ContentType | undefined>(undefined);
 
   useEffect(() => {
@@ -146,6 +147,31 @@ export function Store() {
               <div style={styles.cardBody}>
                 <div style={styles.cardTitle}>{game.title}</div>
                 <div style={styles.cardStudio}>{game.studioName}</div>
+                {sovereignMode && game.relaySource && (
+                  <div
+                    style={{
+                      display: "inline-block",
+                      backgroundColor: "#0f3460",
+                      color: "#888",
+                      fontSize: 10,
+                      padding: "2px 8px",
+                      borderRadius: 10,
+                      marginBottom: 6,
+                      maxWidth: "100%",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {(() => {
+                      try {
+                        return new URL(game.relaySource).hostname;
+                      } catch {
+                        return game.relaySource;
+                      }
+                    })()}
+                  </div>
+                )}
                 <div style={styles.cardFooter}>
                   <span style={styles.cardPrice}>{formatPrice(game.priceCents)}</span>
                 </div>

@@ -12,6 +12,7 @@ export interface ApiGame {
   studioName: string;
   contentType?: ContentType;
   metadata?: Record<string, unknown>;
+  relaySource?: string;
 }
 
 export interface ApiGameDetail extends ApiGame {
