@@ -1,8 +1,21 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGameStore } from "../stores/gameStore";
 import { formatPrice, PLACEHOLDER_COVER, resolveCoverUrl } from "../utils";
 import type { ContentType } from "../types";
+
+const bannerStyle: React.CSSProperties = {
+  backgroundColor: "rgba(210, 153, 34, 0.15)",
+  border: "1px solid #d29922",
+  borderRadius: 8,
+  padding: "12px 16px",
+  marginBottom: 16,
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  color: "#d29922",
+  fontSize: 14,
+};
 
 const styles = {
   heading: {
@@ -79,11 +92,22 @@ export function Store() {
   const loading = useGameStore((s) => s.loading);
   const fetchGames = useGameStore((s) => s.fetchGames);
   const sovereignMode = useGameStore((s) => s.sovereignMode);
+  const gatewayDown = useGameStore((s) => s.gatewayDown);
+  const usingCache = useGameStore((s) => s.usingCache);
+  const cacheAge = useGameStore((s) => s.cacheAge);
   const [activeFilter, setActiveFilter] = useState<ContentType | undefined>(undefined);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+
+  const dismissBanner = useCallback(() => setBannerDismissed(true), []);
 
   useEffect(() => {
     fetchGames(1, activeFilter);
   }, [fetchGames, activeFilter]);
+
+  // Reset banner dismissed state when gateway status changes
+  useEffect(() => {
+    setBannerDismissed(false);
+  }, [gatewayDown]);
 
   if (loading && games.length === 0) {
     return <p style={styles.loading}>Loading games...</p>;
@@ -91,6 +115,30 @@ export function Store() {
 
   return (
     <div>
+      {gatewayDown && !bannerDismissed && (
+        <div style={bannerStyle}>
+          <span>
+            {usingCache
+              ? `Gateway unavailable \u2014 showing cached data from ${cacheAge}. Installed content is still accessible.`
+              : "Gateway unavailable. Your installed content is still accessible from the Library."}
+          </span>
+          <button
+            onClick={dismissBanner}
+            style={{
+              background: "none",
+              border: "none",
+              color: "#d29922",
+              cursor: "pointer",
+              fontSize: 18,
+              padding: "0 0 0 12px",
+              lineHeight: 1,
+            }}
+            aria-label="Dismiss"
+          >
+            &times;
+          </button>
+        </div>
+      )}
       <h1 style={styles.heading}>Store</h1>
       <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
         {TABS.map((tab) => (

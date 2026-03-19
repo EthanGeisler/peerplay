@@ -62,6 +62,18 @@ async function fetchFromRelay(
 /** Default relay URL — used for dedup preference. */
 const DEFAULT_RELAY_URL = "wss://boilerdeck.com/relay";
 
+/** Format a cache timestamp as a human-readable relative string. */
+function formatCacheAge(isoDate: string): string {
+  const diff = Date.now() - new Date(isoDate).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
 interface GameState {
   games: ApiGame[];
   total: number;
@@ -72,6 +84,9 @@ interface GameState {
   currentGameLoading: boolean;
   currentGameError: string | null;
   sovereignMode: boolean;
+  gatewayDown: boolean;
+  usingCache: boolean;
+  cacheAge: string | null;
   fetchGames: (page?: number, contentType?: ContentType) => Promise<void>;
   fetchGameBySlug: (slug: string) => Promise<void>;
   clearCurrentGame: () => void;
@@ -88,6 +103,9 @@ export const useGameStore = create<GameState>((set) => ({
   currentGameLoading: false,
   currentGameError: null,
   sovereignMode: false,
+  gatewayDown: false,
+  usingCache: false,
+  cacheAge: null,
 
   checkSovereignMode: async () => {
     try {
@@ -114,6 +132,8 @@ export const useGameStore = create<GameState>((set) => ({
         // Not in Electron or sovereignty unavailable
       }
 
+      let fetchedGames: ApiGame[] | null = null;
+
       if (isSovereign && window.boilerdeck?.relays) {
         // Sovereign mode: fetch from all enabled relays in parallel
         const relayList = await window.boilerdeck.relays.list();
@@ -124,66 +144,114 @@ export const useGameStore = create<GameState>((set) => ({
           const params = new URLSearchParams({ page: String(page), limit: "20" });
           if (contentType) params.set("contentType", contentType);
           const data = await apiFetch<ApiGameListResponse>(`/listings?${params}`);
+          fetchedGames = data.games;
           set({
             games: data.games,
             total: data.total,
             page: data.page,
             totalPages: data.totalPages,
             loading: false,
+            gatewayDown: false,
+            usingCache: false,
+            cacheAge: null,
           });
-          return;
-        }
+        } else {
+          const results = await Promise.allSettled(
+            enabledRelays.map((r) => fetchFromRelay(r.url, contentType)),
+          );
 
-        const results = await Promise.allSettled(
-          enabledRelays.map((r) => fetchFromRelay(r.url, contentType)),
-        );
+          // Merge and deduplicate by slug
+          const slugMap = new Map<string, ApiGame>();
 
-        // Merge and deduplicate by slug
-        // Prefer the default relay's version, then first-seen
-        const slugMap = new Map<string, ApiGame>();
-
-        for (const result of results) {
-          if (result.status !== "fulfilled") continue;
-          for (const game of result.value) {
-            const existing = slugMap.get(game.slug);
-            if (!existing) {
-              slugMap.set(game.slug, game);
-            } else if (
-              game.relaySource === DEFAULT_RELAY_URL &&
-              existing.relaySource !== DEFAULT_RELAY_URL
-            ) {
-              // Prefer boilerdeck.com relay version
-              slugMap.set(game.slug, game);
+          for (const result of results) {
+            if (result.status !== "fulfilled") continue;
+            for (const game of result.value) {
+              const existing = slugMap.get(game.slug);
+              if (!existing) {
+                slugMap.set(game.slug, game);
+              } else if (
+                game.relaySource === DEFAULT_RELAY_URL &&
+                existing.relaySource !== DEFAULT_RELAY_URL
+              ) {
+                slugMap.set(game.slug, game);
+              }
             }
           }
+
+          const merged = Array.from(slugMap.values()).sort((a, b) =>
+            a.title.localeCompare(b.title),
+          );
+
+          fetchedGames = merged;
+          set({
+            games: merged,
+            total: merged.length,
+            page: 1,
+            totalPages: 1,
+            loading: false,
+            gatewayDown: false,
+            usingCache: false,
+            cacheAge: null,
+          });
         }
-
-        const merged = Array.from(slugMap.values()).sort((a, b) =>
-          a.title.localeCompare(b.title),
-        );
-
-        set({
-          games: merged,
-          total: merged.length,
-          page: 1,
-          totalPages: 1,
-          loading: false,
-        });
       } else {
         // Normal mode: use gateway API
         const params = new URLSearchParams({ page: String(page), limit: "20" });
         if (contentType) params.set("contentType", contentType);
         const data = await apiFetch<ApiGameListResponse>(`/listings?${params}`);
+        fetchedGames = data.games;
         set({
           games: data.games,
           total: data.total,
           page: data.page,
           totalPages: data.totalPages,
           loading: false,
+          gatewayDown: false,
+          usingCache: false,
+          cacheAge: null,
+        });
+      }
+
+      // Cache successful fetch
+      if (fetchedGames && fetchedGames.length > 0 && window.boilerdeck?.cache) {
+        window.boilerdeck.cache.setListings(fetchedGames).catch(() => {
+          // Caching is best-effort
         });
       }
     } catch {
-      set({ loading: false });
+      // Fetch failed — try loading from cache
+      let loaded = false;
+      try {
+        if (window.boilerdeck?.cache) {
+          const cached = await window.boilerdeck.cache.getListings();
+          if (cached && cached.listings && cached.listings.length > 0) {
+            set({
+              games: cached.listings as ApiGame[],
+              total: cached.listings.length,
+              page: 1,
+              totalPages: 1,
+              loading: false,
+              gatewayDown: true,
+              usingCache: true,
+              cacheAge: formatCacheAge(cached.cachedAt),
+            });
+            loaded = true;
+          }
+        }
+      } catch {
+        // Cache read also failed
+      }
+
+      if (!loaded) {
+        set({
+          games: [],
+          total: 0,
+          loading: false,
+          gatewayDown: true,
+          usingCache: false,
+          cacheAge: null,
+        });
+      }
     }
   },
 

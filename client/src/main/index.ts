@@ -277,6 +277,15 @@ function setupIpcHandlers(): void {
     return testProxyConnection(settings);
   });
 
+  // --- Listing cache (gateway-down resilience) ---
+  ipcMain.handle("cache:get-listings", () => {
+    return storeGet("cachedListings") as { listings: unknown[]; cachedAt: string } | null;
+  });
+
+  ipcMain.handle("cache:set-listings", (_event, listings: unknown[]) => {
+    storeSet("cachedListings", { listings, cachedAt: new Date().toISOString() });
+  });
+
   // --- Sovereign mode ---
   ipcMain.handle("settings:get-sovereign-mode", () => {
     return (storeGet("sovereignMode") as boolean | null) ?? false;

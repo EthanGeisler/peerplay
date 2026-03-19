@@ -61,6 +61,10 @@ declare global {
         onNotice: (callback: (data: { message: string }) => void) => void;
         removeListeners: () => void;
       };
+      cache: {
+        getListings: () => Promise<{ listings: unknown[]; cachedAt: string } | null>;
+        setListings: (listings: unknown[]) => Promise<void>;
+      };
       sovereignty: {
         getMode: () => Promise<boolean>;
         setMode: (enabled: boolean) => Promise<void>;

@@ -50,6 +50,7 @@ interface StoreData {
   privacySettings?: PrivacySettings;
   relays?: RelayEntry[];
   sovereignMode?: boolean;
+  cachedListings?: { listings: unknown[]; cachedAt: string };
 }
 
 interface InstalledGameEntry {
@@ -77,6 +78,7 @@ export const STORE_KEY_WHITELIST = new Set([
   "privacySettings",
   "relays",
   "sovereignMode",
+  "cachedListings",
 ]);
 
 export function isAllowedStoreKey(key: string): boolean {

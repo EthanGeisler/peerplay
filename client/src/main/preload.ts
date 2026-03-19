@@ -111,6 +111,13 @@ contextBridge.exposeInMainWorld("boilerdeck", {
     },
   },
 
+  cache: {
+    getListings: (): Promise<{ listings: unknown[]; cachedAt: string } | null> =>
+      ipcRenderer.invoke("cache:get-listings"),
+    setListings: (listings: unknown[]): Promise<void> =>
+      ipcRenderer.invoke("cache:set-listings", listings),
+  },
+
   sovereignty: {
     getMode: (): Promise<boolean> => ipcRenderer.invoke("settings:get-sovereign-mode"),
     setMode: (enabled: boolean): Promise<void> => ipcRenderer.invoke("settings:set-sovereign-mode", enabled),
@@ -290,6 +297,10 @@ declare global {
         onOk: (callback: (data: { eventId: string; success: boolean; message: string }) => void) => void;
         onNotice: (callback: (data: { message: string }) => void) => void;
         removeListeners: () => void;
+      };
+      cache: {
+        getListings: () => Promise<{ listings: unknown[]; cachedAt: string } | null>;
+        setListings: (listings: unknown[]) => Promise<void>;
       };
       sovereignty: {
         getMode: () => Promise<boolean>;
